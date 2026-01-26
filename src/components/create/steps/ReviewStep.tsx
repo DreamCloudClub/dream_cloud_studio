@@ -16,6 +16,7 @@ import {
   Video,
   Play,
   Film,
+  Save,
 } from "lucide-react"
 import { useProjectWizardStore } from "@/state/projectWizardStore"
 import { useFoundationStore } from "@/state/foundationStore"
@@ -459,7 +460,7 @@ export function ReviewStep() {
         </div>
 
         {/* Navigation Buttons */}
-        <div className="mt-8 flex justify-start">
+        <div className="mt-8 flex justify-between">
           <Button
             variant="ghost"
             onClick={goToPreviousStep}
@@ -467,6 +468,15 @@ export function ReviewStep() {
             className="text-zinc-400 hover:text-zinc-300"
           >
             &larr; Back
+          </Button>
+          <Button
+            variant="outline"
+            onClick={() => navigate("/library/projects")}
+            disabled={isCreating}
+            className="border-zinc-700 text-zinc-300 hover:bg-zinc-800 hover:text-white disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            <Save className="w-4 h-4 mr-2" />
+            Save Draft
           </Button>
         </div>
       </div>

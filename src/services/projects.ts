@@ -24,6 +24,9 @@ import type {
   ExportSettings,
   ExportSettingsInsert,
   ExportSettingsUpdate,
+  ProjectComposition,
+  ProjectCompositionInsert,
+  ProjectCompositionUpdate,
   ProjectWithRelations,
   SceneWithShots,
   Platform,
@@ -145,6 +148,7 @@ export async function getProjectWithRelations(projectId: string): Promise<Projec
     scenesResult,
     assetsResult,
     exportResult,
+    compositionResult,
   ] = await Promise.all([
     supabase.from('project_briefs').select('*').eq('project_id', projectId).single(),
     supabase.from('mood_boards').select('*').eq('project_id', projectId).single(),
@@ -153,6 +157,7 @@ export async function getProjectWithRelations(projectId: string): Promise<Projec
     supabase.from('scenes').select('*').eq('project_id', projectId).order('sort_order'),
     supabase.from('assets').select('*').eq('project_id', projectId).order('created_at', { ascending: false }),
     supabase.from('export_settings').select('*').eq('project_id', projectId).single(),
+    supabase.from('project_compositions').select('*').eq('project_id', projectId).single(),
   ])
 
   // Fetch shots for each scene
@@ -182,6 +187,7 @@ export async function getProjectWithRelations(projectId: string): Promise<Projec
     scenes,
     assets: (assetsResult.data || []) as any[],
     export_settings: exportResult.data as ExportSettings | undefined,
+    composition: compositionResult.data as ProjectComposition | undefined,
   }
 }
 
@@ -666,5 +672,60 @@ export async function createFullProject(input: CreateFullProjectInput): Promise<
     storyboard,
     scenes,
     export_settings: exportSettings,
+  }
+}
+
+// ============================================
+// PROJECT COMPOSITIONS
+// ============================================
+
+export async function getProjectComposition(projectId: string): Promise<ProjectComposition | null> {
+  const { data, error } = await supabase
+    .from('project_compositions')
+    .select('*')
+    .eq('project_id', projectId)
+    .single()
+
+  if (error) {
+    if (error.code === 'PGRST116') return null
+    throw error
+  }
+  return data as ProjectComposition
+}
+
+export async function createProjectComposition(composition: ProjectCompositionInsert): Promise<ProjectComposition> {
+  const { data, error } = await supabase
+    .from('project_compositions')
+    .insert(composition)
+    .select()
+    .single()
+
+  if (error) throw error
+  return data as ProjectComposition
+}
+
+export async function updateProjectComposition(projectId: string, updates: ProjectCompositionUpdate): Promise<ProjectComposition> {
+  const { data, error } = await supabase
+    .from('project_compositions')
+    .update(updates)
+    .eq('project_id', projectId)
+    .select()
+    .single()
+
+  if (error) throw error
+  return data as ProjectComposition
+}
+
+export async function upsertProjectComposition(projectId: string, updates: ProjectCompositionUpdate): Promise<ProjectComposition> {
+  // Try to get existing composition
+  const existing = await getProjectComposition(projectId)
+
+  if (existing) {
+    return updateProjectComposition(projectId, updates)
+  } else {
+    return createProjectComposition({
+      project_id: projectId,
+      ...updates,
+    })
   }
 }

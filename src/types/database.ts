@@ -65,6 +65,20 @@ export interface ProjectBrief {
   duration: string | null
   aspect_ratio: AspectRatio
   goals: Json
+  video_content: Json
+  audio_plans: Json
+  created_at: string
+  updated_at: string
+}
+
+export interface ProjectComposition {
+  id: string
+  project_id: string
+  title_card: Json | null
+  outro_card: Json | null
+  default_transition: string
+  transition_duration: number
+  text_overlays: Json
   created_at: string
   updated_at: string
 }
@@ -125,6 +139,8 @@ export interface Shot {
   media_type: AssetType | null
   media_url: string | null
   media_thumbnail_url: string | null
+  video_url: string | null
+  video_thumbnail_url: string | null
   created_at: string
   updated_at: string
 }
@@ -204,6 +220,18 @@ export interface ProjectBriefInsert {
   duration?: string | null
   aspect_ratio?: AspectRatio
   goals?: Json
+  video_content?: Json
+  audio_plans?: Json
+}
+
+export interface ProjectCompositionInsert {
+  id?: string
+  project_id: string
+  title_card?: Json | null
+  outro_card?: Json | null
+  default_transition?: string
+  transition_duration?: number
+  text_overlays?: Json
 }
 
 export interface MoodBoardInsert {
@@ -254,6 +282,8 @@ export interface ShotInsert {
   media_type?: AssetType | null
   media_url?: string | null
   media_thumbnail_url?: string | null
+  video_url?: string | null
+  video_thumbnail_url?: string | null
 }
 
 export interface AssetInsert {
@@ -291,6 +321,7 @@ export type SceneUpdate = Partial<Omit<Scene, 'id' | 'project_id' | 'created_at'
 export type ShotUpdate = Partial<Omit<Shot, 'id' | 'scene_id' | 'created_at'>>
 export type AssetUpdate = Partial<Omit<Asset, 'id' | 'user_id' | 'created_at'>>
 export type ExportSettingsUpdate = Partial<Omit<ExportSettings, 'id' | 'project_id' | 'created_at'>>
+export type ProjectCompositionUpdate = Partial<Omit<ProjectComposition, 'id' | 'project_id' | 'created_at'>>
 
 // Extended types with relations (for client-side use)
 export interface ProjectWithRelations extends Project {
@@ -301,6 +332,7 @@ export interface ProjectWithRelations extends Project {
   scenes?: SceneWithShots[]
   assets?: Asset[]
   export_settings?: ExportSettings
+  composition?: ProjectComposition
   platform?: Platform
 }
 
@@ -404,6 +436,11 @@ export interface Database {
         Row: ExportSettings
         Insert: ExportSettingsInsert
         Update: ExportSettingsUpdate
+      }
+      project_compositions: {
+        Row: ProjectComposition
+        Insert: ProjectCompositionInsert
+        Update: ProjectCompositionUpdate
       }
       usage_tracking: {
         Row: UsageTracking

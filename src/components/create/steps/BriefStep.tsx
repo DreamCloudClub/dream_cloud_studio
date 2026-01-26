@@ -58,10 +58,11 @@ export function BriefStep() {
   })
   const [isSaving, setIsSaving] = useState(false)
   const [isSavingDraft, setIsSavingDraft] = useState(false)
-  const [briefExists, setBriefExists] = useState(false)
+  // Initialize briefExists from store - if brief has name, it was likely loaded from DB
+  const [briefExists, setBriefExists] = useState(!!brief?.name)
   const [hasStartedConversation, setHasStartedConversation] = useState(false)
 
-  // Check if brief exists in DB
+  // Check if brief exists in DB (for cases where we have projectId but store brief wasn't set)
   useEffect(() => {
     async function checkBrief() {
       if (projectId) {
@@ -91,9 +92,14 @@ export function BriefStep() {
     }
   }, [brief?.videoContent])
 
-  // Sync other form fields from store
+  // Sync form fields from store (when Bubble updates via chat)
   useEffect(() => {
     if (brief) {
+      // Sync project name
+      if (brief.name && brief.name !== projectName) {
+        setProjectName(brief.name)
+      }
+      // Sync other fields
       setFormData(prev => ({
         audience: brief.audience || prev.audience,
         tone: brief.tone || prev.tone,
@@ -145,26 +151,37 @@ export function BriefStep() {
   }
 
   const handleContinue = async () => {
-    if (!user) return
+    if (!user) {
+      console.error("No user found")
+      return
+    }
 
     setIsSaving(true)
     try {
-      let currentProjectId = projectId
+      // Read from store directly to avoid stale closure values
+      let currentProjectId = useProjectWizardStore.getState().projectId
 
       // Create draft project if we don't have one yet
       if (!currentProjectId) {
-        const platformId = platform?.type === "existing" ? platform.platformId : undefined
-        const draft = await createDraftProject(user.id, platformId)
-        currentProjectId = draft.id
-        setProjectId(draft.id)
+        // Double-check store in case another operation just created it
+        currentProjectId = useProjectWizardStore.getState().projectId
+        if (!currentProjectId) {
+          console.log("Creating new draft project...")
+          const platformId = platform?.type === "existing" ? platform.platformId : undefined
+          const draft = await createDraftProject(user.id, platformId)
+          currentProjectId = draft.id
+          setProjectId(draft.id)
+          console.log("Draft project created:", currentProjectId)
+        }
       }
 
       const description = buildDescription()
 
       // Update project name
+      console.log("Updating project name...")
       await updateProject(currentProjectId, { name: projectName })
 
-      // Create or update brief in DB
+      // Create or update brief in DB - check database directly to avoid race conditions
       const briefData = {
         name: projectName,
         description,
@@ -172,17 +189,23 @@ export function BriefStep() {
         tone: formData.tone,
         duration: formData.duration,
         aspect_ratio: formData.aspectRatio,
+        video_content: videoContent as import("@/types/database").Json,
       }
 
-      if (briefExists) {
+      // Always check DB for existing brief to handle race conditions
+      const existingBrief = await getProjectBrief(currentProjectId)
+      if (existingBrief) {
+        console.log("Updating existing brief...")
         await updateProjectBrief(currentProjectId, briefData)
       } else {
+        console.log("Creating new brief...")
         await createProjectBrief({
           project_id: currentProjectId,
           ...briefData,
         })
-        setBriefExists(true)
       }
+      setBriefExists(true)
+      console.log("Brief saved successfully")
 
       // Update local state
       setBrief({
@@ -198,6 +221,7 @@ export function BriefStep() {
       goToNextStep()
     } catch (error) {
       console.error("Error saving brief:", error)
+      alert("Error saving: " + (error instanceof Error ? error.message : "Unknown error"))
     } finally {
       setIsSaving(false)
     }
@@ -206,7 +230,10 @@ export function BriefStep() {
   const handleSaveDraft = async () => {
     if (!user) return
 
-    if (!projectName && !projectId) {
+    // Read from store directly to avoid stale closure values
+    const storeProjectId = useProjectWizardStore.getState().projectId
+
+    if (!projectName && !storeProjectId) {
       resetWizard()
       navigate("/library/projects")
       return
@@ -214,19 +241,22 @@ export function BriefStep() {
 
     setIsSavingDraft(true)
     try {
-      let currentProjectId = projectId
+      let currentProjectId = storeProjectId
 
       if (!currentProjectId) {
         const platformId = platform?.type === "existing" ? platform.platformId : undefined
         const draft = await createDraftProject(user.id, platformId)
         currentProjectId = draft.id
+        setProjectId(draft.id) // Store the ID so Bubble and other operations use the same project
       }
 
       const description = buildDescription()
 
       await updateProject(currentProjectId, { name: projectName || "Untitled Project" })
 
-      if (briefExists) {
+      // Check DB directly for existing brief to avoid race conditions
+      const existingBrief = await getProjectBrief(currentProjectId)
+      if (existingBrief) {
         await updateProjectBrief(currentProjectId, {
           name: projectName,
           description,
@@ -234,6 +264,7 @@ export function BriefStep() {
           tone: formData.tone,
           duration: formData.duration,
           aspect_ratio: formData.aspectRatio,
+          video_content: videoContent as import("@/types/database").Json,
         })
       } else if (projectName || description) {
         await createProjectBrief({
@@ -244,6 +275,7 @@ export function BriefStep() {
           tone: formData.tone,
           duration: formData.duration,
           aspect_ratio: formData.aspectRatio,
+          video_content: videoContent as import("@/types/database").Json,
         })
       }
 
@@ -256,8 +288,43 @@ export function BriefStep() {
     }
   }
 
+  // Save and go back
+  const handleBack = async () => {
+    if (!user || !projectId) {
+      goToPreviousStep()
+      return
+    }
+
+    try {
+      const description = buildDescription()
+      const briefData = {
+        name: projectName,
+        description,
+        audience: formData.audience,
+        tone: formData.tone,
+        duration: formData.duration,
+        aspect_ratio: formData.aspectRatio,
+        video_content: videoContent as import("@/types/database").Json,
+      }
+
+      // Check DB directly for existing brief to avoid race conditions
+      const existingBrief = await getProjectBrief(projectId)
+      if (existingBrief) {
+        await updateProjectBrief(projectId, briefData)
+      } else if (projectName || description) {
+        await createProjectBrief({ project_id: projectId, ...briefData })
+        setBriefExists(true)
+      }
+    } catch (error) {
+      console.error("Error saving on back:", error)
+    }
+    goToPreviousStep()
+  }
+
+  // Check if video content has been filled in (for UI hint, not validation)
   const hasContent = videoContent.action || videoContent.characters.length > 0 || videoContent.setting
-  const isValid = projectName.trim() && hasContent
+  // Only require project name - video content can be filled in later via Bubble or in workspace
+  const isValid = !!projectName.trim()
 
   const toneOptions = [
     "Professional",
@@ -549,7 +616,7 @@ export function BriefStep() {
         <div className="mt-8 flex justify-between">
           <Button
             variant="ghost"
-            onClick={goToPreviousStep}
+            onClick={handleBack}
             className="text-zinc-400 hover:text-zinc-300"
           >
             &larr; Back

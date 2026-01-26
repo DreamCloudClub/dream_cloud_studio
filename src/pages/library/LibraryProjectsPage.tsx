@@ -394,8 +394,9 @@ export function LibraryProjectsPage() {
           </div>
         )}
 
-        {/* Completed Projects Section - only show when filter is "all" or "completed" */}
-        {(statusFilter === "all" || statusFilter === "completed") && (
+        {/* Completed Projects Section - only show when filter is "all" or "completed" AND there are completed projects */}
+        {(statusFilter === "all" || statusFilter === "completed") &&
+          filteredProjects.filter(p => p.status === "completed").length > 0 && (
           <div className="space-y-3">
             {statusFilter === "all" ? (
               <button
@@ -427,26 +428,18 @@ export function LibraryProjectsPage() {
               </div>
             )}
             {(statusFilter !== "all" || expandedSections.completed) && (
-              filteredProjects.filter(p => p.status === "completed").length > 0 ? (
-                <div className={cn("grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-4 items-start", statusFilter === "all" && "ml-6")}>
-                  {filteredProjects
-                    .filter(p => p.status === "completed")
-                    .map((project) => (
-                      <ProjectCard
-                        key={project.id}
-                        project={project}
-                        onClick={() => handleProjectClick(project)}
-                        onDelete={() => handleDeleteClick(project)}
-                      />
-                    ))}
-                </div>
-              ) : (
-                <div className={cn("py-8 border border-dashed border-zinc-800 rounded-xl bg-zinc-900/30 text-center", statusFilter === "all" && "ml-6")}>
-                  <p className="text-sm text-zinc-500">
-                    No completed projects yet.
-                  </p>
-                </div>
-              )
+              <div className={cn("grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-4 items-start", statusFilter === "all" && "ml-6")}>
+                {filteredProjects
+                  .filter(p => p.status === "completed")
+                  .map((project) => (
+                    <ProjectCard
+                      key={project.id}
+                      project={project}
+                      onClick={() => handleProjectClick(project)}
+                      onDelete={() => handleDeleteClick(project)}
+                    />
+                  ))}
+              </div>
             )}
           </div>
         )}

@@ -1,0 +1,4 @@
+# Disable JWT verification for this function
+# The function uses its own Replicate API token stored as a secret
+[functions.replicate-proxy]
+verify_jwt = false

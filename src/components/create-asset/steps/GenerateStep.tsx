@@ -6,8 +6,11 @@ import {
   generateImages,
   generateVideo,
   generateMusic,
-  generateVoice,
 } from "@/services/replicate"
+import {
+  generateVoice as generateVoiceElevenLabs,
+  generateSoundEffect,
+} from "@/services/elevenlabs"
 
 export function GenerateStep() {
   const {
@@ -84,14 +87,21 @@ export function GenerateStep() {
       } else if (assetType === "audio") {
         let audioUrl: string
 
-        if (category === "music" || category === "sound_effect") {
+        if (category === "music") {
+          // Use Replicate's MusicGen for music
           audioUrl = await generateMusic({
             prompt,
             duration: 10,
           })
+        } else if (category === "sound_effect") {
+          // Use ElevenLabs for sound effects
+          audioUrl = await generateSoundEffect({
+            text: prompt,
+            duration_seconds: 5,
+          })
         } else {
-          // Voice
-          audioUrl = await generateVoice({
+          // Voice - use ElevenLabs for high-quality TTS
+          audioUrl = await generateVoiceElevenLabs({
             text: prompt,
           })
         }

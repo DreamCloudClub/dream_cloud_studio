@@ -1,12 +1,35 @@
 import { useState } from "react"
-import { Mic, Music, Volume2, Wand2, Upload, FolderOpen, Play, X, Loader2, Check } from "lucide-react"
+import { useNavigate } from "react-router-dom"
+import { Mic, Music, Volume2, Wand2, Upload, FolderOpen, Play, X, Loader2, Check, ChevronDown, Save } from "lucide-react"
 import { useProjectWizardStore, type Asset } from "@/state/projectWizardStore"
 import { Button } from "@/components/ui/button"
 import { cn } from "@/lib/utils"
+import {
+  generateVoice,
+  generateSoundEffect,
+  DEFAULT_VOICES,
+} from "@/services/elevenlabs"
+import { generateMusic } from "@/services/replicate"
+import { createAsset } from "@/services/assets"
+import { useAuth } from "@/contexts/AuthContext"
 
 type AudioType = "voiceover" | "soundtrack" | "sfx"
 
+// Voice options with display names
+const VOICE_OPTIONS: { id: string; name: string; description: string }[] = [
+  { id: DEFAULT_VOICES.rachel, name: "Rachel", description: "Calm, warm female" },
+  { id: DEFAULT_VOICES.bella, name: "Bella", description: "Soft, friendly female" },
+  { id: DEFAULT_VOICES.elli, name: "Elli", description: "Emotional, young female" },
+  { id: DEFAULT_VOICES.domi, name: "Domi", description: "Strong, assertive female" },
+  { id: DEFAULT_VOICES.josh, name: "Josh", description: "Deep, narrative male" },
+  { id: DEFAULT_VOICES.adam, name: "Adam", description: "Deep, authoritative male" },
+  { id: DEFAULT_VOICES.drew, name: "Drew", description: "Well-rounded male" },
+  { id: DEFAULT_VOICES.sam, name: "Sam", description: "Raspy, dynamic male" },
+]
+
 export function AudioStep() {
+  const navigate = useNavigate()
+  const { user } = useAuth()
   const {
     audio,
     addVoiceover,
@@ -16,68 +39,216 @@ export function AudioStep() {
     goToNextStep,
     goToPreviousStep,
     markStepComplete,
+    projectId,
   } = useProjectWizardStore()
 
   const [activeTab, setActiveTab] = useState<AudioType>("voiceover")
   const [isGenerating, setIsGenerating] = useState(false)
+  const [isSaving, setIsSaving] = useState(false)
+  const [isSavingDraft, setIsSavingDraft] = useState(false)
+  const [error, setError] = useState<string | null>(null)
   const [voiceoverScript, setVoiceoverScript] = useState("")
+  const [selectedVoice, setSelectedVoice] = useState(VOICE_OPTIONS[0])
+  const [showVoiceDropdown, setShowVoiceDropdown] = useState(false)
   const [musicPrompt, setMusicPrompt] = useState("")
   const [sfxPrompt, setSfxPrompt] = useState("")
 
-  const handleGenerateVoiceover = () => {
+  const handleGenerateVoiceover = async () => {
     if (!voiceoverScript.trim()) return
 
     setIsGenerating(true)
-    setTimeout(() => {
+    setError(null)
+
+    try {
+      const audioUrl = await generateVoice({
+        text: voiceoverScript,
+        voiceId: selectedVoice.id,
+      })
+
       const newVoiceover: Asset = {
         id: crypto.randomUUID(),
         type: "audio",
-        url: "#",
-        name: `Voiceover ${audio.voiceovers.length + 1}`,
+        url: audioUrl,
+        name: `Voiceover ${audio.voiceovers.length + 1} (${selectedVoice.name})`,
       }
       addVoiceover(newVoiceover)
       setVoiceoverScript("")
+    } catch (err) {
+      console.error("Voiceover generation error:", err)
+      setError(err instanceof Error ? err.message : "Failed to generate voiceover")
+    } finally {
       setIsGenerating(false)
-    }, 2000)
+    }
   }
 
-  const handleGenerateSoundtrack = () => {
+  const handleGenerateSoundtrack = async () => {
     if (!musicPrompt.trim()) return
 
     setIsGenerating(true)
-    setTimeout(() => {
+    setError(null)
+
+    try {
+      const audioUrl = await generateMusic({
+        prompt: musicPrompt,
+        duration: 30, // 30 seconds for background music
+      })
+
       const newSoundtrack: Asset = {
         id: crypto.randomUUID(),
         type: "audio",
-        url: "#",
+        url: audioUrl,
         name: `Soundtrack - ${musicPrompt.slice(0, 30)}`,
       }
       setSoundtrack(newSoundtrack)
       setMusicPrompt("")
+    } catch (err) {
+      console.error("Soundtrack generation error:", err)
+      setError(err instanceof Error ? err.message : "Failed to generate soundtrack")
+    } finally {
       setIsGenerating(false)
-    }, 2000)
+    }
   }
 
-  const handleGenerateSfx = () => {
+  const handleGenerateSfx = async () => {
     if (!sfxPrompt.trim()) return
 
     setIsGenerating(true)
-    setTimeout(() => {
+    setError(null)
+
+    try {
+      const audioUrl = await generateSoundEffect({
+        text: sfxPrompt,
+        duration_seconds: 5,
+      })
+
       const newSfx: Asset = {
         id: crypto.randomUUID(),
         type: "audio",
-        url: "#",
+        url: audioUrl,
         name: sfxPrompt.slice(0, 40),
       }
       addSfx(newSfx)
       setSfxPrompt("")
+    } catch (err) {
+      console.error("SFX generation error:", err)
+      setError(err instanceof Error ? err.message : "Failed to generate sound effect")
+    } finally {
       setIsGenerating(false)
-    }, 1500)
+    }
   }
 
-  const handleContinue = () => {
-    markStepComplete("audio")
-    goToNextStep()
+  const handleContinue = async () => {
+    if (!user || !projectId) return
+
+    setIsSaving(true)
+    try {
+      // Save voiceovers as assets
+      for (const voiceover of audio.voiceovers) {
+        if (voiceover.url && voiceover.url !== "#") {
+          await createAsset({
+            user_id: user.id,
+            project_id: projectId,
+            name: voiceover.name,
+            type: "audio",
+            category: "voice",
+            url: voiceover.url,
+          })
+        }
+      }
+
+      // Save soundtrack as asset
+      if (audio.soundtrack && audio.soundtrack.url && audio.soundtrack.url !== "#") {
+        await createAsset({
+          user_id: user.id,
+          project_id: projectId,
+          name: audio.soundtrack.name,
+          type: "audio",
+          category: "music",
+          url: audio.soundtrack.url,
+        })
+      }
+
+      // Save SFX as assets
+      for (const sfx of audio.sfx) {
+        if (sfx.url && sfx.url !== "#") {
+          await createAsset({
+            user_id: user.id,
+            project_id: projectId,
+            name: sfx.name,
+            type: "audio",
+            category: "sound_effect",
+            url: sfx.url,
+          })
+        }
+      }
+
+      markStepComplete("audio")
+      goToNextStep()
+    } catch (error) {
+      console.error("Error saving audio:", error)
+      setError("Failed to save audio assets")
+    } finally {
+      setIsSaving(false)
+    }
+  }
+
+  const handleSaveDraft = async () => {
+    if (!user || !projectId) return
+
+    setIsSavingDraft(true)
+    try {
+      // Save voiceovers as assets
+      for (const voiceover of audio.voiceovers) {
+        if (voiceover.url && voiceover.url !== "#") {
+          await createAsset({
+            user_id: user.id,
+            project_id: projectId,
+            name: voiceover.name,
+            type: "audio",
+            category: "voice",
+            url: voiceover.url,
+          })
+        }
+      }
+
+      // Save soundtrack as asset
+      if (audio.soundtrack && audio.soundtrack.url && audio.soundtrack.url !== "#") {
+        await createAsset({
+          user_id: user.id,
+          project_id: projectId,
+          name: audio.soundtrack.name,
+          type: "audio",
+          category: "music",
+          url: audio.soundtrack.url,
+        })
+      }
+
+      // Save SFX as assets
+      for (const sfx of audio.sfx) {
+        if (sfx.url && sfx.url !== "#") {
+          await createAsset({
+            user_id: user.id,
+            project_id: projectId,
+            name: sfx.name,
+            type: "audio",
+            category: "sound_effect",
+            url: sfx.url,
+          })
+        }
+      }
+
+      navigate("/library/projects")
+    } catch (error) {
+      console.error("Error saving draft:", error)
+      setError("Failed to save audio assets")
+    } finally {
+      setIsSavingDraft(false)
+    }
+  }
+
+  // Go back (audio is already in store state)
+  const handleBack = () => {
+    goToPreviousStep()
   }
 
   const tabs = [
@@ -129,6 +300,13 @@ export function AudioStep() {
           })}
         </div>
 
+        {/* Error Message */}
+        {error && (
+          <div className="mb-4 p-4 bg-red-500/10 border border-red-500/30 rounded-xl">
+            <p className="text-red-400 text-sm">{error}</p>
+          </div>
+        )}
+
         {/* Tab Content */}
         <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-6">
           {/* Voiceover Tab */}
@@ -139,8 +317,52 @@ export function AudioStep() {
                   Generate Voiceover
                 </h3>
                 <p className="text-sm text-zinc-500 mb-4">
-                  Enter your script and we'll generate professional voiceover audio.
+                  Enter your script and we'll generate professional voiceover audio using ElevenLabs.
                 </p>
+
+                {/* Voice Selector */}
+                <div className="mb-4">
+                  <label className="block text-sm font-medium text-zinc-400 mb-2">
+                    Voice
+                  </label>
+                  <div className="relative">
+                    <button
+                      type="button"
+                      onClick={() => setShowVoiceDropdown(!showVoiceDropdown)}
+                      className="w-full flex items-center justify-between px-4 py-3 bg-zinc-800/50 border border-zinc-700 hover:border-zinc-600 rounded-lg text-left transition-colors"
+                    >
+                      <div>
+                        <span className="text-zinc-200">{selectedVoice.name}</span>
+                        <span className="text-zinc-500 ml-2 text-sm">({selectedVoice.description})</span>
+                      </div>
+                      <ChevronDown className={cn(
+                        "w-4 h-4 text-zinc-500 transition-transform",
+                        showVoiceDropdown && "rotate-180"
+                      )} />
+                    </button>
+
+                    {showVoiceDropdown && (
+                      <div className="absolute z-10 w-full mt-1 py-1 bg-zinc-800 border border-zinc-700 rounded-lg shadow-lg max-h-60 overflow-y-auto">
+                        {VOICE_OPTIONS.map((voice) => (
+                          <button
+                            key={voice.id}
+                            onClick={() => {
+                              setSelectedVoice(voice)
+                              setShowVoiceDropdown(false)
+                            }}
+                            className={cn(
+                              "w-full px-4 py-2.5 text-left hover:bg-zinc-700/50 transition-colors",
+                              selectedVoice.id === voice.id && "bg-sky-500/10"
+                            )}
+                          >
+                            <span className="text-zinc-200">{voice.name}</span>
+                            <span className="text-zinc-500 ml-2 text-sm">({voice.description})</span>
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                </div>
 
                 <textarea
                   value={voiceoverScript}
@@ -156,7 +378,7 @@ export function AudioStep() {
                     disabled={!voiceoverScript.trim() || isGenerating}
                     className="bg-sky-500 hover:bg-sky-400 text-white"
                   >
-                    {isGenerating ? (
+                    {isGenerating && activeTab === "voiceover" ? (
                       <>
                         <Loader2 className="w-4 h-4 mr-2 animate-spin" />
                         Generating...
@@ -235,7 +457,7 @@ export function AudioStep() {
                     disabled={!musicPrompt.trim() || isGenerating}
                     className="bg-sky-500 hover:bg-sky-400 text-white"
                   >
-                    {isGenerating ? (
+                    {isGenerating && activeTab === "soundtrack" ? (
                       <>
                         <Loader2 className="w-4 h-4 mr-2 animate-spin" />
                         Generating...
@@ -293,7 +515,7 @@ export function AudioStep() {
                   Sound Effects
                 </h3>
                 <p className="text-sm text-zinc-500 mb-4">
-                  Add ambient sounds, transitions, or specific sound effects.
+                  Describe the sound effect you want using ElevenLabs AI sound generation.
                 </p>
 
                 <input
@@ -310,7 +532,7 @@ export function AudioStep() {
                     disabled={!sfxPrompt.trim() || isGenerating}
                     className="bg-sky-500 hover:bg-sky-400 text-white"
                   >
-                    {isGenerating ? (
+                    {isGenerating && activeTab === "sfx" ? (
                       <>
                         <Loader2 className="w-4 h-4 mr-2 animate-spin" />
                         Generating...
@@ -369,17 +591,40 @@ export function AudioStep() {
         <div className="mt-8 flex justify-between">
           <Button
             variant="ghost"
-            onClick={goToPreviousStep}
+            onClick={handleBack}
             className="text-zinc-400 hover:text-zinc-300"
           >
             &larr; Back
           </Button>
-          <Button
-            onClick={handleContinue}
-            className="bg-gradient-to-r from-sky-400 via-sky-500 to-blue-600 hover:from-sky-300 hover:via-sky-400 hover:to-blue-500 text-white shadow-lg shadow-sky-500/20 px-8"
-          >
-            Continue
-          </Button>
+          <div className="flex gap-3">
+            <Button
+              variant="outline"
+              onClick={handleSaveDraft}
+              disabled={isSavingDraft || !projectId}
+              className="border-zinc-700 text-zinc-300 hover:bg-zinc-800 hover:text-white disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              {isSavingDraft ? (
+                <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+              ) : (
+                <Save className="w-4 h-4 mr-2" />
+              )}
+              Save Draft
+            </Button>
+            <Button
+              onClick={handleContinue}
+              disabled={isSaving}
+              className="bg-gradient-to-r from-sky-400 via-sky-500 to-blue-600 hover:from-sky-300 hover:via-sky-400 hover:to-blue-500 text-white shadow-lg shadow-sky-500/20 px-8"
+            >
+              {isSaving ? (
+                <>
+                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                  Saving...
+                </>
+              ) : (
+                "Continue"
+              )}
+            </Button>
+          </div>
         </div>
       </div>
     </div>

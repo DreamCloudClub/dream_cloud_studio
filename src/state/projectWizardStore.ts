@@ -36,13 +36,13 @@ export const WIZARD_STEPS: {
   },
   {
     id: "story",
-    label: "Story",
-    description: "Build your narrative structure",
+    label: "Scenes",
+    description: "Outline your scenes and shots",
   },
   {
     id: "shots",
-    label: "Shots",
-    description: "Plan your shot list",
+    label: "Generate",
+    description: "Generate images for each shot",
   },
   {
     id: "filming",
@@ -110,7 +110,7 @@ export interface Act {
   id: string
   name: string
   description: string
-  beats: { id: string; description: string }[]
+  beats: { id: string; title?: string; description: string }[]
 }
 
 export interface StoryboardData {
@@ -140,6 +140,12 @@ export interface AudioData {
   voiceovers: Asset[]
   soundtrack: Asset | null
   sfx: Asset[]
+}
+
+export interface AudioPlans {
+  voiceoverScript?: string
+  musicStyle?: string
+  soundEffects?: string[]
 }
 
 // Composition data for Remotion
@@ -214,6 +220,7 @@ interface ProjectWizardState {
 
   // Audio
   audio: AudioData
+  audioPlans: AudioPlans
 
   // Composition (Remotion)
   composition: CompositionData
@@ -259,6 +266,7 @@ interface ProjectWizardState {
   setSoundtrack: (asset: Asset | null) => void
   addSfx: (asset: Asset) => void
   removeAudio: (type: "voiceover" | "sfx", assetId: string) => void
+  setAudioPlans: (data: Partial<AudioPlans>) => void
 
   // Composition
   setTitleCard: (config: TitleConfig | undefined) => void
@@ -301,6 +309,7 @@ const initialState = {
     soundtrack: null,
     sfx: [],
   },
+  audioPlans: {},
   composition: {
     textOverlays: [],
     defaultTransition: "fade",
@@ -518,6 +527,11 @@ export const useProjectWizardStore = create<ProjectWizardState>((set, get) => ({
     }
   },
 
+  setAudioPlans: (data) =>
+    set({
+      audioPlans: { ...get().audioPlans, ...data },
+    }),
+
   // Composition
   setTitleCard: (config) =>
     set({
@@ -595,8 +609,8 @@ export const useProjectWizardStore = create<ProjectWizardState>((set, get) => ({
       const completedSteps: WizardStep[] = []
       let currentStep: WizardStep = "platform"
 
-      // Platform is complete if project has a platform_id
-      if (project.platform_id) {
+      // Platform is complete if project has a platform_id OR if brief exists (can't get to brief without completing platform)
+      if (project.platform_id || project.brief) {
         completedSteps.push("platform")
         currentStep = "brief"
       }
@@ -614,7 +628,7 @@ export const useProjectWizardStore = create<ProjectWizardState>((set, get) => ({
       }
 
       // Storyboard is complete if it has acts
-      if (project.storyboard?.content) {
+      if (project.storyboard?.acts) {
         completedSteps.push("story")
         currentStep = "shots"
       }
@@ -624,6 +638,67 @@ export const useProjectWizardStore = create<ProjectWizardState>((set, get) => ({
         completedSteps.push("shots")
         currentStep = "filming"
       }
+
+      // Reconstruct shots from scenes
+      const restoredShots: Shot[] = []
+      const restoredShotMedia: Record<string, Asset> = {}
+      if (project.scenes) {
+        for (const scene of project.scenes) {
+          const sceneIndex = scene.sort_order || 0
+          if (scene.shots) {
+            for (const dbShot of scene.shots) {
+              const shot: Shot = {
+                id: dbShot.id,
+                sceneIndex,
+                shotNumber: (dbShot.sort_order || 0) + 1,
+                description: dbShot.description || "",
+                duration: dbShot.duration || 3,
+                shotType: dbShot.shot_type || "Medium",
+                notes: dbShot.notes || "",
+                mediaId: dbShot.media_url ? dbShot.id : undefined,
+              }
+              restoredShots.push(shot)
+
+              // If shot has media, add to shotMedia
+              if (dbShot.media_url) {
+                restoredShotMedia[shot.id] = {
+                  id: dbShot.id,
+                  type: (dbShot.media_type as "image" | "video" | "audio") || "image",
+                  url: dbShot.media_url,
+                  thumbnailUrl: dbShot.media_thumbnail_url || dbShot.media_url,
+                  name: dbShot.name || `Shot ${shot.shotNumber}`,
+                }
+              }
+            }
+          }
+        }
+      }
+
+      // Restore audio plans from brief
+      const restoredAudioPlans: AudioPlans = project.brief?.audio_plans
+        ? (project.brief.audio_plans as AudioPlans)
+        : {}
+
+      // Restore composition
+      const restoredComposition: CompositionData = project.composition
+        ? {
+            title: project.composition.title_card
+              ? (project.composition.title_card as TitleConfig)
+              : undefined,
+            outro: project.composition.outro_card
+              ? (project.composition.outro_card as TitleConfig)
+              : undefined,
+            defaultTransition: project.composition.default_transition || "fade",
+            transitionDuration: project.composition.transition_duration || 0.5,
+            textOverlays: project.composition.text_overlays
+              ? (project.composition.text_overlays as TextOverlayConfig[])
+              : [],
+          }
+        : {
+            defaultTransition: "fade",
+            transitionDuration: 0.5,
+            textOverlays: [],
+          }
 
       // Set the state with loaded data
       set({
@@ -637,7 +712,9 @@ export const useProjectWizardStore = create<ProjectWizardState>((set, get) => ({
               platformId: project.platform_id,
               platformName: project.platform?.name,
             }
-          : null,
+          : project.brief
+            ? { type: "new" }  // If brief exists but no platform_id, user selected "new platform"
+            : null,
         brief: project.brief
           ? {
               name: project.brief.name || "",
@@ -646,19 +723,30 @@ export const useProjectWizardStore = create<ProjectWizardState>((set, get) => ({
               tone: project.brief.tone || "",
               duration: project.brief.duration || "",
               aspectRatio: (project.brief.aspect_ratio as AspectRatio) || "16:9",
+              videoContent: project.brief.video_content
+                ? (project.brief.video_content as VideoContent)
+                : undefined,
             }
           : null,
         moodBoard: project.mood_board
           ? {
-              images: [], // TODO: load mood board images
+              images: (project.mood_board.images as { id: string; url: string; name: string }[]) || [],
               colors: (project.mood_board.colors as string[]) || [],
               keywords: (project.mood_board.keywords as string[]) || [],
-              foundationId: project.mood_board.foundation_id || undefined,
+              foundationId: (project.mood_board as any).foundation_id || undefined,
             }
           : null,
-        storyboard: project.storyboard?.content
-          ? { acts: project.storyboard.content as unknown as Act[] }
+        storyboard: project.storyboard?.acts
+          ? { acts: project.storyboard.acts as unknown as Act[] }
           : null,
+        shots: restoredShots,
+        shotMedia: restoredShotMedia,
+        filmingProgress: {
+          currentShotIndex: 0,
+          completedShots: restoredShots.filter(s => restoredShotMedia[s.id]).map(s => s.id),
+        },
+        audioPlans: restoredAudioPlans,
+        composition: restoredComposition,
       })
     } catch (error) {
       console.error("Error loading draft:", error)

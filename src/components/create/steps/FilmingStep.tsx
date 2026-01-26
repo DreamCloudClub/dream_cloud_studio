@@ -1,97 +1,196 @@
-import { useState } from "react"
-import { Wand2, FolderOpen, Upload, Check, ChevronLeft, ChevronRight, Loader2 } from "lucide-react"
-import { useProjectWizardStore, type Asset } from "@/state/projectWizardStore"
+import { useState, useEffect } from "react"
+import { useNavigate } from "react-router-dom"
+import {
+  Video,
+  ChevronLeft,
+  ChevronRight,
+  Check,
+  Loader2,
+  Save,
+  Play,
+  Sparkles,
+  Image as ImageIcon,
+} from "lucide-react"
+import { useProjectWizardStore } from "@/state/projectWizardStore"
 import { Button } from "@/components/ui/button"
 import { cn } from "@/lib/utils"
+import { getScenesWithShots, updateShot } from "@/services/projects"
+import { generateVideo } from "@/services/replicate"
+import type { Shot } from "@/types/database"
 
-type MediaSource = "generate" | "library" | "upload" | null
+// Video generation models
+const VIDEO_MODELS = [
+  { id: "kling", label: "Kling v2.1", description: "Best quality, 5 or 10 sec" },
+  { id: "minimax", label: "Minimax Video-01", description: "Good quality, 6 sec fixed" },
+]
+
+// Duration options (Kling only)
+const DURATION_OPTIONS = [
+  { id: 5, label: "5 seconds", description: "Quick clip" },
+  { id: 10, label: "10 seconds", description: "Full scene" },
+]
+
+// Quality options (Kling only)
+const QUALITY_OPTIONS = [
+  { id: "pro", label: "1080p Pro", description: "$0.09/sec" },
+  { id: "standard", label: "720p Standard", description: "$0.05/sec" },
+]
+
+// Motion prompt presets
+const MOTION_PRESETS = [
+  { id: "cinematic", label: "Cinematic", prompt: "Smooth cinematic motion, gentle camera movement, professional cinematography" },
+  { id: "dynamic", label: "Dynamic", prompt: "Dynamic motion, energetic movement, exciting camera work" },
+  { id: "subtle", label: "Subtle", prompt: "Subtle gentle motion, minimal movement, calm atmosphere" },
+  { id: "zoom", label: "Slow Zoom", prompt: "Slow zoom in, dramatic reveal, focused movement" },
+  { id: "pan", label: "Pan Shot", prompt: "Smooth horizontal pan, sweeping view, cinematic pan" },
+]
+
+interface ShotWithScene extends Shot {
+  sceneName: string
+  sceneDescription: string | null
+  sceneIndex: number
+  shotIndex: number
+}
 
 export function FilmingStep() {
+  const navigate = useNavigate()
   const {
-    shots,
-    shotMedia,
-    filmingProgress,
-    setCurrentShotIndex,
-    setShotMedia,
-    markShotComplete,
     goToNextStep,
     goToPreviousStep,
     markStepComplete,
+    projectId,
   } = useProjectWizardStore()
 
-  const [selectedSource, setSelectedSource] = useState<MediaSource>(null)
+  const [isLoading, setIsLoading] = useState(true)
+  const [shots, setShots] = useState<ShotWithScene[]>([])
+  const [currentIndex, setCurrentIndex] = useState(0)
   const [isGenerating, setIsGenerating] = useState(false)
-  const [generatedOptions, setGeneratedOptions] = useState<Asset[]>([])
-  const [selectedOption, setSelectedOption] = useState<Asset | null>(null)
+  const [generatedVideoUrl, setGeneratedVideoUrl] = useState<string | null>(null)
+  const [isSaving, setIsSaving] = useState(false)
 
-  const currentIndex = filmingProgress.currentShotIndex
+  // Video generation options
+  const [selectedModel, setSelectedModel] = useState("kling")
+  const [selectedDuration, setSelectedDuration] = useState<5 | 10>(5)
+  const [selectedQuality, setSelectedQuality] = useState<"standard" | "pro">("pro")
+  const [selectedMotionPreset, setSelectedMotionPreset] = useState("cinematic")
+
+  // Load shots with images from database
+  useEffect(() => {
+    async function loadShots() {
+      if (!projectId) {
+        setIsLoading(false)
+        return
+      }
+
+      try {
+        const scenesWithShots = await getScenesWithShots(projectId)
+
+        // Flatten and filter to only shots that have images
+        const shotQueue: ShotWithScene[] = []
+        scenesWithShots.forEach((scene, sceneIdx) => {
+          scene.shots.forEach((shot, shotIdx) => {
+            // Only include shots that have a source image
+            if (shot.media_url && shot.media_type === "image") {
+              shotQueue.push({
+                ...shot,
+                sceneName: scene.name,
+                sceneDescription: scene.description,
+                sceneIndex: sceneIdx,
+                shotIndex: shotIdx,
+              })
+            }
+          })
+        })
+
+        setShots(shotQueue)
+
+        // Find first shot without video
+        const firstIncomplete = shotQueue.findIndex((s) => !s.video_url)
+        if (firstIncomplete >= 0) {
+          setCurrentIndex(firstIncomplete)
+        }
+      } catch (error) {
+        console.error("Error loading shots:", error)
+      } finally {
+        setIsLoading(false)
+      }
+    }
+
+    loadShots()
+  }, [projectId])
+
   const currentShot = shots[currentIndex]
-  const currentMedia = currentShot ? shotMedia[currentShot.id] : null
-  const completedCount = filmingProgress.completedShots.length
-  const isCurrentComplete = currentShot && filmingProgress.completedShots.includes(currentShot.id)
+  const completedCount = shots.filter((s) => s.video_url).length
 
-  const handleSourceSelect = (source: MediaSource) => {
-    setSelectedSource(source)
-    setGeneratedOptions([])
-    setSelectedOption(null)
+  const handleGenerate = async () => {
+    if (!currentShot?.media_url) return
 
-    if (source === "generate") {
-      handleGenerate()
-    }
-  }
-
-  const handleGenerate = () => {
     setIsGenerating(true)
+    setGeneratedVideoUrl(null)
 
-    // Simulate AI generation with multiple options
-    setTimeout(() => {
-      const options: Asset[] = Array.from({ length: 4 }, (_, i) => ({
-        id: crypto.randomUUID(),
-        type: "image" as const,
-        url: `https://picsum.photos/seed/${Math.random()}/800/450`,
-        thumbnailUrl: `https://picsum.photos/seed/${Math.random()}/200/112`,
-        name: `Option ${i + 1}`,
-      }))
-      setGeneratedOptions(options)
+    try {
+      console.log("Generating video from image:", currentShot.media_url)
+
+      // Get the motion prompt from the preset
+      const motionPreset = MOTION_PRESETS.find(p => p.id === selectedMotionPreset)
+      const motionPrompt = motionPreset?.prompt || ""
+
+      // Combine shot description with motion prompt
+      const fullPrompt = currentShot.description
+        ? `${currentShot.description}. ${motionPrompt}`
+        : motionPrompt
+
+      const videoUrl = await generateVideo({
+        imageUrl: currentShot.media_url,
+        prompt: fullPrompt,
+        duration: selectedModel === "kling" ? selectedDuration : undefined,
+        quality: selectedModel === "kling" ? selectedQuality : undefined,
+        model: selectedModel as "kling" | "minimax",
+      })
+
+      setGeneratedVideoUrl(videoUrl)
+    } catch (error) {
+      console.error("Error generating video:", error)
+      alert("Error generating video: " + (error instanceof Error ? error.message : "Unknown error"))
+    } finally {
       setIsGenerating(false)
-    }, 2000)
-  }
-
-  const handleSelectOption = (option: Asset) => {
-    setSelectedOption(option)
-  }
-
-  const handleConfirmMedia = () => {
-    if (!currentShot || !selectedOption) return
-
-    setShotMedia(currentShot.id, selectedOption)
-    markShotComplete(currentShot.id)
-    setSelectedSource(null)
-    setGeneratedOptions([])
-    setSelectedOption(null)
-
-    // Auto-advance to next shot
-    if (currentIndex < shots.length - 1) {
-      setCurrentShotIndex(currentIndex + 1)
     }
   }
 
-  const handlePreviousShot = () => {
-    if (currentIndex > 0) {
-      setCurrentShotIndex(currentIndex - 1)
-      setSelectedSource(null)
-      setGeneratedOptions([])
-      setSelectedOption(null)
+  const handleSelectAndNext = async () => {
+    if (!generatedVideoUrl || !currentShot) return
+
+    setIsSaving(true)
+    try {
+      // Save video URL to database
+      await updateShot(currentShot.id, {
+        video_url: generatedVideoUrl,
+      })
+
+      // Update local state
+      const updatedShots = [...shots]
+      updatedShots[currentIndex] = {
+        ...updatedShots[currentIndex],
+        video_url: generatedVideoUrl,
+      }
+      setShots(updatedShots)
+
+      // Reset for next shot
+      setGeneratedVideoUrl(null)
+
+      // Move to next shot or finish
+      if (currentIndex < shots.length - 1) {
+        setCurrentIndex(currentIndex + 1)
+      }
+    } catch (error) {
+      console.error("Error saving video:", error)
+    } finally {
+      setIsSaving(false)
     }
   }
 
-  const handleNextShot = () => {
-    if (currentIndex < shots.length - 1) {
-      setCurrentShotIndex(currentIndex + 1)
-      setSelectedSource(null)
-      setGeneratedOptions([])
-      setSelectedOption(null)
-    }
+  const handleSaveDraft = () => {
+    navigate("/library/projects")
   }
 
   const handleContinue = () => {
@@ -99,334 +198,349 @@ export function FilmingStep() {
     goToNextStep()
   }
 
-  const allShotsComplete = completedCount === shots.length
+  const handleSkip = () => {
+    setGeneratedVideoUrl(null)
+    if (currentIndex < shots.length - 1) {
+      setCurrentIndex(currentIndex + 1)
+    }
+  }
 
-  if (!currentShot) {
+  if (isLoading) {
     return (
-      <div className="flex-1 flex items-center justify-center p-6">
-        <div className="text-center">
-          <p className="text-zinc-400">No shots to film. Go back and add some shots first.</p>
-          <Button onClick={goToPreviousStep} className="mt-4">
-            &larr; Back to Shots
-          </Button>
-        </div>
+      <div className="flex-1 flex items-center justify-center">
+        <Loader2 className="w-8 h-8 text-sky-400 animate-spin" />
+      </div>
+    )
+  }
+
+  if (shots.length === 0) {
+    return (
+      <div className="flex-1 flex flex-col items-center justify-center p-6">
+        <ImageIcon className="w-16 h-16 text-zinc-600 mb-4" />
+        <h2 className="text-xl font-semibold text-zinc-200 mb-2">No images to animate</h2>
+        <p className="text-zinc-400 mb-6">Go back and generate some images first.</p>
+        <Button onClick={goToPreviousStep} variant="outline">
+          &larr; Back to Generate
+        </Button>
       </div>
     )
   }
 
   return (
-    <div className="flex-1 flex flex-col p-6 lg:p-8 overflow-y-auto">
-      <div className="max-w-4xl mx-auto w-full">
-        {/* Header with Progress */}
-        <div className="mb-6">
-          <div className="flex items-center justify-between mb-2">
-            <h1 className="text-2xl lg:text-3xl font-bold text-zinc-100">
-              Create Media
-            </h1>
-            <span className="text-sm text-zinc-400 bg-zinc-800 px-3 py-1 rounded-full">
-              Shot {currentIndex + 1} of {shots.length}
-            </span>
+    <div className="flex-1 flex flex-col overflow-hidden">
+      {/* Header with Progress */}
+      <div className="p-4 border-b border-zinc-800 bg-zinc-900/50">
+        <div className="max-w-4xl mx-auto">
+          <div className="flex items-center justify-between mb-3">
+            <h1 className="text-xl font-bold text-zinc-100">Create Videos</h1>
+            <div className="text-sm text-zinc-400">
+              <span className="text-sky-400 font-medium">{completedCount}</span> of{" "}
+              <span className="font-medium">{shots.length}</span> videos complete
+            </div>
           </div>
-          <p className="text-zinc-400">
-            Generate, select, or upload media for each shot in your video.
-          </p>
 
-          {/* Progress Bar */}
-          <div className="mt-4 h-2 bg-zinc-800 rounded-full overflow-hidden">
-            <div
-              className="h-full bg-gradient-to-r from-sky-400 to-blue-600 transition-all duration-300"
-              style={{ width: `${(completedCount / shots.length) * 100}%` }}
-            />
+          {/* Shot Queue Carousel */}
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => {
+                setCurrentIndex(Math.max(0, currentIndex - 1))
+                setGeneratedVideoUrl(null)
+              }}
+              disabled={currentIndex === 0}
+              className="p-1 text-zinc-500 hover:text-zinc-300 disabled:opacity-30"
+            >
+              <ChevronLeft className="w-5 h-5" />
+            </button>
+
+            <div className="flex-1 flex items-center gap-1.5 overflow-x-auto py-1 px-2">
+              {shots.map((shot, idx) => (
+                <button
+                  key={shot.id}
+                  onClick={() => {
+                    setCurrentIndex(idx)
+                    setGeneratedVideoUrl(null)
+                  }}
+                  className={cn(
+                    "flex-shrink-0 w-8 h-8 rounded-lg flex items-center justify-center text-xs font-medium transition-all",
+                    idx === currentIndex
+                      ? "bg-sky-500 text-white ring-2 ring-sky-400/50"
+                      : shot.video_url
+                      ? "bg-green-500/20 text-green-400 border border-green-500/30"
+                      : "bg-zinc-800 text-zinc-400 hover:bg-zinc-700"
+                  )}
+                >
+                  {shot.video_url ? <Check className="w-4 h-4" /> : idx + 1}
+                </button>
+              ))}
+            </div>
+
+            <button
+              onClick={() => {
+                setCurrentIndex(Math.min(shots.length - 1, currentIndex + 1))
+                setGeneratedVideoUrl(null)
+              }}
+              disabled={currentIndex === shots.length - 1}
+              className="p-1 text-zinc-500 hover:text-zinc-300 disabled:opacity-30"
+            >
+              <ChevronRight className="w-5 h-5" />
+            </button>
           </div>
-          <p className="mt-2 text-xs text-zinc-500">
-            {completedCount} of {shots.length} shots complete
-          </p>
         </div>
+      </div>
 
-        {/* Current Shot Card */}
-        <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-6 mb-6">
-          <div className="flex items-start gap-4">
-            {/* Shot Number */}
-            <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-sky-500 to-blue-600 flex items-center justify-center text-xl font-bold text-white flex-shrink-0">
-              {currentIndex + 1}
-            </div>
-
-            {/* Shot Details */}
-            <div className="flex-1">
-              <div className="flex items-center gap-2 mb-2">
-                <span className="text-xs text-zinc-500 bg-zinc-800 px-2 py-1 rounded">
-                  {currentShot.shotType}
-                </span>
-                <span className="text-xs text-zinc-500">
-                  {currentShot.duration}s
-                </span>
-              </div>
-              <p className="text-zinc-200">{currentShot.description}</p>
-              {currentShot.notes && (
-                <p className="text-sm text-zinc-500 mt-1">Note: {currentShot.notes}</p>
-              )}
-            </div>
-
-            {/* Status */}
-            {isCurrentComplete && (
-              <div className="w-8 h-8 rounded-full bg-green-500/20 flex items-center justify-center">
-                <Check className="w-5 h-5 text-green-400" />
-              </div>
-            )}
-          </div>
-        </div>
-
-        {/* Media Selection / Preview Area */}
-        <div className="bg-zinc-900 border border-zinc-800 rounded-xl overflow-hidden mb-6">
-          {/* If media already assigned, show it */}
-          {currentMedia && !selectedSource ? (
-            <div className="p-6">
-              <div className="aspect-video bg-zinc-800 rounded-lg overflow-hidden mb-4">
-                <img
-                  src={currentMedia.url}
-                  alt={currentMedia.name}
-                  className="w-full h-full object-cover"
-                />
-              </div>
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                  <Check className="w-5 h-5 text-green-400" />
-                  <span className="text-sm text-zinc-300">Media assigned</span>
+      {/* Main Content */}
+      <div className="flex-1 overflow-y-auto p-6">
+        <div className="max-w-4xl mx-auto">
+          {currentShot && (
+            <div className="bg-zinc-900 border border-zinc-800 rounded-2xl overflow-hidden">
+              {/* Shot Header */}
+              <div className="p-6 border-b border-zinc-800">
+                <div className="flex items-start justify-between">
+                  <div>
+                    <div className="text-sm text-sky-400 font-medium mb-1">
+                      {currentShot.sceneName} &middot; Shot {currentShot.shotIndex + 1}
+                    </div>
+                    <h2 className="text-2xl font-bold text-zinc-100">
+                      {currentShot.name || `Shot ${currentShot.shotIndex + 1}`}
+                    </h2>
+                  </div>
+                  {currentShot.video_url && (
+                    <span className="px-3 py-1 bg-green-500/20 text-green-400 text-xs font-medium rounded-full flex items-center gap-1">
+                      <Check className="w-3 h-3" />
+                      Complete
+                    </span>
+                  )}
                 </div>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => setSelectedSource("generate")}
-                  className="border-zinc-700"
-                >
-                  Replace
-                </Button>
-              </div>
-            </div>
-          ) : !selectedSource ? (
-            /* Source Selection */
-            <div className="p-6">
-              <h3 className="text-lg font-semibold text-zinc-200 mb-4">
-                How would you like to create media for this shot?
-              </h3>
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                {/* Generate */}
-                <button
-                  onClick={() => handleSourceSelect("generate")}
-                  className="p-6 bg-zinc-800/50 border-2 border-zinc-700 hover:border-sky-500/50 rounded-xl text-center transition-all hover:bg-zinc-800"
-                >
-                  <div className="w-14 h-14 rounded-xl bg-gradient-to-br from-sky-400 via-sky-500 to-blue-600 flex items-center justify-center mx-auto mb-4">
-                    <Wand2 className="w-7 h-7 text-white" />
-                  </div>
-                  <h4 className="font-semibold text-zinc-100 mb-1">Generate</h4>
-                  <p className="text-xs text-zinc-500">Create with AI</p>
-                </button>
-
-                {/* From Library */}
-                <button
-                  onClick={() => handleSourceSelect("library")}
-                  className="p-6 bg-zinc-800/50 border-2 border-zinc-700 hover:border-zinc-600 rounded-xl text-center transition-all hover:bg-zinc-800"
-                >
-                  <div className="w-14 h-14 rounded-xl bg-zinc-700 flex items-center justify-center mx-auto mb-4">
-                    <FolderOpen className="w-7 h-7 text-zinc-400" />
-                  </div>
-                  <h4 className="font-semibold text-zinc-100 mb-1">From Library</h4>
-                  <p className="text-xs text-zinc-500">Use existing asset</p>
-                </button>
-
-                {/* Upload */}
-                <button
-                  onClick={() => handleSourceSelect("upload")}
-                  className="p-6 bg-zinc-800/50 border-2 border-zinc-700 hover:border-zinc-600 rounded-xl text-center transition-all hover:bg-zinc-800"
-                >
-                  <div className="w-14 h-14 rounded-xl bg-zinc-700 flex items-center justify-center mx-auto mb-4">
-                    <Upload className="w-7 h-7 text-zinc-400" />
-                  </div>
-                  <h4 className="font-semibold text-zinc-100 mb-1">Upload</h4>
-                  <p className="text-xs text-zinc-500">From your computer</p>
-                </button>
-              </div>
-            </div>
-          ) : selectedSource === "generate" ? (
-            /* Generation View */
-            <div className="p-6">
-              <div className="flex items-center justify-between mb-4">
-                <h3 className="text-lg font-semibold text-zinc-200">
-                  Generated Options
-                </h3>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={() => setSelectedSource(null)}
-                  className="text-zinc-400"
-                >
-                  Cancel
-                </Button>
               </div>
 
-              {isGenerating ? (
-                <div className="aspect-video bg-zinc-800 rounded-lg flex flex-col items-center justify-center">
-                  <Loader2 className="w-10 h-10 text-sky-400 animate-spin mb-4" />
-                  <p className="text-zinc-400">Generating options...</p>
+              {/* Source Image Preview */}
+              <div className="p-6 border-b border-zinc-800">
+                <div className="flex items-center gap-2 mb-3">
+                  <ImageIcon className="w-4 h-4 text-zinc-400" />
+                  <label className="text-xs text-zinc-500 uppercase tracking-wide font-medium">
+                    Source Image
+                  </label>
                 </div>
-              ) : (
-                <>
-                  <div className="grid grid-cols-2 gap-4 mb-4">
-                    {generatedOptions.map((option, idx) => (
-                      <button
-                        key={option.id}
-                        onClick={() => handleSelectOption(option)}
-                        className={cn(
-                          "relative aspect-video bg-zinc-800 rounded-lg overflow-hidden transition-all",
-                          selectedOption?.id === option.id
-                            ? "ring-2 ring-sky-500 ring-offset-2 ring-offset-zinc-900"
-                            : "hover:ring-2 hover:ring-zinc-600"
-                        )}
-                      >
-                        <img
-                          src={option.url}
-                          alt={option.name}
-                          className="w-full h-full object-cover"
-                        />
-                        <span className="absolute bottom-2 left-2 text-xs bg-black/60 text-white px-2 py-1 rounded">
-                          Option {idx + 1}
-                        </span>
-                        {selectedOption?.id === option.id && (
-                          <div className="absolute top-2 right-2 w-6 h-6 rounded-full bg-sky-500 flex items-center justify-center">
-                            <Check className="w-4 h-4 text-white" />
-                          </div>
-                        )}
-                      </button>
-                    ))}
-                  </div>
+                <div className="relative aspect-video rounded-xl overflow-hidden border border-zinc-700 bg-zinc-800">
+                  <img
+                    src={currentShot.media_url!}
+                    alt={currentShot.name || "Source image"}
+                    className="w-full h-full object-cover"
+                  />
+                </div>
 
-                  <div className="flex justify-between">
-                    <Button
-                      variant="outline"
-                      onClick={handleGenerate}
-                      className="border-zinc-700"
+                {currentShot.description && (
+                  <div className="mt-4">
+                    <label className="text-xs text-zinc-500 uppercase tracking-wide font-medium">
+                      Shot Description
+                    </label>
+                    <p className="mt-1 text-sm text-zinc-300">{currentShot.description}</p>
+                  </div>
+                )}
+              </div>
+
+              {/* Video Generation Options */}
+              <div className="p-6 border-b border-zinc-800">
+                <h3 className="text-sm font-medium text-zinc-300 mb-4">Video Options</h3>
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+                  {/* Model */}
+                  <div>
+                    <label className="text-xs text-zinc-500 uppercase tracking-wide">Model</label>
+                    <select
+                      value={selectedModel}
+                      onChange={(e) => setSelectedModel(e.target.value)}
+                      className="mt-1 w-full px-3 py-2 bg-zinc-800 border border-zinc-700 rounded-lg text-sm text-zinc-200 focus:outline-none focus:border-sky-500"
                     >
-                      <Wand2 className="w-4 h-4 mr-2" />
+                      {VIDEO_MODELS.map((model) => (
+                        <option key={model.id} value={model.id}>
+                          {model.label}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  {/* Duration (Kling only) */}
+                  <div>
+                    <label className="text-xs text-zinc-500 uppercase tracking-wide">Duration</label>
+                    <select
+                      value={selectedDuration}
+                      onChange={(e) => setSelectedDuration(Number(e.target.value) as 5 | 10)}
+                      disabled={selectedModel !== "kling"}
+                      className="mt-1 w-full px-3 py-2 bg-zinc-800 border border-zinc-700 rounded-lg text-sm text-zinc-200 focus:outline-none focus:border-sky-500 disabled:opacity-50"
+                    >
+                      {DURATION_OPTIONS.map((opt) => (
+                        <option key={opt.id} value={opt.id}>
+                          {opt.label}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  {/* Quality (Kling only) */}
+                  <div>
+                    <label className="text-xs text-zinc-500 uppercase tracking-wide">Quality</label>
+                    <select
+                      value={selectedQuality}
+                      onChange={(e) => setSelectedQuality(e.target.value as "standard" | "pro")}
+                      disabled={selectedModel !== "kling"}
+                      className="mt-1 w-full px-3 py-2 bg-zinc-800 border border-zinc-700 rounded-lg text-sm text-zinc-200 focus:outline-none focus:border-sky-500 disabled:opacity-50"
+                    >
+                      {QUALITY_OPTIONS.map((opt) => (
+                        <option key={opt.id} value={opt.id}>
+                          {opt.label}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  {/* Motion Preset */}
+                  <div>
+                    <label className="text-xs text-zinc-500 uppercase tracking-wide">Motion Style</label>
+                    <select
+                      value={selectedMotionPreset}
+                      onChange={(e) => setSelectedMotionPreset(e.target.value)}
+                      className="mt-1 w-full px-3 py-2 bg-zinc-800 border border-zinc-700 rounded-lg text-sm text-zinc-200 focus:outline-none focus:border-sky-500"
+                    >
+                      {MOTION_PRESETS.map((preset) => (
+                        <option key={preset.id} value={preset.id}>
+                          {preset.label}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
+
+                {/* Info box */}
+                <div className="mt-4 p-4 bg-zinc-800/50 rounded-xl">
+                  <div className="flex items-center gap-2 mb-2">
+                    <Sparkles className="w-4 h-4 text-purple-400" />
+                    <label className="text-xs text-purple-400 uppercase tracking-wide font-medium">
+                      {selectedModel === "kling" ? "Kling v2.1" : "Minimax Video-01"}
+                    </label>
+                  </div>
+                  <p className="text-sm text-zinc-400">
+                    {selectedModel === "kling"
+                      ? `Creates high-quality ${selectedDuration} second videos at ${selectedQuality === "pro" ? "1080p" : "720p"}. Generation takes 2-4 minutes.`
+                      : "Creates 6 second videos at high quality. Generation takes 1-2 minutes."
+                    }
+                  </p>
+                </div>
+              </div>
+
+              {/* Generate Button */}
+              <div className="p-6 border-b border-zinc-800">
+                <Button
+                  onClick={handleGenerate}
+                  disabled={isGenerating}
+                  className="w-full bg-gradient-to-r from-purple-400 via-purple-500 to-indigo-600 hover:from-purple-300 hover:via-purple-400 hover:to-indigo-500 text-white shadow-lg shadow-purple-500/20 py-6 text-lg"
+                >
+                  {isGenerating ? (
+                    <>
+                      <Loader2 className="w-5 h-5 mr-2 animate-spin" />
+                      Generating Video...
+                    </>
+                  ) : (
+                    <>
+                      <Video className="w-5 h-5 mr-2" />
+                      Generate Video
+                    </>
+                  )}
+                </Button>
+              </div>
+
+              {/* Generated Video Preview */}
+              {generatedVideoUrl && (
+                <div className="p-6">
+                  <h3 className="text-sm font-medium text-zinc-300 mb-4">Generated Video</h3>
+                  <div className="relative aspect-video rounded-xl overflow-hidden border-2 border-sky-500 bg-zinc-800">
+                    <video
+                      src={generatedVideoUrl}
+                      controls
+                      autoPlay
+                      loop
+                      className="w-full h-full object-cover"
+                    />
+                    <div className="absolute top-2 right-2 px-2 py-1 bg-black/60 rounded text-xs text-white flex items-center gap-1">
+                      <Play className="w-3 h-3" />
+                      Preview
+                    </div>
+                  </div>
+
+                  {/* Action Buttons */}
+                  <div className="mt-6 flex items-center gap-3">
+                    <Button
+                      onClick={handleSkip}
+                      variant="ghost"
+                      className="text-zinc-400 hover:text-zinc-300"
+                    >
+                      Skip this shot
+                    </Button>
+                    <Button
+                      onClick={handleGenerate}
+                      variant="outline"
+                      className="border-zinc-700 text-zinc-300"
+                    >
                       Regenerate
                     </Button>
+                    <div className="flex-1" />
                     <Button
-                      onClick={handleConfirmMedia}
-                      disabled={!selectedOption}
-                      className={cn(
-                        selectedOption
-                          ? "bg-sky-500 hover:bg-sky-400 text-white"
-                          : "bg-zinc-800 text-zinc-500 cursor-not-allowed"
-                      )}
+                      onClick={handleSelectAndNext}
+                      disabled={isSaving}
+                      className="px-8 bg-gradient-to-r from-green-400 to-emerald-500 hover:from-green-300 hover:to-emerald-400 text-white"
                     >
-                      Use Selected
+                      {isSaving ? (
+                        <>
+                          <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                          Saving...
+                        </>
+                      ) : currentIndex < shots.length - 1 ? (
+                        <>
+                          Select & Next
+                          <ChevronRight className="w-4 h-4 ml-2" />
+                        </>
+                      ) : (
+                        <>
+                          <Check className="w-4 h-4 mr-2" />
+                          Select & Finish
+                        </>
+                      )}
                     </Button>
                   </div>
-                </>
+                </div>
               )}
-            </div>
-          ) : selectedSource === "library" ? (
-            /* Library View */
-            <div className="p-6">
-              <div className="flex items-center justify-between mb-4">
-                <h3 className="text-lg font-semibold text-zinc-200">
-                  Select from Library
-                </h3>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={() => setSelectedSource(null)}
-                  className="text-zinc-400"
-                >
-                  Cancel
-                </Button>
-              </div>
-              <div className="aspect-video bg-zinc-800 rounded-lg flex flex-col items-center justify-center">
-                <FolderOpen className="w-12 h-12 text-zinc-600 mb-4" />
-                <p className="text-zinc-400">Asset library coming soon</p>
-                <p className="text-sm text-zinc-600">Use Generate or Upload for now</p>
-              </div>
-            </div>
-          ) : (
-            /* Upload View */
-            <div className="p-6">
-              <div className="flex items-center justify-between mb-4">
-                <h3 className="text-lg font-semibold text-zinc-200">
-                  Upload Media
-                </h3>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={() => setSelectedSource(null)}
-                  className="text-zinc-400"
-                >
-                  Cancel
-                </Button>
-              </div>
-              <div className="aspect-video bg-zinc-800 border-2 border-dashed border-zinc-700 rounded-lg flex flex-col items-center justify-center cursor-pointer hover:border-zinc-600 transition-colors">
-                <Upload className="w-12 h-12 text-zinc-600 mb-4" />
-                <p className="text-zinc-400">Click to upload or drag and drop</p>
-                <p className="text-sm text-zinc-600">PNG, JPG, MP4 up to 100MB</p>
-              </div>
+
+              {/* Show existing video if already generated */}
+              {!generatedVideoUrl && currentShot.video_url && (
+                <div className="p-6">
+                  <h3 className="text-sm font-medium text-zinc-300 mb-4">Current Video</h3>
+                  <div className="relative aspect-video rounded-xl overflow-hidden border border-zinc-700">
+                    <video
+                      src={currentShot.video_url}
+                      controls
+                      loop
+                      className="w-full h-full object-cover"
+                    />
+                  </div>
+                  <div className="mt-4 flex items-center gap-3">
+                    <Button
+                      onClick={handleGenerate}
+                      variant="outline"
+                      className="border-zinc-700 text-zinc-300"
+                    >
+                      <Video className="w-4 h-4 mr-2" />
+                      Regenerate
+                    </Button>
+                  </div>
+                </div>
+              )}
             </div>
           )}
         </div>
+      </div>
 
-        {/* Shot Navigation */}
-        <div className="flex items-center justify-between mb-6">
-          <Button
-            variant="ghost"
-            onClick={handlePreviousShot}
-            disabled={currentIndex === 0}
-            className={cn(
-              currentIndex === 0
-                ? "text-zinc-600 cursor-not-allowed"
-                : "text-zinc-400 hover:text-zinc-300"
-            )}
-          >
-            <ChevronLeft className="w-4 h-4 mr-1" />
-            Previous Shot
-          </Button>
-
-          {/* Shot Dots */}
-          <div className="flex gap-1.5">
-            {shots.map((shot, idx) => (
-              <button
-                key={shot.id}
-                onClick={() => {
-                  setCurrentShotIndex(idx)
-                  setSelectedSource(null)
-                  setGeneratedOptions([])
-                  setSelectedOption(null)
-                }}
-                className={cn(
-                  "w-2.5 h-2.5 rounded-full transition-all",
-                  idx === currentIndex
-                    ? "bg-sky-500 w-6"
-                    : filmingProgress.completedShots.includes(shot.id)
-                    ? "bg-green-500"
-                    : "bg-zinc-700 hover:bg-zinc-600"
-                )}
-              />
-            ))}
-          </div>
-
-          <Button
-            variant="ghost"
-            onClick={handleNextShot}
-            disabled={currentIndex === shots.length - 1}
-            className={cn(
-              currentIndex === shots.length - 1
-                ? "text-zinc-600 cursor-not-allowed"
-                : "text-zinc-400 hover:text-zinc-300"
-            )}
-          >
-            Next Shot
-            <ChevronRight className="w-4 h-4 ml-1" />
-          </Button>
-        </div>
-
-        {/* Navigation Buttons */}
-        <div className="flex justify-between">
+      {/* Bottom Navigation */}
+      <div className="p-4 border-t border-zinc-800 bg-zinc-900/50">
+        <div className="max-w-4xl mx-auto flex items-center justify-between">
           <Button
             variant="ghost"
             onClick={goToPreviousStep}
@@ -434,18 +548,25 @@ export function FilmingStep() {
           >
             &larr; Back
           </Button>
-          <Button
-            onClick={handleContinue}
-            disabled={!allShotsComplete}
-            className={cn(
-              "px-8",
-              allShotsComplete
-                ? "bg-gradient-to-r from-sky-400 via-sky-500 to-blue-600 hover:from-sky-300 hover:via-sky-400 hover:to-blue-500 text-white shadow-lg shadow-sky-500/20"
-                : "bg-zinc-800 text-zinc-500 cursor-not-allowed"
-            )}
-          >
-            {allShotsComplete ? "Continue" : `${completedCount}/${shots.length} Complete`}
-          </Button>
+
+          <div className="flex items-center gap-3">
+            <Button
+              variant="outline"
+              onClick={handleSaveDraft}
+              className="border-zinc-700 text-zinc-300 hover:bg-zinc-800"
+            >
+              <Save className="w-4 h-4 mr-2" />
+              Save Draft
+            </Button>
+
+            <Button
+              onClick={handleContinue}
+              className="bg-gradient-to-r from-sky-400 via-sky-500 to-blue-600 hover:from-sky-300 hover:via-sky-400 hover:to-blue-500 text-white shadow-lg shadow-sky-500/20 px-8"
+            >
+              Continue
+              <ChevronRight className="w-4 h-4 ml-2" />
+            </Button>
+          </div>
         </div>
       </div>
     </div>

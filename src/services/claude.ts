@@ -167,6 +167,154 @@ const TOOLS = [
     }
   },
   {
+    name: 'update_storyboard',
+    description: 'Update the scenes and shots structure. Use when on the scenes step to outline shots for each scene.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        acts: {
+          type: 'array',
+          description: 'Array of scenes (Scene 1, Scene 2, etc.)',
+          items: {
+            type: 'object',
+            properties: {
+              name: { type: 'string', description: 'Scene name (e.g., "Scene 1", "Scene 2")' },
+              description: { type: 'string', description: 'Brief description of what happens in this scene (optional)' },
+              beats: {
+                type: 'array',
+                description: 'Shots within this scene',
+                items: {
+                  type: 'object',
+                  properties: {
+                    title: { type: 'string', description: 'Shot title (e.g., "Hero entrance", "Product reveal")' },
+                    description: { type: 'string', description: 'Detailed visual description of the shot - this becomes the image generation prompt' }
+                  },
+                  required: ['description']
+                }
+              }
+            },
+            required: ['name', 'beats']
+          }
+        }
+      },
+      required: ['acts']
+    }
+  },
+  {
+    name: 'add_scene',
+    description: 'Add a new scene to the storyboard. Use this to create a new scene without affecting existing scenes.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        name: { type: 'string', description: 'Scene name (e.g., "Scene 2", "Opening Scene")' },
+        description: { type: 'string', description: 'Brief description of what happens in this scene' },
+        shots: {
+          type: 'array',
+          description: 'Initial shots for this scene (optional)',
+          items: {
+            type: 'object',
+            properties: {
+              title: { type: 'string', description: 'Shot title' },
+              description: { type: 'string', description: 'Visual description of the shot' }
+            },
+            required: ['description']
+          }
+        }
+      },
+      required: ['name']
+    }
+  },
+  {
+    name: 'add_shot_to_scene',
+    description: 'Add a shot to an existing scene. Use this to add shots one at a time without replacing existing shots.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        sceneName: { type: 'string', description: 'Name of the scene to add the shot to (e.g., "Scene 1")' },
+        title: { type: 'string', description: 'Shot title (e.g., "Hero entrance", "Product close-up")' },
+        description: { type: 'string', description: 'Detailed visual description of the shot - this becomes the image generation prompt' }
+      },
+      required: ['sceneName', 'description']
+    }
+  },
+  {
+    name: 'update_scene_shot',
+    description: 'Update an existing shot in a scene. Use to modify title, description, or append additional details to the description.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        sceneName: { type: 'string', description: 'Name of the scene containing the shot (e.g., "Scene 1")' },
+        shotTitle: { type: 'string', description: 'Current title of the shot to update (use this OR shotIndex)' },
+        shotIndex: { type: 'number', description: 'Index of the shot to update, 0-based (use this OR shotTitle)' },
+        newTitle: { type: 'string', description: 'New title for the shot (optional - only if changing title)' },
+        newDescription: { type: 'string', description: 'New description for the shot (replaces existing unless append is true)' },
+        append: { type: 'boolean', description: 'If true, append newDescription to existing description instead of replacing' }
+      },
+      required: ['sceneName']
+    }
+  },
+  {
+    name: 'update_shots',
+    description: 'Create or update the shot list. Use when on the shots step to add planned shots.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        shots: {
+          type: 'array',
+          description: 'Array of shots to create',
+          items: {
+            type: 'object',
+            properties: {
+              description: { type: 'string', description: 'What happens in this shot' },
+              duration: { type: 'number', description: 'Shot duration in seconds (default 3)' },
+              shotType: {
+                type: 'string',
+                description: 'Camera shot type (e.g., "Wide shot", "Close-up", "Medium shot", "POV", "Aerial")'
+              },
+              notes: { type: 'string', description: 'Additional notes for this shot' }
+            },
+            required: ['description']
+          }
+        }
+      },
+      required: ['shots']
+    }
+  },
+  {
+    name: 'add_shot',
+    description: 'Add a single shot to the shot list.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        description: { type: 'string', description: 'What happens in this shot' },
+        duration: { type: 'number', description: 'Shot duration in seconds (default 3)' },
+        shotType: {
+          type: 'string',
+          description: 'Camera shot type (e.g., "Wide shot", "Close-up", "Medium shot")'
+        },
+        sceneIndex: { type: 'number', description: 'Which scene this shot belongs to (0-indexed)' },
+        notes: { type: 'string', description: 'Additional notes' }
+      },
+      required: ['description']
+    }
+  },
+  {
+    name: 'set_audio',
+    description: 'Set audio elements for the project - voiceover script, music style, or sound effects.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        voiceoverScript: { type: 'string', description: 'The voiceover narration script' },
+        musicStyle: { type: 'string', description: 'Description of background music style (e.g., "upbeat corporate", "emotional piano")' },
+        soundEffects: {
+          type: 'array',
+          items: { type: 'string' },
+          description: 'List of sound effects needed (e.g., ["whoosh", "typing sounds", "crowd ambience"])'
+        }
+      }
+    }
+  },
+  {
     name: 'go_to_next_step',
     description: 'Move to the next step in the wizard. Use after the current step is complete.',
     input_schema: {
@@ -260,6 +408,112 @@ const TOOLS = [
       },
       required: ['text']
     }
+  },
+  // ============================================
+  // ASSET GENERATION TOOLS
+  // ============================================
+  {
+    name: 'generate_image',
+    description: 'Generate an image from a text prompt. Use this when the user wants to create visual assets like character portraits, backgrounds, scenes, or props. The generated image will be saved as a project asset.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        prompt: {
+          type: 'string',
+          description: 'Detailed description of the image to generate. Be specific about style, lighting, composition, etc.'
+        },
+        category: {
+          type: 'string',
+          enum: ['scene', 'stage', 'character', 'weather', 'prop', 'effect'],
+          description: 'Asset category for organization'
+        },
+        name: {
+          type: 'string',
+          description: 'A name for this asset (e.g., "Hero character portrait", "City background")'
+        },
+        style: {
+          type: 'string',
+          description: 'Visual style hint (e.g., "cinematic", "cartoon", "photorealistic", "anime")'
+        },
+        aspectRatio: {
+          type: 'string',
+          enum: ['square', 'landscape', 'portrait'],
+          description: 'Image aspect ratio. Default is based on project aspect ratio.'
+        }
+      },
+      required: ['prompt', 'name']
+    }
+  },
+  {
+    name: 'generate_voiceover',
+    description: 'Generate voiceover audio from text using ElevenLabs. Use this when the user wants to create narration or character dialogue.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        text: {
+          type: 'string',
+          description: 'The script/text to convert to speech'
+        },
+        name: {
+          type: 'string',
+          description: 'A name for this audio asset (e.g., "Scene 1 narration", "Character intro")'
+        },
+        voiceStyle: {
+          type: 'string',
+          enum: ['calm_female', 'warm_male', 'deep_male', 'friendly_female', 'authoritative_male', 'energetic_female'],
+          description: 'Voice style to use'
+        },
+        sceneId: {
+          type: 'string',
+          description: 'Optional scene ID to attach this voiceover to'
+        }
+      },
+      required: ['text', 'name']
+    }
+  },
+  {
+    name: 'generate_music',
+    description: 'Generate background music from a text description using AI. Use this when the user wants custom background music for their video.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        prompt: {
+          type: 'string',
+          description: 'Description of the music (e.g., "upbeat corporate music with light drums", "emotional piano melody")'
+        },
+        name: {
+          type: 'string',
+          description: 'A name for this music asset (e.g., "Intro music", "Background score")'
+        },
+        duration: {
+          type: 'number',
+          description: 'Duration in seconds (5-30 seconds). Default is 10.'
+        }
+      },
+      required: ['prompt', 'name']
+    }
+  },
+  {
+    name: 'generate_sound_effect',
+    description: 'Generate a sound effect from a text description using ElevenLabs. Use this for whooshes, impacts, ambient sounds, etc.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        prompt: {
+          type: 'string',
+          description: 'Description of the sound effect (e.g., "swoosh transition", "keyboard typing", "crowd cheering")'
+        },
+        name: {
+          type: 'string',
+          description: 'A name for this sound effect (e.g., "Transition swoosh", "Typing sounds")'
+        },
+        duration: {
+          type: 'number',
+          description: 'Duration in seconds (0.5-22 seconds). Optional.'
+        }
+      },
+      required: ['prompt', 'name']
+    }
   }
 ]
 
@@ -315,31 +569,118 @@ Ask: "What visual style are you going for?" and WAIT.
 After they answer, update keywords and ask about colors.
 Only use go_to_next_step when user says they're happy with the mood board.`,
 
-  story: `You are on the STORY step (step 4 of 8).
+  story: `You are on the SCENES & SHOTS step (step 4 of 8).
 
-Ask about one story element at a time:
-1. "What's the hook or opening?"
-2. "What's the main message?"
-3. "How should it end?"
+Your job is to help the user outline their video's scenes and the shots within each scene.
 
-WAIT for answers. Only go_to_next_step when user confirms story is complete.`,
+CONVERSATION FLOW:
+1. Ask: "Let's plan your shots. What happens in the first shot of Scene 1?"
+2. After they describe a shot, use add_shot_to_scene to add it
+3. Ask: "What's the next shot?" and continue adding shots
+4. When they want to move to a new scene, use add_scene to create it
+
+AVAILABLE TOOLS:
+- add_shot_to_scene: Add a single shot to an existing scene (PREFERRED for adding shots one at a time)
+- add_scene: Create a new scene, optionally with initial shots
+- update_scene_shot: Update an existing shot's title or description (can append to existing description)
+- update_storyboard: Replace ALL scenes and shots (use sparingly, mainly for major restructuring)
+
+EXAMPLES:
+Add a shot to Scene 1:
+add_shot_to_scene({ sceneName: "Scene 1", title: "Hero entrance", description: "Wide shot of character walking into frame against city skyline at sunset" })
+
+Create a new scene:
+add_scene({ name: "Scene 2", description: "The confrontation" })
+
+Update a shot's description:
+update_scene_shot({ sceneName: "Scene 1", shotTitle: "Hero entrance", newDescription: "Wide shot of character in red coat walking into frame against city skyline at golden hour sunset" })
+
+Append more details to a shot:
+update_scene_shot({ sceneName: "Scene 1", shotIndex: 0, newDescription: "with dramatic clouds in the background", append: true })
+
+IMPORTANT:
+- Each shot description will be used as an image generation prompt, so make them VISUALLY DESCRIPTIVE
+- Use add_shot_to_scene to add shots incrementally as the user describes them
+- Use update_scene_shot to refine or add details to existing shots (use append: true to add to existing description)
+- Use add_scene when the user wants to start a new scene
+- The scene/shot panels update automatically from your tool calls
+- Only go_to_next_step when user confirms their shot list is complete`,
 
   shots: `You are on the SHOTS step (step 5 of 8).
 
-Help plan shots one at a time. Ask about each shot and WAIT.
-Only go_to_next_step when user says the shot list is complete.`,
+Your job is to help plan the shot list based on the story structure.
+
+CONVERSATION FLOW:
+1. Review the storyboard acts and suggest shots for each
+2. Ask: "Based on your story, I'd suggest starting with [shot idea]. What do you think?"
+3. Use add_shot or update_shots to add shots as you discuss them
+4. For each shot, capture: description, duration (2-5 seconds typical), and shot type
+
+USE update_shots to set the full shot list, or add_shot to add one at a time:
+- description: What's happening in the shot
+- duration: How long in seconds (default 3)
+- shotType: "Wide shot", "Medium shot", "Close-up", "POV", "Aerial", "Tracking", etc.
+- sceneIndex: Which act/scene (0 = Beginning, 1 = Middle, 2 = End)
+
+IMPORTANT:
+- Generate shots based on the story beats
+- Fill in the UI as you discuss - don't wait until the end
+- Shots are saved to the database automatically
+- Only go_to_next_step when user confirms the shot list is complete`,
 
   filming: `You are on the FILMING step (step 6 of 8).
 
-Guide through one shot at a time. The user needs to create/upload media.
-You cannot create media - just guide them. WAIT for them to complete each shot.
-Only go_to_next_step when user confirms all shots have media.`,
+Your job is to help create visual assets for each shot. You CAN generate images!
+
+CONVERSATION FLOW:
+1. Ask: "Let's create visuals for your shots. Would you like me to generate an image for the first shot, or do you have media to upload?"
+2. If they want to generate, use generate_image with:
+   - A detailed prompt based on the shot description
+   - An appropriate category (scene, character, prop, etc.)
+   - A descriptive name
+   - Style based on the mood board
+3. After generating, confirm and ask about the next shot
+4. You can also offer to generate video from an image (coming soon)
+
+USE generate_image to create visuals:
+- prompt: Be very detailed - include setting, lighting, style, mood
+- category: scene, stage, character, weather, prop, or effect
+- name: Descriptive name for the asset
+- style: Match the mood board keywords
+
+IMPORTANT:
+- Generate assets one at a time and confirm before proceeding
+- The generated images are saved to the database automatically
+- Users can also upload their own media if they prefer
+- Only go_to_next_step when user confirms all shots have media`,
 
   audio: `You are on the AUDIO step (step 7 of 8).
 
-Ask: "Would you like to add voiceover, music, or sound effects?"
-Help with one audio element at a time. WAIT for their input.
-Only go_to_next_step when user says audio is complete.`,
+Your job is to help CREATE audio elements. You CAN generate voiceovers, music, and sound effects!
+
+CONVERSATION FLOW:
+1. Ask: "Would you like voiceover narration? I can generate it from your script."
+2. If yes, help write the script, then use generate_voiceover to create the audio
+3. Ask: "What style of background music fits the mood? I can generate custom music."
+4. If they want music, use generate_music to create it
+5. Ask: "Any sound effects needed? I can generate those too."
+6. If they want effects, use generate_sound_effect for each one
+
+GENERATION TOOLS:
+- generate_voiceover: Creates speech from text (provide text, name, voiceStyle)
+- generate_music: Creates background music (provide prompt, name, duration)
+- generate_sound_effect: Creates sound effects (provide prompt, name)
+
+ALSO USE set_audio to save the audio PLAN (what you intend to use):
+- voiceoverScript: The full narration text
+- musicStyle: Description of the music style
+- soundEffects: Array of planned effects
+
+IMPORTANT:
+- Generate audio one element at a time and confirm before proceeding
+- Generated audio is saved to the database as project assets
+- The plan (set_audio) is separate from the generated assets
+- Only go_to_next_step when user says audio is complete`,
 
   review: `You are on the REVIEW step (step 8 of 8).
 
@@ -422,7 +763,17 @@ function buildContextMessage(context: BubbleContext): string {
   }
 
   if (context.storyboard?.acts?.length) {
-    contextInfo += `Story: ${context.storyboard.acts.map(a => a.name).join(' → ')}\n`
+    contextInfo += `Scenes & Shots:\n`
+    context.storyboard.acts.forEach((act, actIndex) => {
+      contextInfo += `  ${act.name}${act.description ? ` - ${act.description}` : ''}\n`
+      if (act.beats && act.beats.length > 0) {
+        act.beats.forEach((beat: { title?: string; description?: string }, beatIndex: number) => {
+          const title = beat.title || `Shot ${beatIndex + 1}`
+          const desc = beat.description || '(no description)'
+          contextInfo += `    - ${title}: ${desc.length > 60 ? desc.slice(0, 60) + '...' : desc}\n`
+        })
+      }
+    })
   }
 
   if (context.shotCount) {

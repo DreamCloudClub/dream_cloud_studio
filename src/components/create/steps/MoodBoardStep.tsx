@@ -1,9 +1,11 @@
 import { useState, useEffect } from "react"
-import { Upload, Wand2, X, Plus, Palette, ChevronDown, Check } from "lucide-react"
+import { useNavigate } from "react-router-dom"
+import { Upload, Wand2, X, Plus, Palette, ChevronDown, Check, Loader2, Save } from "lucide-react"
 import { useProjectWizardStore } from "@/state/projectWizardStore"
 import { useFoundationStore, Foundation } from "@/state/foundationStore"
 import { Button } from "@/components/ui/button"
 import { cn } from "@/lib/utils"
+import { getMoodBoard, createMoodBoard, updateMoodBoard } from "@/services/projects"
 
 // Preset color palettes for quick selection
 const presetPalettes = [
@@ -32,7 +34,8 @@ const styleKeywords = [
 ]
 
 export function MoodBoardStep() {
-  const { moodBoard, setMoodBoard, goToNextStep, goToPreviousStep, markStepComplete } =
+  const navigate = useNavigate()
+  const { moodBoard, setMoodBoard, goToNextStep, goToPreviousStep, markStepComplete, projectId } =
     useProjectWizardStore()
   const { foundations } = useFoundationStore()
 
@@ -47,6 +50,18 @@ export function MoodBoardStep() {
   )
   const [selectedFoundation, setSelectedFoundation] = useState<Foundation | null>(null)
   const [showFoundationPicker, setShowFoundationPicker] = useState(false)
+  const [isSaving, setIsSaving] = useState(false)
+  const [isSavingDraft, setIsSavingDraft] = useState(false)
+  const [moodBoardExists, setMoodBoardExists] = useState(false)
+
+  // Check if mood board exists on mount
+  useEffect(() => {
+    if (projectId) {
+      getMoodBoard(projectId).then((existing) => {
+        if (existing) setMoodBoardExists(true)
+      })
+    }
+  }, [projectId])
 
   // Sync store changes back to local state (when Bubble updates via chat)
   useEffect(() => {
@@ -122,15 +137,101 @@ export function MoodBoardStep() {
     setSelectedFoundation(null)
   }
 
-  const handleContinue = () => {
-    setMoodBoard({
-      images,
-      colors: selectedColors,
-      keywords: selectedKeywords,
-      foundationId: selectedFoundation?.id,
-    })
-    markStepComplete("mood")
-    goToNextStep()
+  const handleSaveDraft = async () => {
+    if (!projectId) return
+
+    setIsSavingDraft(true)
+    try {
+      const moodBoardData = {
+        images: images as unknown as import("@/types/database").Json,
+        colors: selectedColors as unknown as import("@/types/database").Json,
+        keywords: selectedKeywords as unknown as import("@/types/database").Json,
+      }
+
+      if (moodBoardExists) {
+        await updateMoodBoard(projectId, moodBoardData)
+      } else {
+        await createMoodBoard({ project_id: projectId, ...moodBoardData })
+        setMoodBoardExists(true)
+      }
+
+      // Update local state
+      setMoodBoard({
+        images,
+        colors: selectedColors,
+        keywords: selectedKeywords,
+        foundationId: selectedFoundation?.id,
+      })
+
+      navigate("/library/projects")
+    } catch (error) {
+      console.error("Error saving draft:", error)
+    } finally {
+      setIsSavingDraft(false)
+    }
+  }
+
+  const handleContinue = async () => {
+    if (!projectId) return
+
+    setIsSaving(true)
+    try {
+      const moodBoardData = {
+        images: images as unknown as import("@/types/database").Json,
+        colors: selectedColors as unknown as import("@/types/database").Json,
+        keywords: selectedKeywords as unknown as import("@/types/database").Json,
+      }
+
+      if (moodBoardExists) {
+        await updateMoodBoard(projectId, moodBoardData)
+      } else {
+        await createMoodBoard({
+          project_id: projectId,
+          ...moodBoardData,
+        })
+        setMoodBoardExists(true)
+      }
+
+      // Update local state
+      setMoodBoard({
+        images,
+        colors: selectedColors,
+        keywords: selectedKeywords,
+        foundationId: selectedFoundation?.id,
+      })
+      markStepComplete("mood")
+      goToNextStep()
+    } catch (error) {
+      console.error("Error saving mood board:", error)
+    } finally {
+      setIsSaving(false)
+    }
+  }
+
+  // Save and go back
+  const handleBack = async () => {
+    if (!projectId) {
+      goToPreviousStep()
+      return
+    }
+
+    try {
+      const moodBoardData = {
+        images: images as unknown as import("@/types/database").Json,
+        colors: selectedColors as unknown as import("@/types/database").Json,
+        keywords: selectedKeywords as unknown as import("@/types/database").Json,
+      }
+
+      if (moodBoardExists) {
+        await updateMoodBoard(projectId, moodBoardData)
+      } else if (images.length > 0 || selectedColors.length > 0 || selectedKeywords.length > 0) {
+        await createMoodBoard({ project_id: projectId, ...moodBoardData })
+        setMoodBoardExists(true)
+      }
+    } catch (error) {
+      console.error("Error saving on back:", error)
+    }
+    goToPreviousStep()
   }
 
   return (
@@ -357,17 +458,40 @@ export function MoodBoardStep() {
         <div className="mt-8 flex justify-between">
           <Button
             variant="ghost"
-            onClick={goToPreviousStep}
+            onClick={handleBack}
             className="text-zinc-400 hover:text-zinc-300"
           >
             &larr; Back
           </Button>
-          <Button
-            onClick={handleContinue}
-            className="bg-gradient-to-r from-sky-400 via-sky-500 to-blue-600 hover:from-sky-300 hover:via-sky-400 hover:to-blue-500 text-white shadow-lg shadow-sky-500/20 px-8"
-          >
-            Continue
-          </Button>
+          <div className="flex gap-3">
+            <Button
+              variant="outline"
+              onClick={handleSaveDraft}
+              disabled={isSavingDraft || !projectId}
+              className="border-zinc-700 text-zinc-300 hover:bg-zinc-800 hover:text-white disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              {isSavingDraft ? (
+                <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+              ) : (
+                <Save className="w-4 h-4 mr-2" />
+              )}
+              Save Draft
+            </Button>
+            <Button
+              onClick={handleContinue}
+              disabled={isSaving}
+              className="bg-gradient-to-r from-sky-400 via-sky-500 to-blue-600 hover:from-sky-300 hover:via-sky-400 hover:to-blue-500 text-white shadow-lg shadow-sky-500/20 px-8"
+            >
+              {isSaving ? (
+                <>
+                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                  Saving...
+                </>
+              ) : (
+                "Continue"
+              )}
+            </Button>
+          </div>
         </div>
       </div>
     </div>

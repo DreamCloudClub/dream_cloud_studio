@@ -149,7 +149,7 @@ export function CreateNewHero({ onNewProject, onNewAsset, onStartWithBubble }: C
         {/* Start with Bubble Card - Soft white with glowing border */}
         <button
           onClick={onStartWithBubble}
-          className="group relative w-full overflow-hidden rounded-xl p-6 sm:p-8 bg-zinc-200 hover:bg-zinc-100 ring-2 ring-white/80 shadow-xl shadow-white/10 hover:shadow-white/20 transition-all hover:scale-[1.01] text-left"
+          className="group relative w-full overflow-hidden rounded-xl p-6 sm:p-8 bg-zinc-200 hover:bg-zinc-100 ring-4 ring-sky-500 shadow-xl shadow-sky-500/20 hover:shadow-sky-500/30 transition-all hover:scale-[1.01] text-left"
         >
           <div className="relative z-10 flex items-center gap-5 sm:gap-6">
             {/* Glowing blue cloud icon */}
@@ -159,7 +159,7 @@ export function CreateNewHero({ onNewProject, onNewAsset, onStartWithBubble }: C
             <div className="flex-1 min-w-0">
               <h3 className="text-xl sm:text-2xl font-bold text-zinc-900 mb-1">Start with Bubble</h3>
               <p className="text-sm sm:text-base text-zinc-600">
-                Your AI production assistant. Describe what you want to create and get guided help.
+                Your AI production assistant. Describe what you want to create.
               </p>
             </div>
           </div>

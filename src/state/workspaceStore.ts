@@ -1,6 +1,31 @@
 import { create } from "zustand"
-import { getProjectWithRelations } from "@/services/projects"
-import type { ProjectWithRelations } from "@/types/database"
+import {
+  getProjectWithRelations,
+  updateProject,
+  updateProjectBrief,
+  createProjectBrief,
+  getProjectBrief,
+  updateMoodBoard,
+  createMoodBoard,
+  getMoodBoard,
+  updateStoryboard,
+  createStoryboard,
+  getStoryboard,
+  createScene,
+  updateScene as updateSceneDb,
+  deleteScene,
+  createShot,
+  updateShot as updateShotDb,
+  deleteShot,
+  createStoryboardCard,
+  updateStoryboardCard as updateStoryboardCardDb,
+  deleteStoryboardCard,
+  updateExportSettings as updateExportSettingsDb,
+  createExportSettings,
+  upsertProjectComposition,
+} from "@/services/projects"
+import { createAsset, updateAsset as updateAssetDb, deleteAsset } from "@/services/assets"
+import type { ProjectWithRelations, Json } from "@/types/database"
 
 // Workspace tab types
 export type WorkspaceTab =
@@ -122,6 +147,20 @@ export interface ProjectBrief {
   duration: string
   aspectRatio: AspectRatio
   goals: string[]
+  videoContent?: {
+    characters: string[]
+    setting: string
+    timeOfDay: string
+    weather: string
+    action: string
+    props: string[]
+    dialogue: string
+  }
+  audioPlans?: {
+    voiceoverScript?: string
+    musicStyle?: string
+    soundEffects?: string[]
+  }
 }
 
 // Export settings
@@ -132,15 +171,52 @@ export interface ExportSettings {
   quality: "draft" | "standard" | "high"
 }
 
+// Mood board data
+export interface MoodBoardData {
+  images: { id: string; url: string; name: string }[]
+  colors: string[]
+  keywords: string[]
+}
+
+// Composition data
+export interface CompositionData {
+  titleCard?: {
+    text: string
+    subtitle?: string
+    font?: string
+    animation?: string
+    backgroundColor?: string
+  }
+  outroCard?: {
+    text: string
+    subtitle?: string
+    animation?: string
+  }
+  defaultTransition: string
+  transitionDuration: number
+  textOverlays: Array<{
+    id: string
+    text: string
+    position?: string
+    animation?: string
+    shotId?: string
+    startTime?: number
+    duration?: number
+  }>
+}
+
 // Full project state
 export interface Project {
   id: string
+  userId: string
   name: string
   brief: ProjectBrief
+  moodBoard: MoodBoardData
   assets: ProjectAsset[]
   scenes: Scene[]
   storyboardCards: StoryboardCard[]
   exportSettings: ExportSettings
+  composition: CompositionData
   createdAt: string
   updatedAt: string
 }
@@ -173,24 +249,27 @@ interface WorkspaceState {
   expandedSceneIds: string[]
   toggleSceneExpanded: (id: string) => void
 
-  // Project actions
-  loadProject: (projectId: string) => void
-  updateBrief: (data: Partial<ProjectBrief>) => void
-  addAsset: (asset: ProjectAsset) => void
-  removeAsset: (assetId: string) => void
-  updateAsset: (assetId: string, data: Partial<ProjectAsset>) => void
-  addScene: (scene: Scene) => void
-  updateScene: (sceneId: string, data: Partial<Scene>) => void
-  removeScene: (sceneId: string) => void
-  reorderScenes: (sceneIds: string[]) => void
-  addShot: (sceneId: string, shot: Shot) => void
-  updateShot: (sceneId: string, shotId: string, data: Partial<Shot>) => void
-  removeShot: (sceneId: string, shotId: string) => void
-  reorderShots: (sceneId: string, shotIds: string[]) => void
-  addStoryboardCard: (card: StoryboardCard) => void
-  updateStoryboardCard: (cardId: string, data: Partial<StoryboardCard>) => void
-  removeStoryboardCard: (cardId: string) => void
-  updateExportSettings: (settings: Partial<ExportSettings>) => void
+  // Project actions - ALL PERSIST TO DATABASE
+  loadProject: (projectId: string) => Promise<void>
+  updateBrief: (data: Partial<ProjectBrief>) => Promise<void>
+  updateMoodBoard: (data: Partial<MoodBoardData>) => Promise<void>
+  addAsset: (asset: Omit<ProjectAsset, "id" | "createdAt">, userId: string) => Promise<void>
+  removeAsset: (assetId: string) => Promise<void>
+  updateAsset: (assetId: string, data: Partial<ProjectAsset>) => Promise<void>
+  addScene: (scene: Omit<Scene, "id">) => Promise<void>
+  updateScene: (sceneId: string, data: Partial<Scene>) => Promise<void>
+  removeScene: (sceneId: string) => Promise<void>
+  reorderScenes: (sceneIds: string[]) => Promise<void>
+  addShot: (sceneId: string, shot: Omit<Shot, "id">) => Promise<void>
+  updateShot: (sceneId: string, shotId: string, data: Partial<Shot>) => Promise<void>
+  removeShot: (sceneId: string, shotId: string) => Promise<void>
+  reorderShots: (sceneId: string, shotIds: string[]) => Promise<void>
+  addStoryboardCard: (card: Omit<StoryboardCard, "id">) => Promise<void>
+  updateStoryboardCard: (cardId: string, data: Partial<StoryboardCard>) => Promise<void>
+  removeStoryboardCard: (cardId: string) => Promise<void>
+  updateExportSettings: (settings: Partial<ExportSettings>) => Promise<void>
+  updateComposition: (data: Partial<CompositionData>) => Promise<void>
+  saveAll: () => Promise<void>
 }
 
 export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
@@ -227,7 +306,7 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
     }
   },
 
-  // Project actions
+  // Project actions - ALL PERSIST TO DATABASE
   loadProject: async (projectId) => {
     set({ isLoading: true })
 
@@ -243,6 +322,7 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
       // Transform DB format to workspace format
       const project: Project = {
         id: dbProject.id,
+        userId: dbProject.user_id,
         name: dbProject.name,
         brief: {
           name: dbProject.brief?.name || dbProject.name,
@@ -252,6 +332,17 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
           duration: dbProject.brief?.duration || "",
           aspectRatio: (dbProject.brief?.aspect_ratio as AspectRatio) || "16:9",
           goals: (dbProject.brief?.goals as string[]) || [],
+          videoContent: dbProject.brief?.video_content
+            ? (dbProject.brief.video_content as ProjectBrief["videoContent"])
+            : undefined,
+          audioPlans: dbProject.brief?.audio_plans
+            ? (dbProject.brief.audio_plans as ProjectBrief["audioPlans"])
+            : undefined,
+        },
+        moodBoard: {
+          images: (dbProject.mood_board?.images as MoodBoardData["images"]) || [],
+          colors: (dbProject.mood_board?.colors as string[]) || [],
+          keywords: (dbProject.mood_board?.keywords as string[]) || [],
         },
         assets: (dbProject.assets || []).map((a) => ({
           id: a.id,
@@ -311,6 +402,23 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
           frameRate: (dbProject.export_settings?.frame_rate || 30) as 24 | 30 | 60,
           quality: (dbProject.export_settings?.quality || "high") as "draft" | "standard" | "high",
         },
+        composition: dbProject.composition
+          ? {
+              titleCard: dbProject.composition.title_card
+                ? (dbProject.composition.title_card as CompositionData["titleCard"])
+                : undefined,
+              outroCard: dbProject.composition.outro_card
+                ? (dbProject.composition.outro_card as CompositionData["outroCard"])
+                : undefined,
+              defaultTransition: dbProject.composition.default_transition || "fade",
+              transitionDuration: dbProject.composition.transition_duration || 0.5,
+              textOverlays: (dbProject.composition.text_overlays as CompositionData["textOverlays"]) || [],
+            }
+          : {
+              defaultTransition: "fade",
+              transitionDuration: 0.5,
+              textOverlays: [],
+            },
         createdAt: dbProject.created_at,
         updatedAt: dbProject.updated_at,
       }
@@ -327,33 +435,139 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
     }
   },
 
-  updateBrief: (data) => {
+  updateBrief: async (data) => {
     const { project } = get()
     if (!project) return
+
+    // Update local state immediately
+    const updatedBrief = { ...project.brief, ...data }
     set({
       project: {
         ...project,
-        brief: { ...project.brief, ...data },
+        brief: updatedBrief,
         updatedAt: new Date().toISOString(),
       },
     })
+
+    // Persist to database
+    try {
+      const dbData: Record<string, unknown> = {}
+      if (data.name !== undefined) dbData.name = data.name
+      if (data.description !== undefined) dbData.description = data.description
+      if (data.audience !== undefined) dbData.audience = data.audience
+      if (data.tone !== undefined) dbData.tone = data.tone
+      if (data.duration !== undefined) dbData.duration = data.duration
+      if (data.aspectRatio !== undefined) dbData.aspect_ratio = data.aspectRatio
+      if (data.goals !== undefined) dbData.goals = data.goals
+      if (data.videoContent !== undefined) dbData.video_content = data.videoContent
+      if (data.audioPlans !== undefined) dbData.audio_plans = data.audioPlans
+
+      // Also update project name if brief name changed
+      if (data.name) {
+        await updateProject(project.id, { name: data.name })
+      }
+
+      const existingBrief = await getProjectBrief(project.id)
+      if (existingBrief) {
+        await updateProjectBrief(project.id, dbData)
+      } else {
+        await createProjectBrief({
+          project_id: project.id,
+          name: updatedBrief.name,
+          description: updatedBrief.description,
+          audience: updatedBrief.audience,
+          tone: updatedBrief.tone,
+          duration: updatedBrief.duration,
+          aspect_ratio: updatedBrief.aspectRatio,
+          goals: updatedBrief.goals as Json,
+          video_content: updatedBrief.videoContent as Json,
+          audio_plans: updatedBrief.audioPlans as Json,
+        })
+      }
+    } catch (error) {
+      console.error("Failed to save brief to database:", error)
+    }
   },
 
-  addAsset: (asset) => {
+  updateMoodBoard: async (data) => {
     const { project } = get()
     if (!project) return
+
+    // Update local state immediately
+    const updatedMoodBoard = { ...project.moodBoard, ...data }
     set({
       project: {
         ...project,
-        assets: [...project.assets, asset],
+        moodBoard: updatedMoodBoard,
         updatedAt: new Date().toISOString(),
       },
     })
+
+    // Persist to database
+    try {
+      const dbData = {
+        images: updatedMoodBoard.images as Json,
+        colors: updatedMoodBoard.colors as Json,
+        keywords: updatedMoodBoard.keywords as Json,
+      }
+
+      const existing = await getMoodBoard(project.id)
+      if (existing) {
+        await updateMoodBoard(project.id, dbData)
+      } else {
+        await createMoodBoard({ project_id: project.id, ...dbData })
+      }
+    } catch (error) {
+      console.error("Failed to save mood board to database:", error)
+    }
   },
 
-  removeAsset: (assetId) => {
+  addAsset: async (asset, userId) => {
     const { project } = get()
     if (!project) return
+
+    try {
+      // Create in database first to get ID
+      const dbAsset = await createAsset({
+        user_id: userId,
+        project_id: project.id,
+        name: asset.name,
+        type: asset.type,
+        category: asset.category,
+        url: asset.url,
+        thumbnail_url: asset.thumbnailUrl,
+        duration: asset.duration,
+      })
+
+      // Then update local state
+      const newAsset: ProjectAsset = {
+        id: dbAsset.id,
+        name: dbAsset.name,
+        type: dbAsset.type as "image" | "video" | "audio",
+        category: (dbAsset.category || "scene") as AssetCategory,
+        url: dbAsset.url,
+        thumbnailUrl: dbAsset.thumbnail_url || undefined,
+        duration: dbAsset.duration || undefined,
+        createdAt: dbAsset.created_at,
+      }
+
+      set({
+        project: {
+          ...project,
+          assets: [...project.assets, newAsset],
+          updatedAt: new Date().toISOString(),
+        },
+      })
+    } catch (error) {
+      console.error("Failed to add asset:", error)
+    }
+  },
+
+  removeAsset: async (assetId) => {
+    const { project } = get()
+    if (!project) return
+
+    // Update local state immediately
     set({
       project: {
         ...project,
@@ -361,11 +575,20 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
         updatedAt: new Date().toISOString(),
       },
     })
+
+    // Delete from database
+    try {
+      await deleteAsset(assetId)
+    } catch (error) {
+      console.error("Failed to delete asset:", error)
+    }
   },
 
-  updateAsset: (assetId, data) => {
+  updateAsset: async (assetId, data) => {
     const { project } = get()
     if (!project) return
+
+    // Update local state immediately
     set({
       project: {
         ...project,
@@ -373,23 +596,84 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
         updatedAt: new Date().toISOString(),
       },
     })
+
+    // Persist to database
+    try {
+      const dbData: Record<string, unknown> = {}
+      if (data.name !== undefined) dbData.name = data.name
+      if (data.category !== undefined) dbData.category = data.category
+      if (data.url !== undefined) dbData.url = data.url
+      if (data.thumbnailUrl !== undefined) dbData.thumbnail_url = data.thumbnailUrl
+      if (data.duration !== undefined) dbData.duration = data.duration
+
+      await updateAssetDb(assetId, dbData)
+    } catch (error) {
+      console.error("Failed to update asset:", error)
+    }
   },
 
-  addScene: (scene) => {
+  addScene: async (scene) => {
     const { project } = get()
     if (!project) return
-    set({
-      project: {
-        ...project,
-        scenes: [...project.scenes, scene],
-        updatedAt: new Date().toISOString(),
-      },
-    })
+
+    try {
+      // Create in database first
+      const dbScene = await createScene({
+        project_id: project.id,
+        name: scene.name,
+        description: scene.description,
+        sort_order: scene.order,
+        voiceover_script: scene.voiceover?.script,
+        voiceover_audio_url: scene.voiceover?.audioUrl,
+        voiceover_duration: scene.voiceover?.duration,
+      })
+
+      // Create shots if any
+      const newShots: Shot[] = []
+      for (const shot of scene.shots) {
+        const dbShot = await createShot({
+          scene_id: dbScene.id,
+          name: shot.name,
+          description: shot.description,
+          duration: shot.duration,
+          sort_order: shot.order,
+          shot_type: null,
+          notes: shot.notes,
+          media_type: shot.media?.type,
+          media_url: shot.media?.url,
+          media_thumbnail_url: shot.media?.thumbnailUrl,
+        })
+        newShots.push({
+          ...shot,
+          id: dbShot.id,
+        })
+      }
+
+      // Then update local state
+      const newScene: Scene = {
+        ...scene,
+        id: dbScene.id,
+        shots: newShots,
+      }
+
+      set({
+        project: {
+          ...project,
+          scenes: [...project.scenes, newScene],
+          updatedAt: new Date().toISOString(),
+        },
+        expandedSceneIds: [...get().expandedSceneIds, newScene.id],
+      })
+    } catch (error) {
+      console.error("Failed to add scene:", error)
+    }
   },
 
-  updateScene: (sceneId, data) => {
+  updateScene: async (sceneId, data) => {
     const { project } = get()
     if (!project) return
+
+    // Update local state immediately
     set({
       project: {
         ...project,
@@ -397,11 +681,30 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
         updatedAt: new Date().toISOString(),
       },
     })
+
+    // Persist to database
+    try {
+      const dbData: Record<string, unknown> = {}
+      if (data.name !== undefined) dbData.name = data.name
+      if (data.description !== undefined) dbData.description = data.description
+      if (data.order !== undefined) dbData.sort_order = data.order
+      if (data.voiceover !== undefined) {
+        dbData.voiceover_script = data.voiceover?.script
+        dbData.voiceover_audio_url = data.voiceover?.audioUrl
+        dbData.voiceover_duration = data.voiceover?.duration
+      }
+
+      await updateSceneDb(sceneId, dbData)
+    } catch (error) {
+      console.error("Failed to update scene:", error)
+    }
   },
 
-  removeScene: (sceneId) => {
+  removeScene: async (sceneId) => {
     const { project } = get()
     if (!project) return
+
+    // Update local state immediately
     set({
       project: {
         ...project,
@@ -409,15 +712,27 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
         updatedAt: new Date().toISOString(),
       },
     })
+
+    // Delete from database (cascade deletes shots)
+    try {
+      await deleteScene(sceneId)
+    } catch (error) {
+      console.error("Failed to delete scene:", error)
+    }
   },
 
-  reorderScenes: (sceneIds) => {
+  reorderScenes: async (sceneIds) => {
     const { project } = get()
     if (!project) return
-    const reordered = sceneIds.map((id, index) => {
-      const scene = project.scenes.find((s) => s.id === id)
-      return scene ? { ...scene, order: index } : null
-    }).filter(Boolean) as Scene[]
+
+    // Update local state immediately
+    const reordered = sceneIds
+      .map((id, index) => {
+        const scene = project.scenes.find((s) => s.id === id)
+        return scene ? { ...scene, order: index } : null
+      })
+      .filter(Boolean) as Scene[]
+
     set({
       project: {
         ...project,
@@ -425,25 +740,61 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
         updatedAt: new Date().toISOString(),
       },
     })
+
+    // Persist to database
+    try {
+      for (let i = 0; i < sceneIds.length; i++) {
+        await updateSceneDb(sceneIds[i], { sort_order: i })
+      }
+    } catch (error) {
+      console.error("Failed to reorder scenes:", error)
+    }
   },
 
-  addShot: (sceneId, shot) => {
+  addShot: async (sceneId, shot) => {
     const { project } = get()
     if (!project) return
-    set({
-      project: {
-        ...project,
-        scenes: project.scenes.map((s) =>
-          s.id === sceneId ? { ...s, shots: [...s.shots, shot] } : s
-        ),
-        updatedAt: new Date().toISOString(),
-      },
-    })
+
+    try {
+      // Create in database first
+      const dbShot = await createShot({
+        scene_id: sceneId,
+        name: shot.name,
+        description: shot.description,
+        duration: shot.duration,
+        sort_order: shot.order,
+        shot_type: null,
+        notes: shot.notes,
+        media_type: shot.media?.type,
+        media_url: shot.media?.url,
+        media_thumbnail_url: shot.media?.thumbnailUrl,
+      })
+
+      // Then update local state
+      const newShot: Shot = {
+        ...shot,
+        id: dbShot.id,
+      }
+
+      set({
+        project: {
+          ...project,
+          scenes: project.scenes.map((s) =>
+            s.id === sceneId ? { ...s, shots: [...s.shots, newShot] } : s
+          ),
+          updatedAt: new Date().toISOString(),
+        },
+      })
+    } catch (error) {
+      console.error("Failed to add shot:", error)
+    }
   },
 
-  updateShot: (sceneId, shotId, data) => {
+  updateShot: async (sceneId, shotId, data) => {
     const { project } = get()
     if (!project) return
+
+    // Update local state immediately
     set({
       project: {
         ...project,
@@ -451,67 +802,127 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
           s.id === sceneId
             ? {
                 ...s,
-                shots: s.shots.map((shot) =>
-                  shot.id === shotId ? { ...shot, ...data } : shot
-                ),
+                shots: s.shots.map((shot) => (shot.id === shotId ? { ...shot, ...data } : shot)),
               }
             : s
         ),
         updatedAt: new Date().toISOString(),
       },
     })
+
+    // Persist to database
+    try {
+      const dbData: Record<string, unknown> = {}
+      if (data.name !== undefined) dbData.name = data.name
+      if (data.description !== undefined) dbData.description = data.description
+      if (data.duration !== undefined) dbData.duration = data.duration
+      if (data.order !== undefined) dbData.sort_order = data.order
+      if (data.notes !== undefined) dbData.notes = data.notes
+      if (data.media !== undefined) {
+        dbData.media_type = data.media?.type
+        dbData.media_url = data.media?.url
+        dbData.media_thumbnail_url = data.media?.thumbnailUrl
+      }
+
+      await updateShotDb(shotId, dbData)
+    } catch (error) {
+      console.error("Failed to update shot:", error)
+    }
   },
 
-  removeShot: (sceneId, shotId) => {
+  removeShot: async (sceneId, shotId) => {
     const { project } = get()
     if (!project) return
+
+    // Update local state immediately
     set({
       project: {
         ...project,
         scenes: project.scenes.map((s) =>
-          s.id === sceneId
-            ? { ...s, shots: s.shots.filter((shot) => shot.id !== shotId) }
-            : s
+          s.id === sceneId ? { ...s, shots: s.shots.filter((shot) => shot.id !== shotId) } : s
         ),
         updatedAt: new Date().toISOString(),
       },
     })
+
+    // Delete from database
+    try {
+      await deleteShot(shotId)
+    } catch (error) {
+      console.error("Failed to delete shot:", error)
+    }
   },
 
-  reorderShots: (sceneId, shotIds) => {
+  reorderShots: async (sceneId, shotIds) => {
     const { project } = get()
     if (!project) return
+
+    // Update local state immediately
     set({
       project: {
         ...project,
         scenes: project.scenes.map((s) => {
           if (s.id !== sceneId) return s
-          const reordered = shotIds.map((id, index) => {
-            const shot = s.shots.find((sh) => sh.id === id)
-            return shot ? { ...shot, order: index } : null
-          }).filter(Boolean) as Shot[]
+          const reordered = shotIds
+            .map((id, index) => {
+              const shot = s.shots.find((sh) => sh.id === id)
+              return shot ? { ...shot, order: index } : null
+            })
+            .filter(Boolean) as Shot[]
           return { ...s, shots: reordered }
         }),
         updatedAt: new Date().toISOString(),
       },
     })
+
+    // Persist to database
+    try {
+      for (let i = 0; i < shotIds.length; i++) {
+        await updateShotDb(shotIds[i], { sort_order: i })
+      }
+    } catch (error) {
+      console.error("Failed to reorder shots:", error)
+    }
   },
 
-  addStoryboardCard: (card) => {
+  addStoryboardCard: async (card) => {
     const { project } = get()
     if (!project) return
-    set({
-      project: {
-        ...project,
-        storyboardCards: [...project.storyboardCards, card],
-        updatedAt: new Date().toISOString(),
-      },
-    })
+
+    try {
+      // Create in database first
+      const dbCard = await createStoryboardCard({
+        project_id: project.id,
+        title: card.title,
+        description: card.description,
+        content: card.content,
+        thumbnail_url: card.thumbnailUrl,
+        sort_order: card.order,
+      })
+
+      // Then update local state
+      const newCard: StoryboardCard = {
+        ...card,
+        id: dbCard.id,
+      }
+
+      set({
+        project: {
+          ...project,
+          storyboardCards: [...project.storyboardCards, newCard],
+          updatedAt: new Date().toISOString(),
+        },
+      })
+    } catch (error) {
+      console.error("Failed to add storyboard card:", error)
+    }
   },
 
-  updateStoryboardCard: (cardId, data) => {
+  updateStoryboardCard: async (cardId, data) => {
     const { project } = get()
     if (!project) return
+
+    // Update local state immediately
     set({
       project: {
         ...project,
@@ -521,11 +932,27 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
         updatedAt: new Date().toISOString(),
       },
     })
+
+    // Persist to database
+    try {
+      const dbData: Record<string, unknown> = {}
+      if (data.title !== undefined) dbData.title = data.title
+      if (data.description !== undefined) dbData.description = data.description
+      if (data.content !== undefined) dbData.content = data.content
+      if (data.thumbnailUrl !== undefined) dbData.thumbnail_url = data.thumbnailUrl
+      if (data.order !== undefined) dbData.sort_order = data.order
+
+      await updateStoryboardCardDb(cardId, dbData)
+    } catch (error) {
+      console.error("Failed to update storyboard card:", error)
+    }
   },
 
-  removeStoryboardCard: (cardId) => {
+  removeStoryboardCard: async (cardId) => {
     const { project } = get()
     if (!project) return
+
+    // Update local state immediately
     set({
       project: {
         ...project,
@@ -533,17 +960,152 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
         updatedAt: new Date().toISOString(),
       },
     })
+
+    // Delete from database
+    try {
+      await deleteStoryboardCard(cardId)
+    } catch (error) {
+      console.error("Failed to delete storyboard card:", error)
+    }
   },
 
-  updateExportSettings: (settings) => {
+  updateExportSettings: async (settings) => {
     const { project } = get()
     if (!project) return
+
+    // Update local state immediately
+    const updatedSettings = { ...project.exportSettings, ...settings }
     set({
       project: {
         ...project,
-        exportSettings: { ...project.exportSettings, ...settings },
+        exportSettings: updatedSettings,
         updatedAt: new Date().toISOString(),
       },
     })
+
+    // Persist to database
+    try {
+      const dbData: Record<string, unknown> = {}
+      if (settings.resolution !== undefined) dbData.resolution = settings.resolution
+      if (settings.format !== undefined) dbData.format = settings.format
+      if (settings.frameRate !== undefined) dbData.frame_rate = settings.frameRate
+      if (settings.quality !== undefined) dbData.quality = settings.quality
+
+      await updateExportSettingsDb(project.id, dbData)
+    } catch (error) {
+      console.error("Failed to update export settings:", error)
+      // Try creating if doesn't exist
+      try {
+        await createExportSettings({
+          project_id: project.id,
+          resolution: updatedSettings.resolution,
+          format: updatedSettings.format,
+          frame_rate: updatedSettings.frameRate,
+          quality: updatedSettings.quality,
+        })
+      } catch {
+        // Already exists or other error
+      }
+    }
+  },
+
+  updateComposition: async (data) => {
+    const { project } = get()
+    if (!project) return
+
+    // Update local state immediately
+    const updatedComposition = { ...project.composition, ...data }
+    set({
+      project: {
+        ...project,
+        composition: updatedComposition,
+        updatedAt: new Date().toISOString(),
+      },
+    })
+
+    // Persist to database
+    try {
+      const dbData: Record<string, unknown> = {}
+      if (data.titleCard !== undefined) dbData.title_card = data.titleCard
+      if (data.outroCard !== undefined) dbData.outro_card = data.outroCard
+      if (data.defaultTransition !== undefined) dbData.default_transition = data.defaultTransition
+      if (data.transitionDuration !== undefined) dbData.transition_duration = data.transitionDuration
+      if (data.textOverlays !== undefined) dbData.text_overlays = data.textOverlays
+
+      await upsertProjectComposition(project.id, dbData)
+    } catch (error) {
+      console.error("Failed to update composition:", error)
+    }
+  },
+
+  // Full project save - saves all data to database
+  saveAll: async () => {
+    const { project } = get()
+    if (!project) return
+
+    try {
+      // Save project name/status
+      await updateProject(project.id, {
+        name: project.name,
+        status: project.status,
+      })
+
+      // Save brief
+      const briefData: Record<string, unknown> = {
+        name: project.brief.name,
+        description: project.brief.description,
+        audience: project.brief.audience,
+        tone: project.brief.tone,
+        duration: project.brief.duration,
+        aspect_ratio: project.brief.aspectRatio,
+        goals: project.brief.goals,
+        video_content: project.brief.videoContent,
+        audio_plans: project.brief.audioPlans,
+      }
+      const existingBrief = await getProjectBrief(project.id)
+      if (existingBrief) {
+        await updateProjectBrief(project.id, briefData)
+      } else {
+        await createProjectBrief({ project_id: project.id, name: project.brief.name || "Untitled", ...briefData })
+      }
+
+      // Save mood board
+      const moodBoardData = {
+        images: project.moodBoard.images as unknown as Json,
+        colors: project.moodBoard.colors as unknown as Json,
+        keywords: project.moodBoard.keywords as unknown as Json,
+      }
+      const existingMoodBoard = await getMoodBoard(project.id)
+      if (existingMoodBoard) {
+        await updateMoodBoard(project.id, moodBoardData)
+      } else {
+        await createMoodBoard({ project_id: project.id, ...moodBoardData })
+      }
+
+      // Save storyboard
+      const storyboardData = {
+        acts: project.storyboard.acts as unknown as Json,
+      }
+      const existingStoryboard = await getStoryboard(project.id)
+      if (existingStoryboard) {
+        await updateStoryboard(project.id, storyboardData)
+      } else {
+        await createStoryboard({ project_id: project.id, ...storyboardData })
+      }
+
+      // Save composition
+      await upsertProjectComposition(project.id, {
+        title_card: project.composition.titleCard as unknown as Json,
+        outro_card: project.composition.outroCard as unknown as Json,
+        default_transition: project.composition.defaultTransition,
+        transition_duration: project.composition.transitionDuration,
+        text_overlays: project.composition.textOverlays as unknown as Json,
+      })
+
+      console.log("Project saved successfully")
+    } catch (error) {
+      console.error("Failed to save project:", error)
+      throw error
+    }
   },
 }))

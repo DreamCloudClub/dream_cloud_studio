@@ -16,6 +16,46 @@ export * from './platforms'
 // Seed data (dev tools)
 export * from './seedData'
 
+// AI Generation Services
+// ElevenLabs - Voice synthesis and sound effects
+export {
+  generateVoice as generateVoiceElevenLabs,
+  streamVoice,
+  generateSoundEffect,
+  getVoices,
+  getUserInfo as getElevenLabsUserInfo,
+  cloneVoice,
+  DEFAULT_VOICES,
+  estimateAudioDuration,
+  getUsagePercentage as getElevenLabsUsagePercentage,
+} from './elevenlabs'
+export type {
+  Voice,
+  VoiceSettings,
+  GenerateVoiceOptions as ElevenLabsVoiceOptions,
+  GenerateSoundEffectOptions,
+  CloneVoiceOptions,
+  UserSubscription as ElevenLabsSubscription,
+  UserInfo as ElevenLabsUserInfo,
+} from './elevenlabs'
+
+// Replicate - Image, video, and music generation
+export {
+  generateImages,
+  generateVideo,
+  generateMusic,
+  generateVoice as generateVoiceReplicate,
+} from './replicate'
+export type {
+  GenerateImageOptions,
+  GenerateVideoOptions,
+  GenerateMusicOptions,
+  GenerateVoiceOptions as ReplicateVoiceOptions,
+} from './replicate'
+
+// Claude AI Assistant
+export * from './claude'
+
 // Re-export Supabase client and helpers
 export { supabase, getStorageBucket, getStoragePath, getPublicUrl, getSignedUrl } from '@/lib/supabase'
 
