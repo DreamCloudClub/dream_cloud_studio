@@ -1,9 +1,10 @@
 import { useState } from "react"
-import { Mic, Video, Layers, ChevronLeft, ChevronRight, Sparkles, MessageSquare, Clapperboard, Wand2, Download } from "lucide-react"
+import { Video, Layers, ChevronLeft, ChevronRight, Sparkles, Cloud, Clapperboard, Wand2, Download, MessageSquare } from "lucide-react"
 
 interface CreateNewHeroProps {
-  onNewProject?: (prompt: string) => void
-  onNewAsset?: (prompt: string) => void
+  onNewProject?: () => void
+  onNewAsset?: () => void
+  onStartWithBubble?: () => void
 }
 
 // Instruction cards for the carousel
@@ -46,26 +47,8 @@ const instructionCards = [
   },
 ]
 
-export function CreateNewHero({ onNewProject, onNewAsset }: CreateNewHeroProps) {
-  const [prompt, setPrompt] = useState("")
-  const [isListening, setIsListening] = useState(false)
+export function CreateNewHero({ onNewProject, onNewAsset, onStartWithBubble }: CreateNewHeroProps) {
   const [carouselIndex, setCarouselIndex] = useState(0)
-
-  const handleMicClick = () => {
-    // TODO: Implement voice input with Web Speech API or Whisper
-    setIsListening(!isListening)
-    console.log("Mic clicked, listening:", !isListening)
-  }
-
-  const handleNewProject = () => {
-    onNewProject?.(prompt)
-    console.log("New Project with prompt:", prompt)
-  }
-
-  const handleNewAsset = () => {
-    onNewAsset?.(prompt)
-    console.log("New Asset with prompt:", prompt)
-  }
 
   const canGoLeft = carouselIndex > 0
   const canGoRight = carouselIndex < instructionCards.length - 1
@@ -163,32 +146,30 @@ export function CreateNewHero({ onNewProject, onNewAsset }: CreateNewHeroProps) 
           </div>
         </div>
 
-        {/* Prompt Input */}
-        <div className="relative">
-          <input
-            type="text"
-            value={prompt}
-            onChange={(e) => setPrompt(e.target.value)}
-            placeholder="What would you like to create?"
-            className="w-full h-14 sm:h-16 md:h-18 lg:h-20 px-5 sm:px-6 pr-14 sm:pr-16 bg-zinc-900 border-2 border-zinc-700 hover:border-zinc-600 focus:border-zinc-500 focus:outline-none rounded-xl text-white text-base sm:text-lg placeholder:text-zinc-500 transition-colors"
-          />
-          <button
-            onClick={handleMicClick}
-            className={`absolute right-3 sm:right-4 top-1/2 -translate-y-1/2 w-10 h-10 sm:w-11 sm:h-11 rounded-full flex items-center justify-center transition-all ${
-              isListening
-                ? "bg-sky-500 hover:bg-sky-400 shadow-lg shadow-sky-500/50 animate-pulse"
-                : "bg-zinc-700 hover:bg-zinc-600"
-            }`}
-          >
-            <Mic className="h-5 w-5 sm:h-6 sm:w-6 text-white" />
-          </button>
-        </div>
+        {/* Start with Bubble Card - Soft white with glowing border */}
+        <button
+          onClick={onStartWithBubble}
+          className="group relative w-full overflow-hidden rounded-xl p-6 sm:p-8 bg-zinc-200 hover:bg-zinc-100 ring-2 ring-white/80 shadow-xl shadow-white/10 hover:shadow-white/20 transition-all hover:scale-[1.01] text-left"
+        >
+          <div className="relative z-10 flex items-center gap-5 sm:gap-6">
+            {/* Glowing blue cloud icon */}
+            <div className="w-14 h-14 sm:w-16 sm:h-16 rounded-2xl bg-sky-500 flex items-center justify-center flex-shrink-0 shadow-lg shadow-sky-500/50">
+              <Cloud className="h-8 w-8 sm:h-9 sm:w-9 text-white" />
+            </div>
+            <div className="flex-1 min-w-0">
+              <h3 className="text-xl sm:text-2xl font-bold text-zinc-900 mb-1">Start with Bubble</h3>
+              <p className="text-sm sm:text-base text-zinc-600">
+                Your AI production assistant. Describe what you want to create and get guided help.
+              </p>
+            </div>
+          </div>
+        </button>
 
         {/* Workflow Cards */}
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 md:gap-6">
           {/* New Project Card - Sky Blue */}
           <button
-            onClick={handleNewProject}
+            onClick={onNewProject}
             className="group relative overflow-hidden rounded-xl p-6 sm:p-8 bg-gradient-to-br from-sky-500 via-sky-600 to-blue-700 hover:from-sky-400 hover:via-sky-500 hover:to-blue-600 shadow-lg shadow-sky-900/20 hover:shadow-sky-900/30 transition-all hover:scale-[1.02] text-left"
           >
             <div className="relative z-10">
@@ -206,7 +187,7 @@ export function CreateNewHero({ onNewProject, onNewAsset }: CreateNewHeroProps) 
 
           {/* New Asset Card - Dark Orange */}
           <button
-            onClick={handleNewAsset}
+            onClick={onNewAsset}
             className="group relative overflow-hidden rounded-xl p-6 sm:p-8 bg-gradient-to-br from-orange-500 via-orange-600 to-amber-700 hover:from-orange-400 hover:via-orange-500 hover:to-amber-600 shadow-lg shadow-orange-900/20 hover:shadow-orange-900/30 transition-all hover:scale-[1.02] text-left"
           >
             <div className="relative z-10">

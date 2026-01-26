@@ -1,6 +1,7 @@
 import { useState } from "react"
-import { Upload, Wand2, X, Plus } from "lucide-react"
+import { Upload, Wand2, X, Plus, Palette, ChevronDown, Check } from "lucide-react"
 import { useProjectWizardStore } from "@/state/projectWizardStore"
+import { useFoundationStore, Foundation } from "@/state/foundationStore"
 import { Button } from "@/components/ui/button"
 import { cn } from "@/lib/utils"
 
@@ -33,6 +34,7 @@ const styleKeywords = [
 export function MoodBoardStep() {
   const { moodBoard, setMoodBoard, goToNextStep, goToPreviousStep, markStepComplete } =
     useProjectWizardStore()
+  const { foundations } = useFoundationStore()
 
   const [images, setImages] = useState<{ id: string; url: string; name: string }[]>(
     moodBoard?.images || []
@@ -43,6 +45,8 @@ export function MoodBoardStep() {
   const [selectedKeywords, setSelectedKeywords] = useState<string[]>(
     moodBoard?.keywords || []
   )
+  const [selectedFoundation, setSelectedFoundation] = useState<Foundation | null>(null)
+  const [showFoundationPicker, setShowFoundationPicker] = useState(false)
 
   const handleAddImage = () => {
     // In a real app, this would open a file picker or generate with AI
@@ -70,11 +74,51 @@ export function MoodBoardStep() {
     }
   }
 
+  const handleApplyFoundation = (foundation: Foundation) => {
+    setSelectedFoundation(foundation)
+    setSelectedColors(foundation.colorPalette)
+    // Map foundation style to keywords if it exists
+    const keywords: string[] = []
+    if (foundation.style) {
+      const styleMap: Record<string, string> = {
+        minimal: "Minimal",
+        bold: "Bold",
+        cinematic: "Cinematic",
+        organic: "Organic",
+        retro: "Retro",
+        futuristic: "Futuristic",
+      }
+      if (styleMap[foundation.style]) keywords.push(styleMap[foundation.style])
+    }
+    if (foundation.mood) {
+      const moodMap: Record<string, string> = {
+        professional: "Elegant",
+        energetic: "Dynamic",
+        calm: "Dreamy",
+        innovative: "Futuristic",
+        playful: "Playful",
+        luxurious: "Elegant",
+      }
+      if (moodMap[foundation.mood]) keywords.push(moodMap[foundation.mood])
+    }
+    setSelectedKeywords(keywords)
+    // Add foundation mood images if any
+    if (foundation.moodImages.length > 0) {
+      setImages(foundation.moodImages)
+    }
+    setShowFoundationPicker(false)
+  }
+
+  const handleClearFoundation = () => {
+    setSelectedFoundation(null)
+  }
+
   const handleContinue = () => {
     setMoodBoard({
       images,
       colors: selectedColors,
       keywords: selectedKeywords,
+      foundationId: selectedFoundation?.id,
     })
     markStepComplete("mood")
     goToNextStep()
@@ -92,6 +136,88 @@ export function MoodBoardStep() {
             Set the mood with reference images, colors, and style keywords.
           </p>
         </div>
+
+        {/* Foundation Quick Apply */}
+        {foundations.length > 0 && (
+          <div className="mb-8">
+            <h2 className="text-lg font-semibold text-zinc-200 mb-4">
+              Apply Foundation
+            </h2>
+            <div className="relative">
+              {selectedFoundation ? (
+                <div className="flex items-center gap-3 p-3 bg-zinc-900 border border-sky-500/50 rounded-xl">
+                  <div className="w-10 h-10 rounded-lg overflow-hidden grid grid-cols-2 grid-rows-2 flex-shrink-0">
+                    {selectedFoundation.colorPalette.slice(0, 4).map((color, i) => (
+                      <div key={i} style={{ backgroundColor: color }} />
+                    ))}
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-medium text-zinc-100">{selectedFoundation.name}</p>
+                    <p className="text-xs text-zinc-500">Foundation applied</p>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <Check className="w-4 h-4 text-sky-400" />
+                    <button
+                      onClick={handleClearFoundation}
+                      className="text-xs text-zinc-500 hover:text-zinc-300"
+                    >
+                      Clear
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <button
+                  onClick={() => setShowFoundationPicker(!showFoundationPicker)}
+                  className="w-full flex items-center justify-between p-3 bg-zinc-900 border border-zinc-800 hover:border-zinc-700 rounded-xl transition-colors"
+                >
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 rounded-lg bg-zinc-800 flex items-center justify-center">
+                      <Palette className="w-5 h-5 text-zinc-500" />
+                    </div>
+                    <div className="text-left">
+                      <p className="text-sm font-medium text-zinc-300">Use a saved foundation</p>
+                      <p className="text-xs text-zinc-500">Apply existing visual style</p>
+                    </div>
+                  </div>
+                  <ChevronDown className={cn(
+                    "w-5 h-5 text-zinc-500 transition-transform",
+                    showFoundationPicker && "rotate-180"
+                  )} />
+                </button>
+              )}
+
+              {/* Foundation Dropdown */}
+              {showFoundationPicker && !selectedFoundation && (
+                <div className="absolute z-10 w-full mt-2 bg-zinc-900 border border-zinc-800 rounded-xl shadow-xl overflow-hidden">
+                  <div className="max-h-64 overflow-y-auto">
+                    {foundations.map((foundation) => (
+                      <button
+                        key={foundation.id}
+                        onClick={() => handleApplyFoundation(foundation)}
+                        className="w-full flex items-center gap-3 p-3 hover:bg-zinc-800 transition-colors text-left"
+                      >
+                        <div className="w-10 h-10 rounded-lg overflow-hidden grid grid-cols-2 grid-rows-2 flex-shrink-0">
+                          {foundation.colorPalette.slice(0, 4).map((color, i) => (
+                            <div key={i} style={{ backgroundColor: color }} />
+                          ))}
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <p className="text-sm font-medium text-zinc-200">{foundation.name}</p>
+                          {foundation.description && (
+                            <p className="text-xs text-zinc-500 truncate">{foundation.description}</p>
+                          )}
+                        </div>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+            <p className="text-xs text-zinc-500 mt-2">
+              Or customize below to create a unique look
+            </p>
+          </div>
+        )}
 
         {/* Reference Images */}
         <div className="mb-8">

@@ -1,4 +1,4 @@
-import { Check, Cloud, FileText, Palette, BookOpen, Clapperboard, Video, Volume2, Sparkles } from "lucide-react"
+import { Check, Box, FileText, Palette, BookOpen, Clapperboard, Video, Volume2, Sparkles } from "lucide-react"
 import { cn } from "@/lib/utils"
 import {
   useProjectWizardStore,
@@ -8,7 +8,7 @@ import {
 
 // Map step IDs to Lucide icons
 const stepIcons: Record<WizardStep, React.ElementType> = {
-  platform: Cloud,
+  platform: Box,
   brief: FileText,
   mood: Palette,
   story: BookOpen,

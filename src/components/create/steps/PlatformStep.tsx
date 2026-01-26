@@ -1,5 +1,5 @@
 import { useState } from "react"
-import { Cloud, FolderOpen, Check } from "lucide-react"
+import { Box, FolderOpen, Check } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { useProjectWizardStore } from "@/state/projectWizardStore"
 import { Button } from "@/components/ui/button"
@@ -96,7 +96,7 @@ export function PlatformStep() {
                 className="group relative p-6 bg-zinc-900 border-2 border-zinc-800 hover:border-sky-500/50 rounded-xl text-left transition-all hover:bg-zinc-900/80"
               >
                 <div className="w-14 h-14 rounded-xl bg-gradient-to-br from-sky-400 via-sky-500 to-blue-600 flex items-center justify-center mb-4 shadow-lg shadow-sky-500/20">
-                  <Cloud className="w-7 h-7 text-white" />
+                  <Box className="w-7 h-7 text-white" />
                 </div>
                 <h3 className="text-lg font-semibold text-zinc-100 mb-2">
                   New Platform
@@ -145,7 +145,7 @@ export function PlatformStep() {
             <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-6">
               <div className="flex items-start gap-4">
                 <div className="w-14 h-14 rounded-xl bg-gradient-to-br from-sky-400 via-sky-500 to-blue-600 flex items-center justify-center shadow-lg shadow-sky-500/20 flex-shrink-0">
-                  <Cloud className="w-7 h-7 text-white" />
+                  <Box className="w-7 h-7 text-white" />
                 </div>
                 <div>
                   <h3 className="text-lg font-semibold text-zinc-100 mb-2">

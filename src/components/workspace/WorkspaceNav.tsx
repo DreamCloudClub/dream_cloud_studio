@@ -4,11 +4,11 @@ import {
   BookOpen,
   Film,
   Layers,
-  FolderOpen,
+  Palette,
   Download,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
-import { WorkspaceTab, WORKSPACE_TABS, useWorkspaceStore } from "@/state/workspaceStore"
+import { WORKSPACE_TABS, useWorkspaceStore } from "@/state/workspaceStore"
 
 const iconMap: Record<string, React.ElementType> = {
   FileText,
@@ -16,7 +16,7 @@ const iconMap: Record<string, React.ElementType> = {
   BookOpen,
   Film,
   Layers,
-  FolderOpen,
+  Palette,
   Download,
 }
 

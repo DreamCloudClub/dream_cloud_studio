@@ -8,7 +8,7 @@ import {
   Loader2,
   Sparkles,
   AlertCircle,
-  Cloud,
+  Box,
   FileText,
   Palette,
   BookOpen,
@@ -16,6 +16,7 @@ import {
   Video,
 } from "lucide-react"
 import { useProjectWizardStore } from "@/state/projectWizardStore"
+import { useFoundationStore } from "@/state/foundationStore"
 import { Button } from "@/components/ui/button"
 import { cn } from "@/lib/utils"
 import { useNavigate } from "react-router-dom"
@@ -34,6 +35,7 @@ export function ReviewStep() {
     goToPreviousStep,
     resetWizard,
   } = useProjectWizardStore()
+  const { incrementProjectCount } = useFoundationStore()
 
   const [isCreating, setIsCreating] = useState(false)
 
@@ -49,6 +51,11 @@ export function ReviewStep() {
       // 4. Navigate to workspace
 
       const newProjectId = crypto.randomUUID()
+
+      // Increment foundation project count if one was used
+      if (moodBoard?.foundationId) {
+        incrementProjectCount(moodBoard.foundationId)
+      }
 
       // Reset wizard state
       resetWizard()
@@ -66,7 +73,7 @@ export function ReviewStep() {
   const sections = [
     {
       title: "Platform",
-      icon: Cloud,
+      icon: Box,
       status: platform ? "complete" : "incomplete",
       content: platform?.type === "new"
         ? "New platform (will be created)"

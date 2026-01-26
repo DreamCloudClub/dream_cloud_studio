@@ -99,7 +99,7 @@ function CategorySection({ category, assets }: CategorySectionProps) {
 
       {/* Assets Grid */}
       {isExpanded && (
-        <div className="ml-6 grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-3">
+        <div className="ml-6 grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
           {assets.map((asset) => (
             <AssetCard key={asset.id} asset={asset} />
           ))}
@@ -182,7 +182,7 @@ export function MoodBoardPage() {
 
   return (
     <div className="h-full overflow-y-auto">
-      <div className="p-6 lg:p-8 space-y-6">
+      <div className="max-w-4xl mx-auto px-6 lg:px-8 py-6 lg:py-8 space-y-6">
         {/* Header */}
         <div className="flex items-center justify-between">
           <div>

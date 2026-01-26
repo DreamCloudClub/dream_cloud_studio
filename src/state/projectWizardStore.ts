@@ -1,4 +1,5 @@
 import { create } from "zustand"
+import { getInitialGreeting } from "@/services/claude"
 
 // Step types for the wizard
 export type WizardStep =
@@ -90,6 +91,7 @@ export interface MoodBoardData {
   images: { id: string; url: string; name: string }[]
   colors: string[]
   keywords: string[]
+  foundationId?: string // ID of applied foundation, if any
 }
 
 export interface Act {
@@ -202,6 +204,7 @@ interface ProjectWizardState {
   // Bubble
   addBubbleMessage: (message: Omit<BubbleMessage, "id" | "timestamp">) => void
   setBubbleTyping: (isTyping: boolean) => void
+  clearBubbleMessages: () => void
 
   // Reset
   resetWizard: () => void
@@ -277,8 +280,21 @@ export const useProjectWizardStore = create<ProjectWizardState>((set, get) => ({
     return false
   },
 
-  // Initial prompt
-  setInitialPrompt: (prompt) => set({ initialPrompt: prompt }),
+  // Initial prompt - also seeds the chat with context
+  setInitialPrompt: (prompt) => {
+    set({ initialPrompt: prompt })
+
+    if (prompt && prompt.trim()) {
+      // Seed chat with the user's initial prompt and Bubble's response
+      const { clearBubbleMessages, addBubbleMessage } = get()
+      clearBubbleMessages()
+      addBubbleMessage({ role: "user", content: prompt })
+      addBubbleMessage({
+        role: "assistant",
+        content: getInitialGreeting("platform", prompt)
+      })
+    }
+  },
 
   // Platform
   setPlatform: (data) =>
@@ -405,6 +421,8 @@ export const useProjectWizardStore = create<ProjectWizardState>((set, get) => ({
     }),
 
   setBubbleTyping: (isTyping) => set({ isBubbleTyping: isTyping }),
+
+  clearBubbleMessages: () => set({ bubbleMessages: [] }),
 
   // Reset
   resetWizard: () => set(initialState),

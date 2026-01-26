@@ -2,7 +2,9 @@ import { useEffect, useState } from "react"
 import { useParams, useNavigate } from "react-router-dom"
 import { ArrowLeft, Loader2 } from "lucide-react"
 import { useWorkspaceStore } from "@/state/workspaceStore"
+import { useAuth } from "@/contexts/AuthContext"
 import { BubblePanel } from "@/components/create"
+import { HeaderActions } from "@/components/shared"
 import {
   WorkspaceNav,
   BriefPage,
@@ -17,6 +19,7 @@ import {
 export function Workspace() {
   const { projectId } = useParams<{ projectId: string }>()
   const navigate = useNavigate()
+  const { user, profile, signOut } = useAuth()
   const { project, isLoading, activeTab, loadProject } = useWorkspaceStore()
   const [isBubbleCollapsed, setIsBubbleCollapsed] = useState(false)
 
@@ -86,7 +89,7 @@ export function Workspace() {
   return (
     <div className="h-screen bg-zinc-950 flex flex-col">
       {/* Header */}
-      <header className="flex items-center justify-between px-4 lg:px-6 py-3 border-b border-zinc-800 bg-zinc-900/50 backdrop-blur-sm">
+      <header className="h-14 flex items-center justify-between px-4 sm:px-6 border-b border-zinc-800 bg-zinc-900/50 backdrop-blur-sm flex-shrink-0">
         <button
           onClick={handleBack}
           className="flex items-center gap-2 text-zinc-400 hover:text-zinc-200 transition-colors"
@@ -95,14 +98,16 @@ export function Workspace() {
           <span className="text-sm font-medium hidden sm:inline">Dashboard</span>
         </button>
 
-        <div className="flex-1 text-center">
-          <h1 className="text-base font-semibold text-zinc-100 truncate px-4">
-            {project.name}
-          </h1>
-        </div>
+        <h1 className="text-base font-semibold text-zinc-100 truncate px-4 absolute left-1/2 -translate-x-1/2">
+          {project.name}
+        </h1>
 
-        {/* Spacer for centering */}
-        <div className="w-20" />
+        <HeaderActions
+          userName={profile?.full_name || user?.email?.split("@")[0] || "User"}
+          userEmail={user?.email || ""}
+          userAvatar={profile?.avatar_url}
+          onSignOut={signOut}
+        />
       </header>
 
       {/* Main Content with Bubble Panel */}
@@ -110,7 +115,7 @@ export function Workspace() {
         {/* Bubble Panel (Left Sidebar) */}
         <div
           className={`${
-            isBubbleCollapsed ? "w-16" : "w-80 lg:w-96"
+            isBubbleCollapsed ? "w-16" : "w-80"
           } flex-shrink-0 hidden md:flex transition-all duration-300`}
         >
           <BubblePanel

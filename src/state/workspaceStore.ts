@@ -17,17 +17,17 @@ export const WORKSPACE_TABS: {
   icon: string
 }[] = [
   { id: "brief", label: "Brief", icon: "FileText" },
-  { id: "moodboard", label: "Mood", icon: "Image" },
+  { id: "moodboard", label: "Mood", icon: "Palette" },
   { id: "storyboard", label: "Story", icon: "BookOpen" },
   { id: "editor", label: "Editor", icon: "Film" },
-  { id: "scenes", label: "Scenes", icon: "Layers" },
-  { id: "assets", label: "Assets", icon: "FolderOpen" },
+  { id: "scenes", label: "Scenes", icon: "Image" },
+  { id: "assets", label: "Assets", icon: "Layers" },
   { id: "export", label: "Export", icon: "Download" },
 ]
 
 // Asset categories for mood board and scene manager
 export type AssetCategory =
-  | "background"
+  | "scene"
   | "stage"
   | "character"
   | "weather"
@@ -36,7 +36,7 @@ export type AssetCategory =
   | "audio"
 
 export const ASSET_CATEGORIES: { id: AssetCategory; label: string; icon: string }[] = [
-  { id: "background", label: "Backgrounds", icon: "Mountain" },
+  { id: "scene", label: "Scenes", icon: "Mountain" },
   { id: "stage", label: "Stages", icon: "Square" },
   { id: "character", label: "Characters", icon: "User" },
   { id: "weather", label: "Weather", icon: "Cloud" },
@@ -66,7 +66,7 @@ export interface Shot {
   order: number
   // Assets used in this shot
   assets: {
-    background?: ProjectAsset
+    scene?: ProjectAsset
     stage?: ProjectAsset
     characters: ProjectAsset[]
     weather?: ProjectAsset
@@ -209,7 +209,7 @@ const createMockProject = (): Project => ({
       id: "asset-1",
       name: "Living Room",
       type: "image",
-      category: "background",
+      category: "scene",
       url: "/mock/living-room.jpg",
       thumbnailUrl: "/mock/living-room-thumb.jpg",
       createdAt: new Date().toISOString(),
@@ -218,7 +218,7 @@ const createMockProject = (): Project => ({
       id: "asset-2",
       name: "Kitchen",
       type: "image",
-      category: "background",
+      category: "scene",
       url: "/mock/kitchen.jpg",
       thumbnailUrl: "/mock/kitchen-thumb.jpg",
       createdAt: new Date().toISOString(),

@@ -164,8 +164,8 @@ export function StoryboardPage() {
   return (
     <div className="h-full flex flex-col">
       {/* Main Content - Full Card View */}
-      <div className="flex-1 overflow-y-auto p-6 lg:p-8">
-        <div className="max-w-4xl mx-auto">
+      <div className="flex-1 overflow-y-auto">
+        <div className="max-w-4xl mx-auto px-6 lg:px-8 py-6 lg:py-8">
           {selectedCard ? (
             <FullCard card={selectedCard} displayNumber={selectedCardIndex + 1} />
           ) : (

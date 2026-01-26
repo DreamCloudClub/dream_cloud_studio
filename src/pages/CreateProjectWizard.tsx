@@ -1,7 +1,10 @@
-import { useEffect, useState } from "react"
+import { useEffect } from "react"
 import { useNavigate, useSearchParams } from "react-router-dom"
-import { ArrowLeft, X } from "lucide-react"
+import { ArrowLeft } from "lucide-react"
 import { useProjectWizardStore } from "@/state/projectWizardStore"
+import { useUIStore } from "@/state/uiStore"
+import { useAuth } from "@/contexts/AuthContext"
+import { HeaderActions } from "@/components/shared"
 import {
   StepTimeline,
   BubblePanel,
@@ -18,9 +21,10 @@ import {
 export function CreateProjectWizard() {
   const navigate = useNavigate()
   const [searchParams] = useSearchParams()
-  const [isBubbleCollapsed, setIsBubbleCollapsed] = useState(false)
+  const { isBubbleCollapsed, toggleBubbleCollapsed } = useUIStore()
+  const { user, profile, signOut } = useAuth()
 
-  const { currentStep, setInitialPrompt, resetWizard } = useProjectWizardStore()
+  const { currentStep, setInitialPrompt } = useProjectWizardStore()
 
   // Extract initial prompt from URL params
   useEffect(() => {
@@ -31,18 +35,7 @@ export function CreateProjectWizard() {
   }, [searchParams, setInitialPrompt])
 
   const handleBack = () => {
-    navigate("/")
-  }
-
-  const handleCancel = () => {
-    if (
-      window.confirm(
-        "Are you sure you want to cancel? Your progress will be lost."
-      )
-    ) {
-      resetWizard()
-      navigate("/")
-    }
+    navigate("/library/projects")
   }
 
   // Render the current step content
@@ -72,26 +65,25 @@ export function CreateProjectWizard() {
   return (
     <div className="h-screen bg-zinc-950 flex flex-col">
       {/* Header */}
-      <header className="flex items-center justify-between px-4 lg:px-6 py-4 border-b border-zinc-800 bg-zinc-900/50 backdrop-blur-sm">
+      <header className="h-14 flex items-center justify-between px-4 sm:px-6 border-b border-zinc-800 bg-zinc-900/50 backdrop-blur-sm flex-shrink-0">
         <button
           onClick={handleBack}
           className="flex items-center gap-2 text-zinc-400 hover:text-zinc-200 transition-colors"
         >
           <ArrowLeft className="w-4 h-4" />
-          <span className="text-sm font-medium">Back to Dashboard</span>
+          <span className="text-sm font-medium">Back to Projects</span>
         </button>
 
-        <h1 className="text-lg font-semibold text-zinc-100">
+        <h1 className="text-lg font-semibold text-zinc-100 absolute left-1/2 -translate-x-1/2">
           Create New Project
         </h1>
 
-        <button
-          onClick={handleCancel}
-          className="flex items-center gap-2 text-zinc-500 hover:text-zinc-300 transition-colors"
-        >
-          <span className="text-sm">Cancel</span>
-          <X className="w-4 h-4" />
-        </button>
+        <HeaderActions
+          userName={profile?.full_name || user?.email?.split("@")[0] || "User"}
+          userEmail={user?.email || ""}
+          userAvatar={profile?.avatar_url}
+          onSignOut={signOut}
+        />
       </header>
 
       {/* Main Content */}
@@ -99,12 +91,12 @@ export function CreateProjectWizard() {
         {/* Bubble Panel (Left Sidebar) */}
         <div
           className={`${
-            isBubbleCollapsed ? "w-16" : "w-80 lg:w-96"
+            isBubbleCollapsed ? "w-16" : "w-80"
           } flex-shrink-0 hidden md:flex transition-all duration-300`}
         >
           <BubblePanel
             isCollapsed={isBubbleCollapsed}
-            onToggleCollapse={() => setIsBubbleCollapsed(!isBubbleCollapsed)}
+            onToggleCollapse={toggleBubbleCollapsed}
           />
         </div>
 

@@ -1,105 +1,147 @@
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { useNavigate } from "react-router-dom"
 import {
   DashboardHeader,
   CreateNewHero,
   ContentRow,
-  UsageBar,
+  DashboardNav,
 } from "@/components/dashboard"
 import { BubblePanel } from "@/components/create"
+import { useUIStore } from "@/state/uiStore"
+import { useAuth } from "@/contexts/AuthContext"
+import { getProjects } from "@/services/projects"
+import { getAssets } from "@/services/assets"
+import { getPlatforms } from "@/services/platforms"
+import type { Project, Asset, Platform } from "@/types/database"
 
-// Mock usage data for demonstration
-const mockUsage = {
-  images: { used: 82, limit: 500 },
-  videos: { used: 45, limit: 150 },
-  storage: { used: 12, limit: 50, unit: "GB" },
+function formatRelativeTime(dateString: string): string {
+  const date = new Date(dateString)
+  const now = new Date()
+  const diffMs = now.getTime() - date.getTime()
+  const diffMins = Math.floor(diffMs / 60000)
+  const diffHours = Math.floor(diffMs / 3600000)
+  const diffDays = Math.floor(diffMs / 86400000)
+
+  if (diffMins < 1) return "just now"
+  if (diffMins < 60) return `${diffMins} min${diffMins > 1 ? "s" : ""} ago`
+  if (diffHours < 24) return `${diffHours} hour${diffHours > 1 ? "s" : ""} ago`
+  if (diffDays < 7) return `${diffDays} day${diffDays > 1 ? "s" : ""} ago`
+  if (diffDays < 30) return `${Math.floor(diffDays / 7)} week${Math.floor(diffDays / 7) > 1 ? "s" : ""} ago`
+  return date.toLocaleDateString()
 }
-
-// Mock projects for demonstration
-const mockProjects = [
-  { id: "project-1", name: "Product Launch Video", updatedAt: "2 hours ago" },
-  { id: "project-2", name: "Brand Story", updatedAt: "1 day ago" },
-  { id: "project-3", name: "Tutorial Series Ep.1", updatedAt: "3 days ago" },
-]
-
-// Mock assets for demonstration
-const mockAssets = [
-  { id: "asset-1", name: "Hero Background", type: "image" as const, updatedAt: "1 hour ago" },
-  { id: "asset-2", name: "Product Intro", type: "video" as const, updatedAt: "4 hours ago" },
-  { id: "asset-3", name: "Background Music", type: "audio" as const, updatedAt: "1 day ago" },
-]
-
-// Mock foundations for demonstration
-const mockFoundations = [
-  { id: "foundation-1", name: "Corporate Clean", updatedAt: "1 week ago" },
-  { id: "foundation-2", name: "Playful Social", updatedAt: "2 weeks ago" },
-]
 
 export function Dashboard() {
   const navigate = useNavigate()
-  const [isBubbleCollapsed, setIsBubbleCollapsed] = useState(false)
+  const { user, profile, signOut } = useAuth()
+  const { isBubbleCollapsed, toggleBubbleCollapsed, setBubbleCollapsed } = useUIStore()
 
-  const handleNewProject = (prompt: string) => {
-    // Navigate to /create/project with prompt context
-    const params = prompt ? `?prompt=${encodeURIComponent(prompt)}` : ""
-    navigate(`/create/project${params}`)
+  const [projects, setProjects] = useState<Project[]>([])
+  const [assets, setAssets] = useState<Asset[]>([])
+  const [platforms, setPlatforms] = useState<Platform[]>([])
+  const [isLoading, setIsLoading] = useState(true)
+
+  // Fetch data from Supabase
+  useEffect(() => {
+    async function fetchData() {
+      if (!user) return
+
+      setIsLoading(true)
+      try {
+        const [projectsData, assetsData, platformsData] = await Promise.all([
+          getProjects(user.id),
+          getAssets(user.id),
+          getPlatforms(user.id),
+        ])
+        setProjects(projectsData)
+        setAssets(assetsData)
+        setPlatforms(platformsData)
+      } catch (error) {
+        console.error("Error fetching dashboard data:", error)
+      } finally {
+        setIsLoading(false)
+      }
+    }
+
+    fetchData()
+  }, [user])
+
+  // Transform projects for ContentRow (show most recent 3)
+  const recentProjects = projects.slice(0, 3).map(project => ({
+    id: project.id,
+    name: project.name,
+    updatedAt: formatRelativeTime(project.updated_at),
+  }))
+
+  // Transform assets for ContentRow (show most recent 3)
+  const recentAssets = assets.slice(0, 3).map(asset => ({
+    id: asset.id,
+    name: asset.name,
+    type: asset.type,
+    updatedAt: formatRelativeTime(asset.created_at),
+  }))
+
+  // Transform platforms (foundations) for ContentRow (show most recent 3)
+  const recentFoundations = platforms.slice(0, 3).map(platform => ({
+    id: platform.id,
+    name: platform.name,
+    updatedAt: formatRelativeTime(platform.updated_at),
+  }))
+
+  const handleNewProject = () => {
+    navigate("/create/project")
   }
 
-  const handleNewAsset = (prompt: string) => {
-    // TODO: Navigate to /create/asset with prompt context (show asset type grid)
-    console.log("New Asset with prompt:", prompt)
+  const handleNewAsset = () => {
+    navigate("/create/asset")
+  }
+
+  const handleStartWithBubble = () => {
+    // Open the Bubble panel
+    setBubbleCollapsed(false)
   }
 
   const handleProjectClick = (projectId: string) => {
     navigate(`/project/${projectId}`)
   }
 
-  const handleViewAllProjects = () => {
-    console.log("View all projects")
-  }
-
-  const handleViewAllAssets = () => {
-    console.log("View all assets")
-  }
-
-  const handleViewAllFoundations = () => {
-    console.log("View all foundations")
-  }
-
-  const handleUpgrade = () => {
-    console.log("Upgrade clicked")
-  }
-
   return (
     <div className="h-screen bg-zinc-950 flex flex-col">
-      <DashboardHeader />
+      <DashboardHeader
+        userName={profile?.full_name || user?.email?.split("@")[0] || "User"}
+        userEmail={user?.email || ""}
+        userAvatar={profile?.avatar_url}
+        onSignOut={signOut}
+      />
 
       {/* Main Content with Bubble Panel */}
       <div className="flex-1 flex overflow-hidden">
         {/* Bubble Panel (Left Sidebar) */}
         <div
           className={`${
-            isBubbleCollapsed ? "w-16" : "w-80 lg:w-96"
+            isBubbleCollapsed ? "w-16" : "w-80"
           } flex-shrink-0 hidden md:flex transition-all duration-300`}
         >
           <BubblePanel
             isCollapsed={isBubbleCollapsed}
-            onToggleCollapse={() => setIsBubbleCollapsed(!isBubbleCollapsed)}
+            onToggleCollapse={toggleBubbleCollapsed}
           />
         </div>
 
         {/* Dashboard Content */}
         <main className="flex-1 overflow-auto">
           <div className="w-full max-w-[90%] md:max-w-[80%] lg:max-w-3xl mx-auto px-4">
-            <CreateNewHero onNewProject={handleNewProject} onNewAsset={handleNewAsset} />
+            <CreateNewHero
+              onNewProject={handleNewProject}
+              onNewAsset={handleNewAsset}
+              onStartWithBubble={handleStartWithBubble}
+            />
 
             <div className="border-t border-zinc-800/50" />
 
             <ContentRow
               title="Recent Projects"
               type="projects"
-              items={mockProjects}
-              onViewAll={handleViewAllProjects}
+              items={recentProjects}
               onItemClick={handleProjectClick}
             />
 
@@ -108,8 +150,7 @@ export function Dashboard() {
             <ContentRow
               title="Recent Assets"
               type="assets"
-              items={mockAssets}
-              onViewAll={handleViewAllAssets}
+              items={recentAssets}
             />
 
             <div className="border-t border-zinc-800/50" />
@@ -117,14 +158,14 @@ export function Dashboard() {
             <ContentRow
               title="Foundations"
               type="foundations"
-              items={mockFoundations}
-              onViewAll={handleViewAllFoundations}
+              items={recentFoundations}
+              onItemClick={(id) => navigate(`/foundation/${id}`)}
             />
           </div>
         </main>
       </div>
 
-      <UsageBar usage={mockUsage} plan="Basic" onUpgrade={handleUpgrade} />
+      <DashboardNav />
     </div>
   )
 }

@@ -1,4 +1,5 @@
 import { useState } from "react"
+import { useNavigate } from "react-router-dom"
 import {
   Mountain,
   Square,
@@ -9,7 +10,6 @@ import {
   Volume2,
   Plus,
   Play,
-  MoreHorizontal,
   ChevronDown,
   ChevronRight,
   Search,
@@ -24,6 +24,7 @@ import {
   AssetCategory,
   ProjectAsset,
 } from "@/state/workspaceStore"
+import { useLibraryStore } from "@/state/libraryStore"
 
 const iconMap: Record<string, React.ElementType> = {
   Mountain,
@@ -34,37 +35,6 @@ const iconMap: Record<string, React.ElementType> = {
   Sparkles,
   Volume2,
 }
-
-// Mock all user assets (in real app, this would come from Supabase)
-const allUserAssets: ProjectAsset[] = [
-  // Backgrounds
-  { id: "all-1", name: "Sunset Beach", type: "image", category: "background", url: "", createdAt: new Date().toISOString() },
-  { id: "all-2", name: "City Skyline", type: "image", category: "background", url: "", createdAt: new Date().toISOString() },
-  { id: "all-3", name: "Mountain Vista", type: "image", category: "background", url: "", createdAt: new Date().toISOString() },
-  { id: "all-4", name: "Office Interior", type: "image", category: "background", url: "", createdAt: new Date().toISOString() },
-  { id: "all-5", name: "Forest Path", type: "video", category: "background", url: "", duration: 10, createdAt: new Date().toISOString() },
-  // Stages
-  { id: "all-6", name: "Presentation Stage", type: "image", category: "stage", url: "", createdAt: new Date().toISOString() },
-  { id: "all-7", name: "Modern Table", type: "image", category: "stage", url: "", createdAt: new Date().toISOString() },
-  // Characters
-  { id: "all-8", name: "Business Professional", type: "image", category: "character", url: "", createdAt: new Date().toISOString() },
-  { id: "all-9", name: "Tech Enthusiast", type: "image", category: "character", url: "", createdAt: new Date().toISOString() },
-  { id: "all-10", name: "Walking Person", type: "video", category: "character", url: "", duration: 5, createdAt: new Date().toISOString() },
-  // Weather
-  { id: "all-11", name: "Sunny Day", type: "image", category: "weather", url: "", createdAt: new Date().toISOString() },
-  { id: "all-12", name: "Rain Effect", type: "video", category: "weather", url: "", duration: 8, createdAt: new Date().toISOString() },
-  // Props
-  { id: "all-13", name: "Laptop", type: "image", category: "prop", url: "", createdAt: new Date().toISOString() },
-  { id: "all-14", name: "Coffee Mug", type: "image", category: "prop", url: "", createdAt: new Date().toISOString() },
-  { id: "all-15", name: "Smartphone", type: "image", category: "prop", url: "", createdAt: new Date().toISOString() },
-  // Effects
-  { id: "all-16", name: "Lens Flare", type: "video", category: "effect", url: "", duration: 3, createdAt: new Date().toISOString() },
-  { id: "all-17", name: "Particle Burst", type: "video", category: "effect", url: "", duration: 2, createdAt: new Date().toISOString() },
-  // Audio
-  { id: "all-18", name: "Upbeat Background", type: "audio", category: "audio", url: "", duration: 120, createdAt: new Date().toISOString() },
-  { id: "all-19", name: "Ambient Office", type: "audio", category: "audio", url: "", duration: 60, createdAt: new Date().toISOString() },
-  { id: "all-20", name: "Click Sound", type: "audio", category: "audio", url: "", duration: 1, createdAt: new Date().toISOString() },
-]
 
 interface CategorySectionProps {
   category: { id: AssetCategory; label: string; icon: string }
@@ -125,7 +95,7 @@ function CategorySection({ category, assets, onAddToProject }: CategorySectionPr
       </button>
 
       {isExpanded && (
-        <div className="ml-6 grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-3">
+        <div className="ml-6 grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
           {assets.map((asset) => (
             <AssetCard
               key={asset.id}
@@ -198,9 +168,17 @@ function AssetCard({ asset, onAddToProject }: AssetCardProps) {
 }
 
 export function AssetsPage() {
+  const navigate = useNavigate()
   const { project, addAsset } = useWorkspaceStore()
+  const { assets: libraryAssets } = useLibraryStore()
   const [searchQuery, setSearchQuery] = useState("")
   const [selectedType, setSelectedType] = useState<"all" | "image" | "video" | "audio">("all")
+
+  // Convert library assets to project asset format
+  const allUserAssets: ProjectAsset[] = libraryAssets.map((a) => ({
+    ...a,
+    category: a.category as AssetCategory,
+  }))
 
   // Filter assets
   let filteredAssets = allUserAssets
@@ -236,13 +214,13 @@ export function AssetsPage() {
 
   return (
     <div className="h-full overflow-y-auto">
-      <div className="p-6 lg:p-8 space-y-6">
+      <div className="max-w-4xl mx-auto px-6 lg:px-8 py-6 lg:py-8 space-y-6">
         {/* Header */}
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
           <div>
             <h1 className="text-2xl font-bold text-zinc-100">Asset Library</h1>
             <p className="text-zinc-400 mt-1">
-              Browse all your assets • {allUserAssets.length} total
+              Browse all your assets • {libraryAssets.length} total
             </p>
           </div>
           <div className="flex items-center gap-2">
@@ -250,7 +228,10 @@ export function AssetsPage() {
               <Upload className="w-4 h-4" />
               Upload
             </button>
-            <button className="px-4 py-2 bg-gradient-to-br from-sky-400 via-sky-500 to-blue-600 rounded-xl text-white font-medium text-sm hover:opacity-90 transition-opacity inline-flex items-center gap-2">
+            <button
+              onClick={() => navigate("/create/asset")}
+              className="px-4 py-2 bg-gradient-to-br from-sky-400 via-sky-500 to-blue-600 rounded-xl text-white font-medium text-sm hover:opacity-90 transition-opacity inline-flex items-center gap-2"
+            >
               <Wand2 className="w-4 h-4" />
               Generate
             </button>

@@ -1,5 +1,4 @@
-import { ChevronRight, FolderOpen, Image, Palette } from "lucide-react"
-import { Button } from "@/components/ui/button"
+import { FolderOpen, Image, Palette } from "lucide-react"
 
 export type ContentRowType = "projects" | "assets" | "foundations"
 
@@ -15,7 +14,6 @@ interface ContentRowProps {
   title: string
   type: ContentRowType
   items?: ContentItem[]
-  onViewAll?: () => void
   onItemClick?: (id: string) => void
 }
 
@@ -80,24 +78,13 @@ function ItemCard({ item, onClick }: { item: ContentItem; onClick?: () => void }
   )
 }
 
-export function ContentRow({ title, type, items = [], onViewAll, onItemClick }: ContentRowProps) {
+export function ContentRow({ title, type, items = [], onItemClick }: ContentRowProps) {
   const hasItems = items.length > 0
 
   return (
     <div className="py-4 sm:py-6 md:py-8">
-      <div className="flex items-center justify-between mb-4 md:mb-6">
+      <div className="mb-4 md:mb-6">
         <h2 className="text-sm font-semibold text-zinc-300 uppercase tracking-wide">{title}</h2>
-        {hasItems && (
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={onViewAll}
-            className="text-zinc-400 hover:text-zinc-200 -mr-2"
-          >
-            View All
-            <ChevronRight className="h-4 w-4 ml-1" />
-          </Button>
-        )}
       </div>
 
       {hasItems ? (
