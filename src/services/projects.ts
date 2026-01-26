@@ -44,6 +44,58 @@ export async function getProjects(userId: string): Promise<Project[]> {
   return data as Project[]
 }
 
+export async function getCompletedProjects(userId: string): Promise<Project[]> {
+  const { data, error } = await supabase
+    .from('projects')
+    .select('*')
+    .eq('user_id', userId)
+    .in('status', ['completed', 'in_progress'])
+    .order('updated_at', { ascending: false })
+
+  if (error) throw error
+  return data as Project[]
+}
+
+export async function getDraftProjects(userId: string): Promise<Project[]> {
+  const { data, error } = await supabase
+    .from('projects')
+    .select('*')
+    .eq('user_id', userId)
+    .eq('status', 'draft')
+    .order('updated_at', { ascending: false })
+
+  if (error) throw error
+  return data as Project[]
+}
+
+export async function createDraftProject(userId: string, platformId?: string): Promise<Project> {
+  const { data, error } = await supabase
+    .from('projects')
+    .insert({
+      user_id: userId,
+      platform_id: platformId || null,
+      name: 'Untitled Project',
+      status: 'draft',
+    })
+    .select()
+    .single()
+
+  if (error) throw error
+  return data as Project
+}
+
+export async function markProjectComplete(projectId: string): Promise<Project> {
+  const { data, error } = await supabase
+    .from('projects')
+    .update({ status: 'completed' })
+    .eq('id', projectId)
+    .select()
+    .single()
+
+  if (error) throw error
+  return data as Project
+}
+
 export async function getProject(projectId: string): Promise<Project | null> {
   const { data, error } = await supabase
     .from('projects')

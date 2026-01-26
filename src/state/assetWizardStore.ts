@@ -1,7 +1,9 @@
 import { create } from "zustand"
+import type { Asset } from "@/types/database"
 
 export type AssetType = "image" | "video" | "audio"
-export type AssetCategory = "scene" | "stage" | "character" | "weather" | "prop" | "effect" | "audio"
+// Visual categories (for image/video) + Audio categories (for audio)
+export type AssetCategory = "scene" | "stage" | "character" | "weather" | "prop" | "effect" | "music" | "sound_effect" | "voice"
 
 export type AssetWizardStep = "type" | "category" | "prompt" | "generate" | "review"
 
@@ -24,6 +26,9 @@ interface AssetWizardState {
   negativePrompt: string
   stylePreset: string | null
 
+  // Reference assets (for image-to-image, image-to-video)
+  referenceAssets: Asset[]
+
   // Generated results
   generatedAssets: {
     id: string
@@ -41,6 +46,8 @@ interface AssetWizardState {
   setPrompt: (prompt: string) => void
   setNegativePrompt: (prompt: string) => void
   setStylePreset: (preset: string | null) => void
+  addReferenceAsset: (asset: Asset) => void
+  removeReferenceAsset: (assetId: string) => void
   setGeneratedAssets: (assets: AssetWizardState["generatedAssets"]) => void
   toggleAssetSelection: (id: string) => void
   resetWizard: () => void
@@ -53,6 +60,7 @@ const initialState = {
   prompt: "",
   negativePrompt: "",
   stylePreset: null,
+  referenceAssets: [] as Asset[],
   generatedAssets: [],
 }
 
@@ -82,6 +90,19 @@ export const useAssetWizardStore = create<AssetWizardState>((set, get) => ({
   setPrompt: (prompt) => set({ prompt }),
   setNegativePrompt: (prompt) => set({ negativePrompt: prompt }),
   setStylePreset: (preset) => set({ stylePreset: preset }),
+
+  addReferenceAsset: (asset) => {
+    const { referenceAssets } = get()
+    // Prevent duplicates
+    if (!referenceAssets.find((a) => a.id === asset.id)) {
+      set({ referenceAssets: [...referenceAssets, asset] })
+    }
+  },
+
+  removeReferenceAsset: (assetId) => {
+    const { referenceAssets } = get()
+    set({ referenceAssets: referenceAssets.filter((a) => a.id !== assetId) })
+  },
 
   setGeneratedAssets: (assets) => set({ generatedAssets: assets }),
 

@@ -4,7 +4,7 @@ import { Mic, Send, Loader2, MessageSquare, ChevronLeft } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { useProjectWizardStore, WIZARD_STEPS } from "@/state/projectWizardStore"
 import { useWorkspaceStore } from "@/state/workspaceStore"
-import { sendMessage, getInitialGreeting, type BubbleContext, type Message, type ToolCall } from "@/services/claude"
+import { sendMessage, getInitialGreeting, type BubbleContext, type Message, type ToolCall, type ToolResult } from "@/services/claude"
 
 interface BubblePanelProps {
   className?: string
@@ -77,10 +77,17 @@ export function BubblePanel({ className, isCollapsed = false, onToggleCollapse }
     // Actions for tool calls
     setPlatform,
     updateBrief,
+    updateVideoContent,
     updateMoodBoard,
     goToNextStep,
     goToPreviousStep,
     markStepComplete,
+    // Composition actions
+    composition,
+    setTitleCard,
+    setOutroCard,
+    setDefaultTransition,
+    addTextOverlay,
   } = useProjectWizardStore()
 
   // Determine current context step for greeting
@@ -149,6 +156,15 @@ export function BubblePanel({ className, isCollapsed = false, onToggleCollapse }
         duration: brief.duration,
         aspectRatio: brief.aspectRatio,
       } : undefined,
+      videoContent: brief?.videoContent ? {
+        characters: brief.videoContent.characters,
+        setting: brief.videoContent.setting,
+        timeOfDay: brief.videoContent.timeOfDay,
+        weather: brief.videoContent.weather,
+        action: brief.videoContent.action,
+        props: brief.videoContent.props,
+        dialogue: brief.videoContent.dialogue,
+      } : undefined,
       moodBoard: moodBoard ? {
         keywords: moodBoard.keywords,
         colors: moodBoard.colors,
@@ -157,63 +173,146 @@ export function BubblePanel({ className, isCollapsed = false, onToggleCollapse }
         acts: storyboard.acts.map(a => ({ name: a.name, description: a.description })),
       } : undefined,
       shotCount: shots.length || undefined,
+      composition: {
+        hasTitle: !!composition.title,
+        titleText: composition.title?.text,
+        hasOutro: !!composition.outro,
+        outroText: composition.outro?.text,
+        defaultTransition: composition.defaultTransition,
+        overlayCount: composition.textOverlays.length,
+      },
     }
   }
 
-  // Execute tool calls from Bubble's response
-  const executeToolCalls = async (toolCalls: ToolCall[]) => {
+  // Execute tool calls from Bubble's response and return results
+  const executeToolCalls = async (toolCalls: ToolCall[]): Promise<ToolResult[]> => {
+    const results: ToolResult[] = []
+
     for (const tool of toolCalls) {
       console.log('Executing tool:', tool.name, tool.input)
+      let resultContent = 'success'
 
-      switch (tool.name) {
-        case 'navigate': {
-          const route = tool.input.route as string
-          navigate(route)
-          break
+      try {
+        switch (tool.name) {
+          case 'navigate': {
+            const route = tool.input.route as string
+            navigate(route)
+            resultContent = `Navigated to ${route}`
+            break
+          }
+          case 'select_platform': {
+            const type = tool.input.type as 'new' | 'existing'
+            const platformId = tool.input.platformId as string | undefined
+            setPlatform({
+              type,
+              platformId,
+              platformName: type === 'new' ? undefined : platformId,
+            })
+            markStepComplete('platform')
+            goToNextStep()
+            resultContent = `Platform set to ${type}. Moving to brief step.`
+            break
+          }
+          case 'update_brief': {
+            const briefData: Record<string, string> = {}
+            const updatedFields: string[] = []
+            if (tool.input.name) { briefData.name = tool.input.name as string; updatedFields.push('name') }
+            if (tool.input.audience) { briefData.audience = tool.input.audience as string; updatedFields.push('audience') }
+            if (tool.input.tone) { briefData.tone = tool.input.tone as string; updatedFields.push('tone') }
+            if (tool.input.duration) { briefData.duration = tool.input.duration as string; updatedFields.push('duration') }
+            if (tool.input.aspectRatio) { briefData.aspectRatio = tool.input.aspectRatio as string; updatedFields.push('aspectRatio') }
+            updateBrief(briefData)
+            resultContent = `Updated brief fields: ${updatedFields.join(', ')}`
+            break
+          }
+          case 'update_video_content': {
+            const contentData: Record<string, unknown> = {}
+            const updatedFields: string[] = []
+            if (tool.input.characters) { contentData.characters = tool.input.characters as string[]; updatedFields.push('characters') }
+            if (tool.input.setting) { contentData.setting = tool.input.setting as string; updatedFields.push('setting') }
+            if (tool.input.timeOfDay) { contentData.timeOfDay = tool.input.timeOfDay as string; updatedFields.push('timeOfDay') }
+            if (tool.input.weather) { contentData.weather = tool.input.weather as string; updatedFields.push('weather') }
+            if (tool.input.action) { contentData.action = tool.input.action as string; updatedFields.push('action') }
+            if (tool.input.props) { contentData.props = tool.input.props as string[]; updatedFields.push('props') }
+            if (tool.input.dialogue) { contentData.dialogue = tool.input.dialogue as string; updatedFields.push('dialogue') }
+            updateVideoContent(contentData)
+            resultContent = `Updated video content: ${updatedFields.join(', ')}`
+            break
+          }
+          case 'update_mood_board': {
+            const moodData: { keywords?: string[]; colors?: string[] } = {}
+            if (tool.input.keywords) moodData.keywords = tool.input.keywords as string[]
+            if (tool.input.colors) moodData.colors = tool.input.colors as string[]
+            updateMoodBoard(moodData)
+            resultContent = `Updated mood board`
+            break
+          }
+          case 'go_to_next_step': {
+            markStepComplete(currentStep as 'platform' | 'brief' | 'mood' | 'story' | 'shots' | 'filming' | 'audio' | 'review')
+            goToNextStep()
+            resultContent = `Moved to next step`
+            break
+          }
+          case 'go_to_previous_step': {
+            goToPreviousStep()
+            resultContent = `Moved to previous step`
+            break
+          }
+          case 'set_title_card': {
+            setTitleCard({
+              text: tool.input.text as string,
+              subtitle: tool.input.subtitle as string | undefined,
+              font: tool.input.font as string | undefined,
+              animation: tool.input.animation as "fade" | "slide-up" | "zoom" | "typewriter" | undefined,
+              backgroundColor: tool.input.backgroundColor as string | undefined,
+            })
+            resultContent = `Set title card: "${tool.input.text}"`
+            break
+          }
+          case 'set_outro_card': {
+            setOutroCard({
+              text: tool.input.text as string,
+              subtitle: tool.input.subtitle as string | undefined,
+              animation: tool.input.animation as "fade" | "slide-up" | "zoom" | "typewriter" | undefined,
+            })
+            resultContent = `Set outro card: "${tool.input.text}"`
+            break
+          }
+          case 'set_transition': {
+            setDefaultTransition(
+              tool.input.type as "none" | "fade" | "wipe-left" | "wipe-right" | "zoom",
+              tool.input.duration as number | undefined
+            )
+            resultContent = `Set transition to ${tool.input.type}`
+            break
+          }
+          case 'add_text_overlay': {
+            addTextOverlay({
+              text: tool.input.text as string,
+              position: tool.input.position as "top" | "center" | "bottom" | "lower-third" | undefined,
+              animation: tool.input.animation as "fade" | "slide-up" | "slide-left" | "typewriter" | "glitch" | undefined,
+              shotId: tool.input.shotId as string | undefined,
+              startTime: tool.input.startTime as number | undefined,
+              duration: tool.input.duration as number | undefined,
+            })
+            resultContent = `Added text overlay: "${tool.input.text}"`
+            break
+          }
+          default:
+            console.warn('Unknown tool:', tool.name)
+            resultContent = `Unknown tool: ${tool.name}`
         }
-        case 'select_platform': {
-          const type = tool.input.type as 'new' | 'existing'
-          const platformId = tool.input.platformId as string | undefined
-          setPlatform({
-            type,
-            platformId,
-            platformName: type === 'new' ? undefined : platformId,
-          })
-          markStepComplete('platform')
-          goToNextStep()
-          break
-        }
-        case 'update_brief': {
-          const briefData: Record<string, string> = {}
-          if (tool.input.name) briefData.name = tool.input.name as string
-          if (tool.input.description) briefData.description = tool.input.description as string
-          if (tool.input.audience) briefData.audience = tool.input.audience as string
-          if (tool.input.tone) briefData.tone = tool.input.tone as string
-          if (tool.input.duration) briefData.duration = tool.input.duration as string
-          if (tool.input.aspectRatio) briefData.aspectRatio = tool.input.aspectRatio as string
-          updateBrief(briefData)
-          break
-        }
-        case 'update_mood_board': {
-          const moodData: { keywords?: string[]; colors?: string[] } = {}
-          if (tool.input.keywords) moodData.keywords = tool.input.keywords as string[]
-          if (tool.input.colors) moodData.colors = tool.input.colors as string[]
-          updateMoodBoard(moodData)
-          break
-        }
-        case 'go_to_next_step': {
-          markStepComplete(currentStep as 'platform' | 'brief' | 'mood' | 'story' | 'shots' | 'filming' | 'audio' | 'review')
-          goToNextStep()
-          break
-        }
-        case 'go_to_previous_step': {
-          goToPreviousStep()
-          break
-        }
-        default:
-          console.warn('Unknown tool:', tool.name)
+      } catch (error) {
+        resultContent = `Error: ${error instanceof Error ? error.message : 'Unknown error'}`
       }
+
+      results.push({
+        tool_use_id: tool.id,
+        content: resultContent,
+      })
     }
+
+    return results
   }
 
   // Add initial message when step changes
@@ -276,18 +375,37 @@ export function BubblePanel({ className, isCollapsed = false, onToggleCollapse }
         { role: "user" as const, content: userMessage }
       ]
 
-      const response = await sendMessage(messageHistory, buildContext())
+      let response = await sendMessage(messageHistory, buildContext())
 
-      // Execute any tool calls first
-      if (response.toolCalls.length > 0) {
-        await executeToolCalls(response.toolCalls)
+      // Loop while Claude wants to use tools
+      while (response.stopReason === 'tool_use' && response.toolCalls.length > 0) {
+        // Execute the tool calls
+        const toolResults = await executeToolCalls(response.toolCalls)
+
+        // Give React time to update state after tool execution
+        await new Promise(resolve => setTimeout(resolve, 100))
+
+        // Send tool results back to Claude with the assistant's tool_use response
+        // This maintains proper conversation flow: user -> assistant(tool_use) -> user(tool_result) -> assistant
+        response = await sendMessage(
+          messageHistory,
+          buildContext(),
+          response.rawContent,
+          toolResults
+        )
       }
 
-      // Add the assistant's message
+      // Add the assistant's final text message
       if (response.message) {
         addBubbleMessage({
           role: "assistant",
           content: response.message,
+        })
+      } else {
+        // Fallback if no message
+        addBubbleMessage({
+          role: "assistant",
+          content: "Done! What would you like to do next?",
         })
       }
     } catch (error) {

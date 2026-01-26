@@ -1,4 +1,4 @@
-import { useState } from "react"
+import { useState, useMemo } from "react"
 import {
   Check,
   Image,
@@ -14,12 +14,16 @@ import {
   BookOpen,
   Clapperboard,
   Video,
+  Play,
+  Film,
 } from "lucide-react"
 import { useProjectWizardStore } from "@/state/projectWizardStore"
 import { useFoundationStore } from "@/state/foundationStore"
 import { Button } from "@/components/ui/button"
 import { cn } from "@/lib/utils"
 import { useNavigate } from "react-router-dom"
+import { VideoPreview } from "@/remotion/VideoPreview"
+import type { Shot } from "@/remotion/Root"
 
 export function ReviewStep() {
   const navigate = useNavigate()
@@ -32,12 +36,31 @@ export function ReviewStep() {
     shotMedia,
     audio,
     filmingProgress,
+    composition,
     goToPreviousStep,
     resetWizard,
   } = useProjectWizardStore()
   const { incrementProjectCount } = useFoundationStore()
 
   const [isCreating, setIsCreating] = useState(false)
+  const [showPreview, setShowPreview] = useState(false)
+
+  // Build Remotion shots from shot media
+  const remotionShots: Shot[] = useMemo(() => {
+    return shots
+      .filter((shot) => shotMedia[shot.id])
+      .map((shot) => {
+        const media = shotMedia[shot.id]
+        return {
+          id: shot.id,
+          type: media.type === "video" ? "video" : "image",
+          src: media.url,
+          duration: shot.duration,
+          transition: composition.defaultTransition || "fade",
+          transitionDuration: composition.transitionDuration || 0.5,
+        } as Shot
+      })
+  }, [shots, shotMedia, composition])
 
   const handleCreateProject = () => {
     setIsCreating(true)
@@ -129,6 +152,17 @@ export function ReviewStep() {
         audio.sfx.length > 0 && `${audio.sfx.length} SFX`,
       ].filter(Boolean).join(", ") || "No audio added",
     },
+    {
+      title: "Composition",
+      icon: Film,
+      status: composition.title || composition.outro ? "complete" : "optional",
+      content: [
+        composition.title && `Title: "${composition.title.text}"`,
+        composition.outro && `Outro: "${composition.outro.text}"`,
+        composition.textOverlays.length > 0 && `${composition.textOverlays.length} overlay(s)`,
+      ].filter(Boolean).join(" • ") || "No title/outro set",
+      extras: composition.defaultTransition ? `${composition.defaultTransition} transitions` : null,
+    },
   ]
 
   const hasIncomplete = sections.some((s) => s.status === "incomplete")
@@ -154,6 +188,74 @@ export function ReviewStep() {
           <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-6 mb-6 text-center">
             <p className="text-sm text-zinc-500 mb-1">Project Name</p>
             <h2 className="text-2xl font-bold text-zinc-100">{brief.name}</h2>
+          </div>
+        )}
+
+        {/* Video Preview */}
+        {remotionShots.length > 0 && (
+          <div className="mb-8">
+            <div className="flex items-center justify-between mb-3">
+              <h3 className="text-sm font-medium text-zinc-400 flex items-center gap-2">
+                <Film className="w-4 h-4" />
+                Composition Preview
+              </h3>
+              <button
+                onClick={() => setShowPreview(!showPreview)}
+                className="text-sm text-sky-400 hover:text-sky-300 flex items-center gap-1"
+              >
+                <Play className="w-3 h-3" />
+                {showPreview ? "Hide Preview" : "Show Preview"}
+              </button>
+            </div>
+
+            {showPreview && (
+              <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-4">
+                <div className="flex justify-center">
+                  <VideoPreview
+                    shots={remotionShots}
+                    title={composition.title}
+                    outro={composition.outro}
+                    backgroundColor={composition.backgroundColor || "#000000"}
+                    width={640}
+                    height={360}
+                    controls
+                  />
+                </div>
+
+                {/* Composition Info */}
+                <div className="mt-4 flex flex-wrap gap-2 justify-center">
+                  {composition.title && (
+                    <span className="px-2 py-1 bg-zinc-800 rounded text-xs text-zinc-400">
+                      Title: "{composition.title.text}"
+                    </span>
+                  )}
+                  {composition.outro && (
+                    <span className="px-2 py-1 bg-zinc-800 rounded text-xs text-zinc-400">
+                      Outro: "{composition.outro.text}"
+                    </span>
+                  )}
+                  <span className="px-2 py-1 bg-zinc-800 rounded text-xs text-zinc-400">
+                    Transition: {composition.defaultTransition || "fade"}
+                  </span>
+                  {composition.textOverlays.length > 0 && (
+                    <span className="px-2 py-1 bg-zinc-800 rounded text-xs text-zinc-400">
+                      {composition.textOverlays.length} text overlay(s)
+                    </span>
+                  )}
+                </div>
+              </div>
+            )}
+
+            {!showPreview && (
+              <div className="bg-zinc-900/50 border border-zinc-800 border-dashed rounded-xl p-8 text-center">
+                <Play className="w-8 h-8 text-zinc-600 mx-auto mb-2" />
+                <p className="text-sm text-zinc-500">
+                  {remotionShots.length} shots ready to preview
+                  {composition.title && ` • Title card`}
+                  {composition.outro && ` • Outro`}
+                </p>
+              </div>
+            )}
           </div>
         )}
 

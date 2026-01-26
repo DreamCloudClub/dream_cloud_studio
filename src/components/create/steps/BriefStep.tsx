@@ -1,40 +1,263 @@
 import { useState, useEffect } from "react"
+import { useNavigate } from "react-router-dom"
+import { Loader2, Save, User, MapPin, Cloud, Clapperboard, Package } from "lucide-react"
 import { useProjectWizardStore, ASPECT_RATIOS } from "@/state/projectWizardStore"
+import { useAuth } from "@/contexts/AuthContext"
+import { updateProject, createProjectBrief, updateProjectBrief, getProjectBrief, createDraftProject } from "@/services/projects"
 import { Button } from "@/components/ui/button"
 import { cn } from "@/lib/utils"
 
-export function BriefStep() {
-  const { brief, updateBrief, setBrief, goToNextStep, goToPreviousStep, markStepComplete } =
-    useProjectWizardStore()
+// Structured content categories that Bubble will fill in
+export interface VideoContent {
+  characters: string[]
+  setting: string
+  timeOfDay: string
+  weather: string
+  action: string
+  props: string[]
+  dialogue: string
+}
 
+const emptyContent: VideoContent = {
+  characters: [],
+  setting: "",
+  timeOfDay: "",
+  weather: "",
+  action: "",
+  props: [],
+  dialogue: "",
+}
+
+export function BriefStep() {
+  const navigate = useNavigate()
+  const { user } = useAuth()
+  const {
+    brief,
+    projectId,
+    platform,
+    updateBrief,
+    setBrief,
+    setProjectId,
+    goToNextStep,
+    goToPreviousStep,
+    markStepComplete,
+    resetWizard,
+    addBubbleMessage,
+    bubbleMessages,
+  } = useProjectWizardStore()
+
+  const [projectName, setProjectName] = useState(brief?.name || "")
+  const [videoContent, setVideoContent] = useState<VideoContent>(
+    brief?.videoContent || emptyContent
+  )
   const [formData, setFormData] = useState({
-    name: brief?.name || "",
-    description: brief?.description || "",
     audience: brief?.audience || "",
     tone: brief?.tone || "",
     duration: brief?.duration || "",
     aspectRatio: brief?.aspectRatio || "16:9",
   })
+  const [isSaving, setIsSaving] = useState(false)
+  const [isSavingDraft, setIsSavingDraft] = useState(false)
+  const [briefExists, setBriefExists] = useState(false)
+  const [hasStartedConversation, setHasStartedConversation] = useState(false)
 
-  // Update store when form changes
+  // Check if brief exists in DB
   useEffect(() => {
-    updateBrief(formData)
-  }, [formData])
+    async function checkBrief() {
+      if (projectId) {
+        const existing = await getProjectBrief(projectId)
+        setBriefExists(!!existing)
+      }
+    }
+    checkBrief()
+  }, [projectId])
+
+  // Start the conversation when user enters a project name
+  useEffect(() => {
+    if (projectName.trim() && !hasStartedConversation) {
+      setHasStartedConversation(true)
+      // Bubble will start asking questions
+      addBubbleMessage({
+        role: "assistant",
+        content: `Great! "${projectName}" - let's build out your video concept.\n\nTell me about your video. What's the main scene or action? Who's in it?`,
+      })
+    }
+  }, [projectName, hasStartedConversation, addBubbleMessage])
+
+  // Listen for Bubble updates to video content (from chat parsing)
+  useEffect(() => {
+    if (brief?.videoContent) {
+      setVideoContent(brief.videoContent)
+    }
+  }, [brief?.videoContent])
+
+  // Sync other form fields from store
+  useEffect(() => {
+    if (brief) {
+      setFormData(prev => ({
+        audience: brief.audience || prev.audience,
+        tone: brief.tone || prev.tone,
+        duration: brief.duration || prev.duration,
+        aspectRatio: brief.aspectRatio || prev.aspectRatio,
+      }))
+    }
+  }, [brief])
+
+  const handleNameChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const name = e.target.value
+    setProjectName(name)
+    updateBrief({ name })
+  }
 
   const handleChange = (
     e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>
   ) => {
     const { name, value } = e.target
     setFormData((prev) => ({ ...prev, [name]: value }))
+    updateBrief({ [name]: value })
   }
 
-  const handleContinue = () => {
-    setBrief(formData)
-    markStepComplete("brief")
-    goToNextStep()
+  // Convert structured content to description string for storage
+  const buildDescription = (): string => {
+    const parts: string[] = []
+
+    if (videoContent.action) {
+      parts.push(videoContent.action)
+    }
+    if (videoContent.characters.length > 0) {
+      parts.push(`Characters: ${videoContent.characters.join(", ")}`)
+    }
+    if (videoContent.setting) {
+      parts.push(`Setting: ${videoContent.setting}`)
+    }
+    if (videoContent.timeOfDay || videoContent.weather) {
+      const timeWeather = [videoContent.timeOfDay, videoContent.weather].filter(Boolean).join(", ")
+      parts.push(`Environment: ${timeWeather}`)
+    }
+    if (videoContent.props.length > 0) {
+      parts.push(`Props: ${videoContent.props.join(", ")}`)
+    }
+    if (videoContent.dialogue) {
+      parts.push(`Dialogue: "${videoContent.dialogue}"`)
+    }
+
+    return parts.join("\n")
   }
 
-  const isValid = formData.name.trim() && formData.description.trim()
+  const handleContinue = async () => {
+    if (!user) return
+
+    setIsSaving(true)
+    try {
+      let currentProjectId = projectId
+
+      // Create draft project if we don't have one yet
+      if (!currentProjectId) {
+        const platformId = platform?.type === "existing" ? platform.platformId : undefined
+        const draft = await createDraftProject(user.id, platformId)
+        currentProjectId = draft.id
+        setProjectId(draft.id)
+      }
+
+      const description = buildDescription()
+
+      // Update project name
+      await updateProject(currentProjectId, { name: projectName })
+
+      // Create or update brief in DB
+      const briefData = {
+        name: projectName,
+        description,
+        audience: formData.audience,
+        tone: formData.tone,
+        duration: formData.duration,
+        aspect_ratio: formData.aspectRatio,
+      }
+
+      if (briefExists) {
+        await updateProjectBrief(currentProjectId, briefData)
+      } else {
+        await createProjectBrief({
+          project_id: currentProjectId,
+          ...briefData,
+        })
+        setBriefExists(true)
+      }
+
+      // Update local state
+      setBrief({
+        name: projectName,
+        description,
+        audience: formData.audience,
+        tone: formData.tone,
+        duration: formData.duration,
+        aspectRatio: formData.aspectRatio,
+        videoContent,
+      })
+      markStepComplete("brief")
+      goToNextStep()
+    } catch (error) {
+      console.error("Error saving brief:", error)
+    } finally {
+      setIsSaving(false)
+    }
+  }
+
+  const handleSaveDraft = async () => {
+    if (!user) return
+
+    if (!projectName && !projectId) {
+      resetWizard()
+      navigate("/library/projects")
+      return
+    }
+
+    setIsSavingDraft(true)
+    try {
+      let currentProjectId = projectId
+
+      if (!currentProjectId) {
+        const platformId = platform?.type === "existing" ? platform.platformId : undefined
+        const draft = await createDraftProject(user.id, platformId)
+        currentProjectId = draft.id
+      }
+
+      const description = buildDescription()
+
+      await updateProject(currentProjectId, { name: projectName || "Untitled Project" })
+
+      if (briefExists) {
+        await updateProjectBrief(currentProjectId, {
+          name: projectName,
+          description,
+          audience: formData.audience,
+          tone: formData.tone,
+          duration: formData.duration,
+          aspect_ratio: formData.aspectRatio,
+        })
+      } else if (projectName || description) {
+        await createProjectBrief({
+          project_id: currentProjectId,
+          name: projectName,
+          description,
+          audience: formData.audience,
+          tone: formData.tone,
+          duration: formData.duration,
+          aspect_ratio: formData.aspectRatio,
+        })
+      }
+
+      resetWizard()
+      navigate("/library/projects")
+    } catch (error) {
+      console.error("Error saving draft:", error)
+    } finally {
+      setIsSavingDraft(false)
+    }
+  }
+
+  const hasContent = videoContent.action || videoContent.characters.length > 0 || videoContent.setting
+  const isValid = projectName.trim() && hasContent
 
   const toneOptions = [
     "Professional",
@@ -55,6 +278,53 @@ export function BriefStep() {
     "5+ minutes",
   ]
 
+  // Handle video content field changes
+  const handleContentChange = (field: keyof VideoContent, value: string | string[]) => {
+    const newContent = { ...videoContent, [field]: value }
+    setVideoContent(newContent)
+    updateBrief({ videoContent: newContent })
+  }
+
+  // Editable content section component
+  const ContentSection = ({
+    icon: Icon,
+    label,
+    field,
+    value,
+    placeholder,
+    isArray = false
+  }: {
+    icon: React.ElementType
+    label: string
+    field: keyof VideoContent
+    value: string | string[]
+    placeholder: string
+    isArray?: boolean
+  }) => {
+    const displayValue = isArray ? (value as string[]).join(", ") : (value as string)
+
+    return (
+      <div className="flex items-start gap-3 p-3 rounded-lg bg-zinc-800/50 hover:bg-zinc-800/70 transition-all">
+        <Icon className="w-4 h-4 mt-2.5 text-sky-400 flex-shrink-0" />
+        <div className="flex-1 min-w-0">
+          <span className="text-xs text-zinc-500 uppercase tracking-wide">{label}</span>
+          <input
+            type="text"
+            value={displayValue}
+            onChange={(e) => {
+              const newValue = isArray
+                ? e.target.value.split(",").map(s => s.trim()).filter(Boolean)
+                : e.target.value
+              handleContentChange(field, newValue)
+            }}
+            placeholder={placeholder}
+            className="w-full bg-transparent text-sm text-zinc-200 placeholder:text-zinc-600 focus:outline-none mt-0.5"
+          />
+        </div>
+      </div>
+    )
+  }
+
   return (
     <div className="flex-1 flex flex-col p-6 lg:p-8 overflow-y-auto">
       <div className="max-w-2xl mx-auto w-full">
@@ -64,7 +334,7 @@ export function BriefStep() {
             Project Brief
           </h1>
           <p className="text-zinc-400">
-            Define the core elements of your video project.
+            Tell Bubble about your video and she'll help structure it.
           </p>
         </div>
 
@@ -82,30 +352,99 @@ export function BriefStep() {
               type="text"
               id="name"
               name="name"
-              value={formData.name}
-              onChange={handleChange}
+              value={projectName}
+              onChange={handleNameChange}
               placeholder="e.g., Summer Product Launch"
               className="w-full h-12 px-4 bg-zinc-900 border border-zinc-700 focus:border-sky-500 rounded-lg text-white placeholder:text-zinc-500 focus:outline-none focus:ring-2 focus:ring-sky-500/20 transition-all"
             />
           </div>
 
-          {/* Description */}
+          {/* Video Content - Structured from Bubble conversation */}
           <div>
-            <label
-              htmlFor="description"
-              className="block text-sm font-medium text-zinc-300 mb-2"
-            >
-              Description <span className="text-red-400">*</span>
+            <label className="block text-sm font-medium text-zinc-300 mb-2">
+              Video Content <span className="text-red-400">*</span>
+              <span className="text-zinc-500 font-normal ml-2">
+                (Chat with Bubble to fill this in)
+              </span>
             </label>
-            <textarea
-              id="description"
-              name="description"
-              value={formData.description}
-              onChange={handleChange}
-              placeholder="What is this video about? What's the main message or goal?"
-              rows={4}
-              className="w-full px-4 py-3 bg-zinc-900 border border-zinc-700 focus:border-sky-500 rounded-lg text-white placeholder:text-zinc-500 focus:outline-none focus:ring-2 focus:ring-sky-500/20 transition-all resize-none"
-            />
+            <div className="bg-zinc-900 border border-zinc-700 rounded-lg p-4 space-y-2">
+              <ContentSection
+                icon={Clapperboard}
+                label="Action"
+                field="action"
+                value={videoContent.action}
+                placeholder="What's happening in this scene?"
+              />
+              <ContentSection
+                icon={User}
+                label="Characters"
+                field="characters"
+                value={videoContent.characters}
+                placeholder="Who's in it? (comma separated)"
+                isArray
+              />
+              <ContentSection
+                icon={MapPin}
+                label="Setting"
+                field="setting"
+                value={videoContent.setting}
+                placeholder="Where does it take place?"
+              />
+              <div className="grid grid-cols-2 gap-2">
+                <div className="flex items-start gap-3 p-3 rounded-lg bg-zinc-800/50 hover:bg-zinc-800/70 transition-all">
+                  <Cloud className="w-4 h-4 mt-2.5 text-sky-400 flex-shrink-0" />
+                  <div className="flex-1 min-w-0">
+                    <span className="text-xs text-zinc-500 uppercase tracking-wide">Time</span>
+                    <input
+                      type="text"
+                      value={videoContent.timeOfDay}
+                      onChange={(e) => handleContentChange("timeOfDay", e.target.value)}
+                      placeholder="Morning, night..."
+                      className="w-full bg-transparent text-sm text-zinc-200 placeholder:text-zinc-600 focus:outline-none mt-0.5"
+                    />
+                  </div>
+                </div>
+                <div className="flex items-start gap-3 p-3 rounded-lg bg-zinc-800/50 hover:bg-zinc-800/70 transition-all">
+                  <Cloud className="w-4 h-4 mt-2.5 text-sky-400 flex-shrink-0" />
+                  <div className="flex-1 min-w-0">
+                    <span className="text-xs text-zinc-500 uppercase tracking-wide">Weather</span>
+                    <input
+                      type="text"
+                      value={videoContent.weather}
+                      onChange={(e) => handleContentChange("weather", e.target.value)}
+                      placeholder="Sunny, rainy..."
+                      className="w-full bg-transparent text-sm text-zinc-200 placeholder:text-zinc-600 focus:outline-none mt-0.5"
+                    />
+                  </div>
+                </div>
+              </div>
+              <ContentSection
+                icon={Package}
+                label="Props"
+                field="props"
+                value={videoContent.props}
+                placeholder="Important objects (comma separated)"
+                isArray
+              />
+              <div className="flex items-start gap-3 p-3 rounded-lg bg-zinc-800/50 hover:bg-zinc-800/70 transition-all">
+                <span className="text-sky-400 mt-2.5">"</span>
+                <div className="flex-1 min-w-0">
+                  <span className="text-xs text-zinc-500 uppercase tracking-wide">Dialogue</span>
+                  <input
+                    type="text"
+                    value={videoContent.dialogue}
+                    onChange={(e) => handleContentChange("dialogue", e.target.value)}
+                    placeholder="Any spoken words or narration"
+                    className="w-full bg-transparent text-sm text-zinc-200 placeholder:text-zinc-600 focus:outline-none mt-0.5 italic"
+                  />
+                </div>
+              </div>
+              {!hasContent && (
+                <p className="text-xs text-zinc-500 text-center pt-2">
+                  Type directly or chat with Bubble to fill this in
+                </p>
+              )}
+            </div>
           </div>
 
           {/* Target Audience */}
@@ -135,7 +474,7 @@ export function BriefStep() {
                 htmlFor="aspectRatio"
                 className="block text-sm font-medium text-zinc-300 mb-2"
               >
-                Aspect Ratio <span className="text-red-400">*</span>
+                Aspect Ratio
               </label>
               <select
                 id="aspectRatio"
@@ -215,18 +554,40 @@ export function BriefStep() {
           >
             &larr; Back
           </Button>
-          <Button
-            onClick={handleContinue}
-            disabled={!isValid}
-            className={cn(
-              "px-8",
-              isValid
-                ? "bg-gradient-to-r from-sky-400 via-sky-500 to-blue-600 hover:from-sky-300 hover:via-sky-400 hover:to-blue-500 text-white shadow-lg shadow-sky-500/20"
-                : "bg-zinc-800 text-zinc-500 cursor-not-allowed"
-            )}
-          >
-            Continue
-          </Button>
+          <div className="flex gap-3">
+            <Button
+              variant="outline"
+              onClick={handleSaveDraft}
+              disabled={isSavingDraft || !projectName.trim()}
+              className="border-zinc-700 text-zinc-300 hover:bg-zinc-800 hover:text-white disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              {isSavingDraft ? (
+                <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+              ) : (
+                <Save className="w-4 h-4 mr-2" />
+              )}
+              Save Draft
+            </Button>
+            <Button
+              onClick={handleContinue}
+              disabled={!isValid || isSaving}
+              className={cn(
+                "px-8",
+                isValid && !isSaving
+                  ? "bg-gradient-to-r from-sky-400 via-sky-500 to-blue-600 hover:from-sky-300 hover:via-sky-400 hover:to-blue-500 text-white shadow-lg shadow-sky-500/20"
+                  : "bg-zinc-800 text-zinc-500 cursor-not-allowed"
+              )}
+            >
+              {isSaving ? (
+                <>
+                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                  Saving...
+                </>
+              ) : (
+                "Continue"
+              )}
+            </Button>
+          </div>
         </div>
       </div>
     </div>

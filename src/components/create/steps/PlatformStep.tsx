@@ -1,4 +1,4 @@
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { Box, FolderOpen, Check } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { useProjectWizardStore } from "@/state/projectWizardStore"
@@ -39,6 +39,14 @@ export function PlatformStep() {
   const [selectedPlatformId, setSelectedPlatformId] = useState<string | null>(
     platform?.platformId || null
   )
+
+  // Sync store changes back to local state (when Bubble updates via chat)
+  useEffect(() => {
+    if (platform) {
+      setSelectedType(platform.type)
+      setSelectedPlatformId(platform.platformId || null)
+    }
+  }, [platform])
 
   const handleTypeSelect = (type: "new" | "existing") => {
     setSelectedType(type)

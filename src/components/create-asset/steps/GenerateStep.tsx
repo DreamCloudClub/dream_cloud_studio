@@ -1,12 +1,22 @@
 import { useEffect, useState } from "react"
-import { ArrowLeft, RefreshCw, Check, Loader2 } from "lucide-react"
+import { ArrowLeft, RefreshCw, Check, Loader2, AlertCircle } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { useAssetWizardStore } from "@/state/assetWizardStore"
+import {
+  generateImages,
+  generateVideo,
+  generateMusic,
+  generateVoice,
+} from "@/services/replicate"
 
 export function GenerateStep() {
   const {
     assetType,
+    category,
     prompt,
+    negativePrompt,
+    stylePreset,
+    referenceAssets,
     generatedAssets,
     setGeneratedAssets,
     toggleAssetSelection,
@@ -14,37 +24,96 @@ export function GenerateStep() {
     prevStep,
   } = useAssetWizardStore()
 
-  const [isGenerating, setIsGenerating] = useState(true)
+  const [isGenerating, setIsGenerating] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const [hasStarted, setHasStarted] = useState(false)
 
-  // Simulate generation
+  // Start generation on mount
   useEffect(() => {
-    const timer = setTimeout(() => {
-      // Mock generated assets
-      const mockAssets = Array.from({ length: 4 }, (_, i) => ({
-        id: `generated-${i + 1}`,
-        url: "",
-        thumbnailUrl: "",
-        selected: i === 0, // Select first by default
-      }))
-      setGeneratedAssets(mockAssets)
-      setIsGenerating(false)
-    }, 2000)
+    if (!hasStarted) {
+      setHasStarted(true)
+      handleGenerate()
+    }
+  }, [hasStarted])
 
-    return () => clearTimeout(timer)
-  }, [setGeneratedAssets])
+  const handleGenerate = async () => {
+    setIsGenerating(true)
+    setError(null)
+
+    try {
+      if (assetType === "image") {
+        // Get first reference image URL if available
+        const referenceUrl = referenceAssets[0]?.url || referenceAssets[0]?.thumbnail_url
+
+        const urls = await generateImages({
+          prompt,
+          negativePrompt,
+          style: stylePreset || undefined,
+          referenceImageUrl: referenceUrl,
+          numOutputs: 4,
+        })
+
+        setGeneratedAssets(
+          urls.map((url, i) => ({
+            id: `generated-${Date.now()}-${i}`,
+            url,
+            thumbnailUrl: url,
+            selected: i === 0,
+          }))
+        )
+      } else if (assetType === "video") {
+        // Video requires a reference image
+        const referenceUrl = referenceAssets[0]?.url || referenceAssets[0]?.thumbnail_url
+
+        if (!referenceUrl) {
+          throw new Error("Video generation requires a reference image")
+        }
+
+        const videoUrl = await generateVideo({
+          imageUrl: referenceUrl,
+        })
+
+        setGeneratedAssets([
+          {
+            id: `generated-${Date.now()}`,
+            url: videoUrl,
+            thumbnailUrl: referenceUrl, // Use reference as thumbnail
+            selected: true,
+          },
+        ])
+      } else if (assetType === "audio") {
+        let audioUrl: string
+
+        if (category === "music" || category === "sound_effect") {
+          audioUrl = await generateMusic({
+            prompt,
+            duration: 10,
+          })
+        } else {
+          // Voice
+          audioUrl = await generateVoice({
+            text: prompt,
+          })
+        }
+
+        setGeneratedAssets([
+          {
+            id: `generated-${Date.now()}`,
+            url: audioUrl,
+            selected: true,
+          },
+        ])
+      }
+    } catch (err) {
+      console.error("Generation error:", err)
+      setError(err instanceof Error ? err.message : "Generation failed")
+    } finally {
+      setIsGenerating(false)
+    }
+  }
 
   const handleRegenerate = () => {
-    setIsGenerating(true)
-    setTimeout(() => {
-      const mockAssets = Array.from({ length: 4 }, (_, i) => ({
-        id: `regenerated-${Date.now()}-${i}`,
-        url: "",
-        thumbnailUrl: "",
-        selected: false,
-      }))
-      setGeneratedAssets(mockAssets)
-      setIsGenerating(false)
-    }, 2000)
+    handleGenerate()
   }
 
   const selectedCount = generatedAssets.filter((a) => a.selected).length
@@ -75,34 +144,80 @@ export function GenerateStep() {
           <p className="text-zinc-200">{prompt}</p>
         </div>
 
+        {/* Error Message */}
+        {error && (
+          <div className="mb-6 p-4 bg-red-500/10 border border-red-500/30 rounded-xl flex items-start gap-3">
+            <AlertCircle className="w-5 h-5 text-red-400 flex-shrink-0 mt-0.5" />
+            <div>
+              <p className="text-red-400 font-medium">Generation failed</p>
+              <p className="text-sm text-red-400/80 mt-1">{error}</p>
+            </div>
+          </div>
+        )}
+
         {/* Generation Grid */}
         {isGenerating ? (
           <div className="flex items-center justify-center py-24">
             <div className="text-center">
               <Loader2 className="w-12 h-12 text-sky-500 animate-spin mx-auto mb-4" />
               <p className="text-zinc-400">This may take a moment...</p>
+              <p className="text-xs text-zinc-500 mt-2">
+                {assetType === "video" ? "Video generation can take 30-60 seconds" : "Usually 10-30 seconds"}
+              </p>
             </div>
           </div>
-        ) : (
+        ) : generatedAssets.length > 0 ? (
           <>
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
+            <div className={cn(
+              "grid gap-4 mb-6",
+              assetType === "audio"
+                ? "grid-cols-1 max-w-md mx-auto"
+                : generatedAssets.length === 1
+                  ? "grid-cols-1 max-w-md mx-auto"
+                  : "grid-cols-2 md:grid-cols-4"
+            )}>
               {generatedAssets.map((asset) => (
                 <button
                   key={asset.id}
                   onClick={() => toggleAssetSelection(asset.id)}
                   className={cn(
-                    "relative aspect-square rounded-xl overflow-hidden border-2 transition-all",
+                    "relative rounded-xl overflow-hidden border-2 transition-all",
+                    assetType === "audio" ? "p-4" : "aspect-square",
                     asset.selected
                       ? "border-sky-500 ring-2 ring-sky-500/30"
                       : "border-zinc-700 hover:border-zinc-600"
                   )}
                 >
-                  {/* Placeholder for generated content */}
-                  <div className="absolute inset-0 bg-gradient-to-br from-zinc-700 to-zinc-800 flex items-center justify-center">
-                    <span className="text-4xl text-zinc-600">
-                      {assetType === "audio" ? "🎵" : "🖼️"}
-                    </span>
-                  </div>
+                  {assetType === "audio" ? (
+                    // Audio player
+                    <div className="flex flex-col items-center gap-3">
+                      <div className="w-16 h-16 rounded-full bg-sky-500/20 flex items-center justify-center">
+                        <span className="text-2xl">🎵</span>
+                      </div>
+                      <audio
+                        src={asset.url}
+                        controls
+                        className="w-full"
+                        onClick={(e) => e.stopPropagation()}
+                      />
+                    </div>
+                  ) : assetType === "video" ? (
+                    // Video player
+                    <video
+                      src={asset.url}
+                      poster={asset.thumbnailUrl}
+                      controls
+                      className="w-full h-full object-cover"
+                      onClick={(e) => e.stopPropagation()}
+                    />
+                  ) : (
+                    // Image
+                    <img
+                      src={asset.url}
+                      alt="Generated"
+                      className="absolute inset-0 w-full h-full object-cover"
+                    />
+                  )}
 
                   {/* Selection indicator */}
                   {asset.selected && (
@@ -111,8 +226,10 @@ export function GenerateStep() {
                     </div>
                   )}
 
-                  {/* Hover overlay */}
-                  <div className="absolute inset-0 bg-black/0 hover:bg-black/20 transition-colors" />
+                  {/* Hover overlay for images */}
+                  {assetType === "image" && (
+                    <div className="absolute inset-0 bg-black/0 hover:bg-black/20 transition-colors" />
+                  )}
                 </button>
               ))}
             </div>
@@ -121,14 +238,19 @@ export function GenerateStep() {
             <div className="flex justify-center mb-8">
               <button
                 onClick={handleRegenerate}
-                className="px-4 py-2 rounded-lg text-sm font-medium text-zinc-400 hover:text-zinc-200 bg-zinc-800 hover:bg-zinc-700 transition-colors inline-flex items-center gap-2"
+                disabled={isGenerating}
+                className="px-4 py-2 rounded-lg text-sm font-medium text-zinc-400 hover:text-zinc-200 bg-zinc-800 hover:bg-zinc-700 transition-colors inline-flex items-center gap-2 disabled:opacity-50"
               >
-                <RefreshCw className="w-4 h-4" />
-                Regenerate All
+                <RefreshCw className={cn("w-4 h-4", isGenerating && "animate-spin")} />
+                Regenerate
               </button>
             </div>
           </>
-        )}
+        ) : !error ? (
+          <div className="flex items-center justify-center py-24">
+            <p className="text-zinc-500">No results yet</p>
+          </div>
+        ) : null}
 
         {/* Actions */}
         <div className="flex justify-center gap-3">

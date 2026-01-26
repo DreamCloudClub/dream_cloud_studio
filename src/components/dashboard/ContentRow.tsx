@@ -1,4 +1,4 @@
-import { FolderOpen, Image, Palette } from "lucide-react"
+import { FolderOpen, Image, Palette, PenLine } from "lucide-react"
 
 export type ContentRowType = "projects" | "assets" | "foundations"
 
@@ -15,6 +15,7 @@ interface ContentRowProps {
   type: ContentRowType
   items?: ContentItem[]
   onItemClick?: (id: string) => void
+  isDraft?: boolean
 }
 
 function EmptyIcon({ type }: { type: ContentRowType }) {
@@ -44,7 +45,7 @@ function EmptyState({ type }: { type: ContentRowType }) {
   )
 }
 
-function ItemCard({ item, onClick }: { item: ContentItem; onClick?: () => void }) {
+function ItemCard({ item, onClick, isDraft }: { item: ContentItem; onClick?: () => void; isDraft?: boolean }) {
   const typeIcons = {
     image: "🖼",
     video: "🎬",
@@ -54,9 +55,13 @@ function ItemCard({ item, onClick }: { item: ContentItem; onClick?: () => void }
   return (
     <button
       onClick={onClick}
-      className="flex-shrink-0 w-[calc(40vw-2rem)] sm:w-[calc(30vw-2rem)] md:w-[calc(22vw-2rem)] lg:w-40 xl:w-44 group focus:outline-none focus:ring-2 focus:ring-sky-500 rounded-lg"
+      className="w-full group focus:outline-none focus:ring-2 focus:ring-sky-500 rounded-lg text-left"
     >
-      <div className="aspect-video rounded-lg bg-zinc-800 border border-zinc-700 overflow-hidden relative group-hover:border-zinc-600 transition-colors">
+      <div className={`aspect-video rounded-lg bg-zinc-800 overflow-hidden relative group-hover:border-zinc-600 transition-colors ${
+        isDraft
+          ? "border-2 border-dashed border-orange-500/50 group-hover:border-orange-400/70"
+          : "border border-zinc-700"
+      }`}>
         {item.thumbnail ? (
           <img
             src={item.thumbnail}
@@ -65,12 +70,21 @@ function ItemCard({ item, onClick }: { item: ContentItem; onClick?: () => void }
           />
         ) : (
           <div className="w-full h-full flex items-center justify-center text-2xl">
-            {item.type ? typeIcons[item.type] : "▶"}
+            {isDraft ? (
+              <PenLine className="w-8 h-8 text-orange-500/70" />
+            ) : (
+              item.type ? typeIcons[item.type] : "▶"
+            )}
           </div>
         )}
         <div className="absolute inset-0 bg-black/0 group-hover:bg-black/20 transition-colors" />
+        {isDraft && (
+          <div className="absolute top-2 right-2 px-2 py-0.5 bg-orange-500/90 text-white text-[10px] font-medium rounded">
+            Draft
+          </div>
+        )}
       </div>
-      <div className="mt-2 text-left">
+      <div className="mt-2">
         <p className="text-sm font-medium text-zinc-200 truncate">{item.name}</p>
         <p className="text-xs text-zinc-500">{item.updatedAt}</p>
       </div>
@@ -78,8 +92,10 @@ function ItemCard({ item, onClick }: { item: ContentItem; onClick?: () => void }
   )
 }
 
-export function ContentRow({ title, type, items = [], onItemClick }: ContentRowProps) {
+export function ContentRow({ title, type, items = [], onItemClick, isDraft }: ContentRowProps) {
   const hasItems = items.length > 0
+  // Max 12 items (4 per row, 3 rows)
+  const displayItems = items.slice(0, 12)
 
   return (
     <div className="py-4 sm:py-6 md:py-8">
@@ -88,12 +104,13 @@ export function ContentRow({ title, type, items = [], onItemClick }: ContentRowP
       </div>
 
       {hasItems ? (
-        <div className="flex gap-3 sm:gap-4 md:gap-5 lg:gap-6 overflow-x-auto pb-2 scrollbar-thin scrollbar-thumb-zinc-700 scrollbar-track-transparent">
-          {items.map((item) => (
+        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3 sm:gap-4">
+          {displayItems.map((item) => (
             <ItemCard
               key={item.id}
               item={item}
               onClick={() => onItemClick?.(item.id)}
+              isDraft={isDraft}
             />
           ))}
         </div>

@@ -13,7 +13,12 @@ export type AspectRatio = '16:9' | '9:16' | '1:1' | '4:5' | '4:3' | '21:9'
 export type SubscriptionTier = 'trial' | 'lite' | 'basic' | 'enterprise'
 export type ProjectStatus = 'draft' | 'in_progress' | 'completed' | 'archived'
 export type AssetType = 'image' | 'video' | 'audio'
-export type AssetCategory = 'scene' | 'stage' | 'character' | 'weather' | 'prop' | 'effect' | 'audio' | 'voiceover' | 'soundtrack' | 'sfx'
+// Visual categories (for image/video assets)
+export type VisualAssetCategory = 'scene' | 'stage' | 'character' | 'weather' | 'prop' | 'effect'
+// Audio categories (for audio assets)
+export type AudioAssetCategory = 'music' | 'sound_effect' | 'voice'
+// Combined type
+export type AssetCategory = VisualAssetCategory | AudioAssetCategory
 export type ExportResolution = '720p' | '1080p' | '4k'
 export type ExportFormat = 'mp4' | 'webm' | 'mov'
 export type ExportQuality = 'draft' | 'standard' | 'high'

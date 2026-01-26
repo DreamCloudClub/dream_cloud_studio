@@ -5,7 +5,7 @@ import {
   Cloud,
   Box,
   Sparkles,
-  Volume2,
+  Waves,
   Music,
   Mic,
   Check,
@@ -34,9 +34,9 @@ const AUDIO_CATEGORIES: {
   description: string
   icon: React.ElementType
 }[] = [
-  { id: "audio", label: "Music", description: "Background music and scores", icon: Music },
-  { id: "audio", label: "Sound Effect", description: "Sound effects and foley", icon: Volume2 },
-  { id: "audio", label: "Voiceover", description: "Narration and dialogue", icon: Mic },
+  { id: "music", label: "Music", description: "Background music and scores", icon: Music },
+  { id: "sound_effect", label: "Sound Effect", description: "Sound effects and foley", icon: Waves },
+  { id: "voice", label: "Voice", description: "Narration and dialogue", icon: Mic },
 ]
 
 export function CategoryStep() {

@@ -1,4 +1,6 @@
 import { create } from "zustand"
+import { getProjectWithRelations } from "@/services/projects"
+import type { ProjectWithRelations } from "@/types/database"
 
 // Workspace tab types
 export type WorkspaceTab =
@@ -191,253 +193,6 @@ interface WorkspaceState {
   updateExportSettings: (settings: Partial<ExportSettings>) => void
 }
 
-// Mock project data for development
-const createMockProject = (): Project => ({
-  id: "project-1",
-  name: "Product Launch Video",
-  brief: {
-    name: "Product Launch Video",
-    description: "A dynamic product launch video showcasing our new smart home device",
-    audience: "Tech-savvy homeowners aged 25-45",
-    tone: "Modern, sleek, innovative",
-    duration: "60 seconds",
-    aspectRatio: "16:9",
-    goals: ["Highlight key features", "Create excitement", "Drive pre-orders"],
-  },
-  assets: [
-    {
-      id: "asset-1",
-      name: "Living Room",
-      type: "image",
-      category: "scene",
-      url: "/mock/living-room.jpg",
-      thumbnailUrl: "/mock/living-room-thumb.jpg",
-      createdAt: new Date().toISOString(),
-    },
-    {
-      id: "asset-2",
-      name: "Kitchen",
-      type: "image",
-      category: "scene",
-      url: "/mock/kitchen.jpg",
-      thumbnailUrl: "/mock/kitchen-thumb.jpg",
-      createdAt: new Date().toISOString(),
-    },
-    {
-      id: "asset-3",
-      name: "Smart Device",
-      type: "image",
-      category: "prop",
-      url: "/mock/device.jpg",
-      thumbnailUrl: "/mock/device-thumb.jpg",
-      createdAt: new Date().toISOString(),
-    },
-    {
-      id: "asset-4",
-      name: "User Character",
-      type: "image",
-      category: "character",
-      url: "/mock/character.jpg",
-      thumbnailUrl: "/mock/character-thumb.jpg",
-      createdAt: new Date().toISOString(),
-    },
-    {
-      id: "asset-5",
-      name: "Morning Light",
-      type: "image",
-      category: "weather",
-      url: "/mock/morning.jpg",
-      thumbnailUrl: "/mock/morning-thumb.jpg",
-      createdAt: new Date().toISOString(),
-    },
-    {
-      id: "asset-6",
-      name: "Glow Effect",
-      type: "video",
-      category: "effect",
-      url: "/mock/glow.mp4",
-      thumbnailUrl: "/mock/glow-thumb.jpg",
-      duration: 3,
-      createdAt: new Date().toISOString(),
-    },
-  ],
-  scenes: [
-    {
-      id: "scene-1",
-      name: "Introduction",
-      description: "Opening scene establishing the modern home setting",
-      order: 0,
-      shots: [
-        {
-          id: "shot-1",
-          name: "Wide establishing shot",
-          description: "Aerial view of modern home exterior at sunrise",
-          duration: 3,
-          order: 0,
-          assets: {
-            background: undefined,
-            characters: [],
-            props: [],
-            effects: [],
-          },
-          notes: "",
-        },
-        {
-          id: "shot-2",
-          name: "Interior reveal",
-          description: "Camera moves through front door into living room",
-          duration: 4,
-          order: 1,
-          assets: {
-            characters: [],
-            props: [],
-            effects: [],
-          },
-          notes: "",
-        },
-      ],
-      voiceover: {
-        id: "vo-1",
-        script: "Welcome to the future of smart living...",
-        duration: 7,
-      },
-    },
-    {
-      id: "scene-2",
-      name: "Product Demo",
-      description: "Showcasing the device features",
-      order: 1,
-      shots: [
-        {
-          id: "shot-3",
-          name: "Device close-up",
-          description: "Close-up of the smart device on a table",
-          duration: 3,
-          order: 0,
-          assets: {
-            characters: [],
-            props: [],
-            effects: [],
-          },
-          notes: "",
-        },
-        {
-          id: "shot-4",
-          name: "User interaction",
-          description: "Person interacting with device via voice command",
-          duration: 5,
-          order: 1,
-          assets: {
-            characters: [],
-            props: [],
-            effects: [],
-          },
-          notes: "",
-        },
-        {
-          id: "shot-5",
-          name: "Feature highlight",
-          description: "UI overlay showing device features",
-          duration: 4,
-          order: 2,
-          assets: {
-            characters: [],
-            props: [],
-            effects: [],
-          },
-          notes: "",
-        },
-      ],
-      voiceover: {
-        id: "vo-2",
-        script: "With just your voice, control your entire home...",
-        duration: 12,
-      },
-    },
-    {
-      id: "scene-3",
-      name: "Call to Action",
-      description: "Closing scene with pre-order information",
-      order: 2,
-      shots: [
-        {
-          id: "shot-6",
-          name: "Product beauty shot",
-          description: "Glamour shot of device with lighting effects",
-          duration: 3,
-          order: 0,
-          assets: {
-            characters: [],
-            props: [],
-            effects: [],
-          },
-          notes: "",
-        },
-        {
-          id: "shot-7",
-          name: "CTA screen",
-          description: "Pre-order now text with website URL",
-          duration: 4,
-          order: 1,
-          assets: {
-            characters: [],
-            props: [],
-            effects: [],
-          },
-          notes: "",
-        },
-      ],
-      voiceover: {
-        id: "vo-3",
-        script: "Pre-order now and transform your home.",
-        duration: 7,
-      },
-    },
-  ],
-  storyboardCards: [
-    {
-      id: "card-1",
-      title: "Opening Hook",
-      description: "Establish the aspirational setting",
-      content:
-        "The video opens with a breathtaking aerial shot of a modern smart home at sunrise. Golden light streams through large windows as we glide toward the house. This opening establishes the premium, aspirational tone of the brand while creating visual intrigue.\n\nKey elements:\n- Drone footage style movement\n- Warm morning color palette\n- Subtle ambient sounds of nature\n- No dialogue, let visuals breathe",
-      order: 0,
-    },
-    {
-      id: "card-2",
-      title: "The Problem",
-      description: "Show the complexity of current solutions",
-      content:
-        "Quick cuts showing the frustration of managing multiple smart home devices. Remote controls, phone apps, wall switches - the viewer relates to the chaos of disconnected technology.\n\nKey elements:\n- Fast-paced editing\n- Slightly desaturated color\n- Sound design: notification pings, beeps\n- Relatable everyday moments",
-      order: 1,
-    },
-    {
-      id: "card-3",
-      title: "The Solution",
-      description: "Introduce our device as the answer",
-      content:
-        "A moment of calm. The sleek device sits on a minimalist table. Natural light catches its elegant curves. A hand reaches into frame and with a simple voice command, the entire home responds in harmony.\n\nKey elements:\n- Slow, deliberate pacing\n- Return to warm color palette\n- Clear product hero shot\n- Satisfying response animations",
-      order: 2,
-    },
-    {
-      id: "card-4",
-      title: "Call to Action",
-      description: "Drive pre-orders with urgency",
-      content:
-        "The final sequence combines product beauty shots with clear pre-order messaging. Limited early-bird pricing creates urgency while the visual quality reinforces premium positioning.\n\nKey elements:\n- Product glamour shots\n- Clear typography\n- Website URL prominent\n- End card with logo",
-      order: 3,
-    },
-  ],
-  exportSettings: {
-    resolution: "1080p",
-    format: "mp4",
-    frameRate: 30,
-    quality: "high",
-  },
-  createdAt: new Date().toISOString(),
-  updatedAt: new Date().toISOString(),
-})
-
 export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
   // Initial state
   project: null,
@@ -473,19 +228,103 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
   },
 
   // Project actions
-  loadProject: (projectId) => {
+  loadProject: async (projectId) => {
     set({ isLoading: true })
-    // Simulate loading - in real app, fetch from Supabase
-    setTimeout(() => {
-      const project = createMockProject()
-      project.id = projectId
+
+    try {
+      const dbProject = await getProjectWithRelations(projectId)
+
+      if (!dbProject) {
+        console.error("Project not found:", projectId)
+        set({ isLoading: false, project: null })
+        return
+      }
+
+      // Transform DB format to workspace format
+      const project: Project = {
+        id: dbProject.id,
+        name: dbProject.name,
+        brief: {
+          name: dbProject.brief?.name || dbProject.name,
+          description: dbProject.brief?.description || "",
+          audience: dbProject.brief?.audience || "",
+          tone: dbProject.brief?.tone || "",
+          duration: dbProject.brief?.duration || "",
+          aspectRatio: (dbProject.brief?.aspect_ratio as AspectRatio) || "16:9",
+          goals: (dbProject.brief?.goals as string[]) || [],
+        },
+        assets: (dbProject.assets || []).map((a) => ({
+          id: a.id,
+          name: a.name,
+          type: a.type as "image" | "video" | "audio",
+          category: (a.category || "scene") as AssetCategory,
+          url: a.url,
+          thumbnailUrl: a.thumbnail_url || undefined,
+          duration: a.duration || undefined,
+          createdAt: a.created_at,
+        })),
+        scenes: (dbProject.scenes || []).map((s) => ({
+          id: s.id,
+          name: s.name,
+          description: s.description || "",
+          order: s.sort_order,
+          shots: (s.shots || []).map((shot) => ({
+            id: shot.id,
+            name: shot.name,
+            description: shot.description || "",
+            duration: shot.duration,
+            order: shot.sort_order,
+            assets: {
+              characters: [],
+              props: [],
+              effects: [],
+            },
+            media: shot.media_url
+              ? {
+                  type: (shot.media_type || "image") as "image" | "video",
+                  url: shot.media_url,
+                  thumbnailUrl: shot.media_thumbnail_url || undefined,
+                }
+              : undefined,
+            notes: shot.notes || "",
+          })),
+          voiceover: s.voiceover_script
+            ? {
+                id: `vo-${s.id}`,
+                script: s.voiceover_script,
+                audioUrl: s.voiceover_audio_url || undefined,
+                duration: s.voiceover_duration || undefined,
+              }
+            : undefined,
+        })),
+        storyboardCards: (dbProject.storyboard_cards || []).map((c) => ({
+          id: c.id,
+          title: c.title,
+          description: c.description || "",
+          content: c.content || "",
+          thumbnailUrl: c.thumbnail_url || undefined,
+          order: c.sort_order,
+        })),
+        exportSettings: {
+          resolution: (dbProject.export_settings?.resolution || "1080p") as "720p" | "1080p" | "4k",
+          format: (dbProject.export_settings?.format || "mp4") as "mp4" | "webm" | "mov",
+          frameRate: (dbProject.export_settings?.frame_rate || 30) as 24 | 30 | 60,
+          quality: (dbProject.export_settings?.quality || "high") as "draft" | "standard" | "high",
+        },
+        createdAt: dbProject.created_at,
+        updatedAt: dbProject.updated_at,
+      }
+
       set({
         project,
         isLoading: false,
-        expandedSceneIds: project.scenes.map((s) => s.id), // Expand all by default
+        expandedSceneIds: project.scenes.map((s) => s.id),
         selectedStoryboardCardId: project.storyboardCards[0]?.id || null,
       })
-    }, 500)
+    } catch (error) {
+      console.error("Error loading project:", error)
+      set({ isLoading: false, project: null })
+    }
   },
 
   updateBrief: (data) => {

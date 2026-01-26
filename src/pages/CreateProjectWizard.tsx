@@ -1,6 +1,6 @@
 import { useEffect } from "react"
 import { useNavigate, useSearchParams } from "react-router-dom"
-import { ArrowLeft } from "lucide-react"
+import { ArrowLeft, Loader2 } from "lucide-react"
 import { useProjectWizardStore } from "@/state/projectWizardStore"
 import { useUIStore } from "@/state/uiStore"
 import { useAuth } from "@/contexts/AuthContext"
@@ -24,17 +24,27 @@ export function CreateProjectWizard() {
   const { isBubbleCollapsed, toggleBubbleCollapsed } = useUIStore()
   const { user, profile, signOut } = useAuth()
 
-  const { currentStep, setInitialPrompt } = useProjectWizardStore()
+  const { currentStep, setInitialPrompt, loadDraft, isLoadingDraft, resetWizard } = useProjectWizardStore()
 
-  // Extract initial prompt from URL params
+  // Load draft if draft param is present
+  useEffect(() => {
+    const draftId = searchParams.get("draft")
+    if (draftId) {
+      loadDraft(draftId)
+    }
+  }, [searchParams, loadDraft])
+
+  // Extract initial prompt from URL params (only for new projects)
   useEffect(() => {
     const prompt = searchParams.get("prompt")
-    if (prompt) {
+    const draftId = searchParams.get("draft")
+    if (prompt && !draftId) {
       setInitialPrompt(prompt)
     }
   }, [searchParams, setInitialPrompt])
 
   const handleBack = () => {
+    resetWizard()
     navigate("/library/projects")
   }
 
@@ -75,7 +85,7 @@ export function CreateProjectWizard() {
         </button>
 
         <h1 className="text-lg font-semibold text-zinc-100 absolute left-1/2 -translate-x-1/2">
-          Create New Project
+          {searchParams.get("draft") ? "Continue Setup" : "Create New Project"}
         </h1>
 
         <HeaderActions
@@ -103,7 +113,16 @@ export function CreateProjectWizard() {
         {/* Step Content (Main Area) */}
         <main className="flex-1 flex flex-col overflow-hidden bg-zinc-950">
           <div className="flex-1 overflow-y-auto">
-            {renderStepContent()}
+            {isLoadingDraft ? (
+              <div className="flex-1 flex items-center justify-center h-full">
+                <div className="text-center">
+                  <Loader2 className="w-8 h-8 text-sky-400 animate-spin mx-auto mb-3" />
+                  <p className="text-zinc-400">Loading project...</p>
+                </div>
+              </div>
+            ) : (
+              renderStepContent()
+            )}
           </div>
         </main>
       </div>

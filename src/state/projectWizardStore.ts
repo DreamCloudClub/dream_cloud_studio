@@ -1,5 +1,6 @@
 import { create } from "zustand"
 import { getInitialGreeting } from "@/services/claude"
+import { getProjectWithRelations } from "@/services/projects"
 
 // Step types for the wizard
 export type WizardStep =
@@ -78,6 +79,16 @@ export const ASPECT_RATIOS: { id: AspectRatio; label: string; description: strin
   { id: "21:9", label: "21:9", description: "Cinematic (Widescreen)" },
 ]
 
+export interface VideoContent {
+  characters: string[]
+  setting: string
+  timeOfDay: string
+  weather: string
+  action: string
+  props: string[]
+  dialogue: string
+}
+
 export interface BriefData {
   name: string
   description: string
@@ -85,6 +96,7 @@ export interface BriefData {
   tone: string
   duration: string
   aspectRatio: AspectRatio
+  videoContent?: VideoContent
 }
 
 export interface MoodBoardData {
@@ -130,6 +142,40 @@ export interface AudioData {
   sfx: Asset[]
 }
 
+// Composition data for Remotion
+export interface TitleConfig {
+  text: string
+  subtitle?: string
+  font?: string
+  fontSize?: number
+  color?: string
+  backgroundColor?: string
+  animation?: "fade" | "slide-up" | "zoom" | "typewriter"
+}
+
+export interface TextOverlayConfig {
+  id: string
+  text: string
+  position?: "top" | "center" | "bottom" | "lower-third"
+  animation?: "fade" | "slide-up" | "slide-left" | "typewriter" | "glitch"
+  font?: string
+  fontSize?: number
+  color?: string
+  backgroundColor?: string
+  shotId?: string // Which shot this overlay appears on
+  startTime?: number // Seconds into the shot
+  duration?: number // How long to show
+}
+
+export interface CompositionData {
+  title?: TitleConfig
+  outro?: TitleConfig
+  defaultTransition?: "none" | "fade" | "wipe-left" | "wipe-right" | "zoom"
+  transitionDuration?: number // seconds
+  textOverlays: TextOverlayConfig[]
+  backgroundColor?: string
+}
+
 export interface BubbleMessage {
   id: string
   role: "user" | "assistant"
@@ -139,6 +185,12 @@ export interface BubbleMessage {
 
 // Main wizard state interface
 interface ProjectWizardState {
+  // Project ID (set when draft is created)
+  projectId: string | null
+
+  // Loading state for drafts
+  isLoadingDraft: boolean
+
   // Navigation
   currentStep: WizardStep
   completedSteps: WizardStep[]
@@ -163,6 +215,9 @@ interface ProjectWizardState {
   // Audio
   audio: AudioData
 
+  // Composition (Remotion)
+  composition: CompositionData
+
   // Bubble chat state
   bubbleMessages: BubbleMessage[]
   isBubbleTyping: boolean
@@ -174,12 +229,16 @@ interface ProjectWizardState {
   markStepComplete: (step: WizardStep) => void
   canNavigateToStep: (step: WizardStep) => boolean
 
+  // Project ID
+  setProjectId: (id: string) => void
+
   // Initial prompt
   setInitialPrompt: (prompt: string) => void
 
   // Step data updates
   setPlatform: (data: PlatformData) => void
   updateBrief: (data: Partial<BriefData>) => void
+  updateVideoContent: (data: Partial<VideoContent>) => void
   setBrief: (data: BriefData) => void
   updateMoodBoard: (data: Partial<MoodBoardData>) => void
   setMoodBoard: (data: MoodBoardData) => void
@@ -201,6 +260,14 @@ interface ProjectWizardState {
   addSfx: (asset: Asset) => void
   removeAudio: (type: "voiceover" | "sfx", assetId: string) => void
 
+  // Composition
+  setTitleCard: (config: TitleConfig | undefined) => void
+  setOutroCard: (config: TitleConfig | undefined) => void
+  setDefaultTransition: (transition: CompositionData["defaultTransition"], duration?: number) => void
+  addTextOverlay: (overlay: Omit<TextOverlayConfig, "id">) => void
+  removeTextOverlay: (id: string) => void
+  updateComposition: (data: Partial<CompositionData>) => void
+
   // Bubble
   addBubbleMessage: (message: Omit<BubbleMessage, "id" | "timestamp">) => void
   setBubbleTyping: (isTyping: boolean) => void
@@ -208,9 +275,14 @@ interface ProjectWizardState {
 
   // Reset
   resetWizard: () => void
+
+  // Draft loading
+  loadDraft: (projectId: string) => Promise<void>
 }
 
 const initialState = {
+  projectId: null as string | null,
+  isLoadingDraft: false,
   currentStep: "platform" as WizardStep,
   completedSteps: [] as WizardStep[],
   initialPrompt: "",
@@ -228,6 +300,11 @@ const initialState = {
     voiceovers: [],
     soundtrack: null,
     sfx: [],
+  },
+  composition: {
+    textOverlays: [],
+    defaultTransition: "fade",
+    transitionDuration: 0.5,
   },
   bubbleMessages: [],
   isBubbleTyping: false,
@@ -280,6 +357,9 @@ export const useProjectWizardStore = create<ProjectWizardState>((set, get) => ({
     return false
   },
 
+  // Project ID
+  setProjectId: (id) => set({ projectId: id }),
+
   // Initial prompt - also seeds the chat with context
   setInitialPrompt: (prompt) => {
     set({ initialPrompt: prompt })
@@ -308,6 +388,33 @@ export const useProjectWizardStore = create<ProjectWizardState>((set, get) => ({
     set({
       brief: { ...(get().brief || { name: "", description: "", audience: "", tone: "", duration: "", aspectRatio: "16:9" }), ...data },
     }),
+
+  updateVideoContent: (data) => {
+    const currentBrief = get().brief || { name: "", description: "", audience: "", tone: "", duration: "", aspectRatio: "16:9" as const }
+    const currentContent = currentBrief.videoContent || {
+      characters: [],
+      setting: "",
+      timeOfDay: "",
+      weather: "",
+      action: "",
+      props: [],
+      dialogue: "",
+    }
+    // Merge arrays instead of replacing
+    const newContent: VideoContent = {
+      ...currentContent,
+      ...data,
+      characters: data.characters !== undefined
+        ? [...new Set([...currentContent.characters, ...data.characters])]
+        : currentContent.characters,
+      props: data.props !== undefined
+        ? [...new Set([...currentContent.props, ...data.props])]
+        : currentContent.props,
+    }
+    set({
+      brief: { ...currentBrief, videoContent: newContent },
+    })
+  },
 
   setBrief: (data) =>
     set({
@@ -411,6 +518,50 @@ export const useProjectWizardStore = create<ProjectWizardState>((set, get) => ({
     }
   },
 
+  // Composition
+  setTitleCard: (config) =>
+    set({
+      composition: { ...get().composition, title: config },
+    }),
+
+  setOutroCard: (config) =>
+    set({
+      composition: { ...get().composition, outro: config },
+    }),
+
+  setDefaultTransition: (transition, duration) =>
+    set({
+      composition: {
+        ...get().composition,
+        defaultTransition: transition,
+        transitionDuration: duration ?? get().composition.transitionDuration,
+      },
+    }),
+
+  addTextOverlay: (overlay) =>
+    set({
+      composition: {
+        ...get().composition,
+        textOverlays: [
+          ...get().composition.textOverlays,
+          { ...overlay, id: crypto.randomUUID() },
+        ],
+      },
+    }),
+
+  removeTextOverlay: (id) =>
+    set({
+      composition: {
+        ...get().composition,
+        textOverlays: get().composition.textOverlays.filter((o) => o.id !== id),
+      },
+    }),
+
+  updateComposition: (data) =>
+    set({
+      composition: { ...get().composition, ...data },
+    }),
+
   // Bubble
   addBubbleMessage: (message) =>
     set({
@@ -426,4 +577,92 @@ export const useProjectWizardStore = create<ProjectWizardState>((set, get) => ({
 
   // Reset
   resetWizard: () => set(initialState),
+
+  // Load draft from database
+  loadDraft: async (projectId: string) => {
+    set({ isLoadingDraft: true })
+
+    try {
+      const project = await getProjectWithRelations(projectId)
+
+      if (!project) {
+        console.error("Draft project not found:", projectId)
+        set({ isLoadingDraft: false })
+        return
+      }
+
+      // Build completed steps and determine current step
+      const completedSteps: WizardStep[] = []
+      let currentStep: WizardStep = "platform"
+
+      // Platform is complete if project has a platform_id
+      if (project.platform_id) {
+        completedSteps.push("platform")
+        currentStep = "brief"
+      }
+
+      // Brief is complete if it has name and description
+      if (project.brief?.name && project.brief?.description) {
+        completedSteps.push("brief")
+        currentStep = "mood"
+      }
+
+      // Mood board is complete if it has any content
+      if (project.mood_board?.keywords?.length || project.mood_board?.colors?.length) {
+        completedSteps.push("mood")
+        currentStep = "story"
+      }
+
+      // Storyboard is complete if it has acts
+      if (project.storyboard?.content) {
+        completedSteps.push("story")
+        currentStep = "shots"
+      }
+
+      // Shots are complete if there are scenes with shots
+      if (project.scenes?.some(s => s.shots?.length > 0)) {
+        completedSteps.push("shots")
+        currentStep = "filming"
+      }
+
+      // Set the state with loaded data
+      set({
+        projectId: project.id,
+        isLoadingDraft: false,
+        currentStep,
+        completedSteps,
+        platform: project.platform_id
+          ? {
+              type: "existing",
+              platformId: project.platform_id,
+              platformName: project.platform?.name,
+            }
+          : null,
+        brief: project.brief
+          ? {
+              name: project.brief.name || "",
+              description: project.brief.description || "",
+              audience: project.brief.audience || "",
+              tone: project.brief.tone || "",
+              duration: project.brief.duration || "",
+              aspectRatio: (project.brief.aspect_ratio as AspectRatio) || "16:9",
+            }
+          : null,
+        moodBoard: project.mood_board
+          ? {
+              images: [], // TODO: load mood board images
+              colors: (project.mood_board.colors as string[]) || [],
+              keywords: (project.mood_board.keywords as string[]) || [],
+              foundationId: project.mood_board.foundation_id || undefined,
+            }
+          : null,
+        storyboard: project.storyboard?.content
+          ? { acts: project.storyboard.content as unknown as Act[] }
+          : null,
+      })
+    } catch (error) {
+      console.error("Error loading draft:", error)
+      set({ isLoadingDraft: false })
+    }
+  },
 }))

@@ -7,8 +7,9 @@ import {
   Cloud,
   Box,
   Sparkles,
-  Volume2,
-  Plus,
+  Music,
+  Waves,
+  Mic,
   Play,
   ChevronDown,
   ChevronRight,
@@ -18,19 +19,32 @@ import {
   Wand2,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
-import { LibraryLayout } from "@/components/library"
+import { LibraryLayout, UploadAssetModal } from "@/components/library"
 import { useAuth } from "@/contexts/AuthContext"
 import { getAssets } from "@/services/assets"
-import type { Asset, AssetType, AssetCategory } from "@/types/database"
+import type { Asset, AssetType, AssetCategory, VisualAssetCategory, AudioAssetCategory } from "@/types/database"
 
-const ASSET_CATEGORIES: { id: AssetCategory; label: string; icon: string }[] = [
+// Visual categories for Image and Video assets
+const VISUAL_CATEGORIES: { id: VisualAssetCategory; label: string; icon: string }[] = [
   { id: "scene", label: "Scenes", icon: "Mountain" },
   { id: "stage", label: "Stages", icon: "Square" },
   { id: "character", label: "Characters", icon: "User" },
   { id: "weather", label: "Weather", icon: "Cloud" },
   { id: "prop", label: "Props", icon: "Box" },
   { id: "effect", label: "Effects", icon: "Sparkles" },
-  { id: "audio", label: "Audio", icon: "Volume2" },
+]
+
+// Audio categories for Audio assets
+const AUDIO_CATEGORIES: { id: AudioAssetCategory; label: string; icon: string }[] = [
+  { id: "music", label: "Music", icon: "Music" },
+  { id: "sound_effect", label: "Sound Effects", icon: "Waves" },
+  { id: "voice", label: "Voice", icon: "Mic" },
+]
+
+// All categories combined
+const ALL_CATEGORIES: { id: AssetCategory; label: string; icon: string }[] = [
+  ...VISUAL_CATEGORIES,
+  ...AUDIO_CATEGORIES,
 ]
 
 const iconMap: Record<string, React.ElementType> = {
@@ -40,7 +54,9 @@ const iconMap: Record<string, React.ElementType> = {
   Cloud,
   Box,
   Sparkles,
-  Volume2,
+  Music,
+  Waves,
+  Mic,
 }
 
 interface CategorySectionProps {
@@ -57,7 +73,7 @@ function CategorySection({ category, assets }: CategorySectionProps) {
       <div className="space-y-3">
         <button
           onClick={() => setIsExpanded(!isExpanded)}
-          className="flex items-center gap-2 text-zinc-400 hover:text-zinc-200 transition-colors"
+          className="flex items-center gap-2 text-zinc-500 hover:text-zinc-400 transition-colors"
         >
           {isExpanded ? (
             <ChevronDown className="w-4 h-4" />
@@ -70,13 +86,9 @@ function CategorySection({ category, assets }: CategorySectionProps) {
         </button>
 
         {isExpanded && (
-          <div className="ml-6 p-4 border border-dashed border-zinc-700 rounded-xl">
-            <div className="text-center text-zinc-500 text-sm">
-              <p>No {category.label.toLowerCase()} in your library</p>
-              <button className="mt-2 text-sky-400 hover:text-sky-300 inline-flex items-center gap-1">
-                <Plus className="w-3 h-3" />
-                Create New
-              </button>
+          <div className="ml-6 p-4 border border-dashed border-zinc-700/50 rounded-xl">
+            <div className="flex items-center justify-center text-zinc-600">
+              <Icon className="w-6 h-6" />
             </div>
           </div>
         )}
@@ -119,12 +131,26 @@ function AssetCard({ asset }: AssetCardProps) {
   const isVideo = asset.type === "video"
   const isAudio = asset.type === "audio"
 
+  // Get the appropriate icon for audio assets based on category
+  const getAudioIcon = () => {
+    switch (asset.category) {
+      case "music":
+        return <Music className="w-8 h-8 text-sky-400" />
+      case "sound_effect":
+        return <Waves className="w-8 h-8 text-sky-400" />
+      case "voice":
+        return <Mic className="w-8 h-8 text-sky-400" />
+      default:
+        return <Music className="w-8 h-8 text-sky-400" />
+    }
+  }
+
   return (
     <div className="group relative aspect-square rounded-xl overflow-hidden bg-zinc-800 border border-zinc-700 hover:border-sky-500/50 transition-colors cursor-pointer">
       {/* Thumbnail */}
       {isAudio ? (
         <div className="absolute inset-0 flex items-center justify-center bg-gradient-to-br from-sky-500/20 to-blue-600/20">
-          <Volume2 className="w-8 h-8 text-sky-400" />
+          {getAudioIcon()}
         </div>
       ) : (
         <div className="absolute inset-0 bg-gradient-to-br from-zinc-700 to-zinc-800">
@@ -173,21 +199,23 @@ export function LibraryAssetsPage() {
   const [selectedType, setSelectedType] = useState<"all" | AssetType>("all")
   const [allUserAssets, setAllUserAssets] = useState<Asset[]>([])
   const [isLoading, setIsLoading] = useState(true)
+  const [isUploadModalOpen, setIsUploadModalOpen] = useState(false)
 
   // Fetch assets from Supabase
-  useEffect(() => {
-    async function fetchAssets() {
-      if (!user) return
-      setIsLoading(true)
-      try {
-        const data = await getAssets(user.id)
-        setAllUserAssets(data)
-      } catch (error) {
-        console.error("Error fetching assets:", error)
-      } finally {
-        setIsLoading(false)
-      }
+  const fetchAssets = async () => {
+    if (!user) return
+    setIsLoading(true)
+    try {
+      const data = await getAssets(user.id)
+      setAllUserAssets(data)
+    } catch (error) {
+      console.error("Error fetching assets:", error)
+    } finally {
+      setIsLoading(false)
     }
+  }
+
+  useEffect(() => {
     fetchAssets()
   }, [user])
 
@@ -221,16 +249,18 @@ export function LibraryAssetsPage() {
     filteredAssets = filteredAssets.filter((a) => a.type === selectedType)
   }
 
+  // Get relevant categories based on type filter
+  const relevantCategories = selectedType === "all"
+    ? ALL_CATEGORIES
+    : selectedType === "audio"
+      ? AUDIO_CATEGORIES
+      : VISUAL_CATEGORIES
+
   // Group by category
-  const assetsByCategory = ASSET_CATEGORIES.map((category) => ({
+  const assetsByCategory = relevantCategories.map((category) => ({
     category,
     assets: filteredAssets.filter((a) => a.category === category.id),
-  })).filter(({ assets }) => {
-    if (selectedType !== "all" || searchQuery) {
-      return assets.length > 0
-    }
-    return true
-  })
+  }))
 
   return (
     <LibraryLayout>
@@ -244,7 +274,10 @@ export function LibraryAssetsPage() {
             </p>
           </div>
           <div className="flex items-center gap-2">
-            <button className="px-4 py-2 bg-zinc-800 hover:bg-zinc-700 rounded-xl text-zinc-300 font-medium text-sm transition-colors inline-flex items-center gap-2">
+            <button
+              onClick={() => setIsUploadModalOpen(true)}
+              className="px-4 py-2 bg-zinc-800 hover:bg-zinc-700 rounded-xl text-zinc-300 font-medium text-sm transition-colors inline-flex items-center gap-2"
+            >
               <Upload className="w-4 h-4" />
               Upload
             </button>
@@ -312,6 +345,13 @@ export function LibraryAssetsPage() {
           </div>
         )}
       </div>
+
+      {/* Upload Modal */}
+      <UploadAssetModal
+        isOpen={isUploadModalOpen}
+        onClose={() => setIsUploadModalOpen(false)}
+        onSuccess={fetchAssets}
+      />
     </LibraryLayout>
   )
 }

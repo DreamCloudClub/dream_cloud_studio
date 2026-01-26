@@ -1,4 +1,4 @@
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { Upload, Wand2, X, Plus, Palette, ChevronDown, Check } from "lucide-react"
 import { useProjectWizardStore } from "@/state/projectWizardStore"
 import { useFoundationStore, Foundation } from "@/state/foundationStore"
@@ -47,6 +47,15 @@ export function MoodBoardStep() {
   )
   const [selectedFoundation, setSelectedFoundation] = useState<Foundation | null>(null)
   const [showFoundationPicker, setShowFoundationPicker] = useState(false)
+
+  // Sync store changes back to local state (when Bubble updates via chat)
+  useEffect(() => {
+    if (moodBoard) {
+      if (moodBoard.images) setImages(moodBoard.images)
+      if (moodBoard.colors) setSelectedColors(moodBoard.colors)
+      if (moodBoard.keywords) setSelectedKeywords(moodBoard.keywords)
+    }
+  }, [moodBoard])
 
   const handleAddImage = () => {
     // In a real app, this would open a file picker or generate with AI

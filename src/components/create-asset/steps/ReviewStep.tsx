@@ -1,15 +1,17 @@
 import { useState } from "react"
-import { ArrowLeft, Save, FolderPlus, Check } from "lucide-react"
+import { ArrowLeft, Save, FolderPlus, Check, AlertCircle } from "lucide-react"
 import { useNavigate } from "react-router-dom"
 import { cn } from "@/lib/utils"
 import { useAssetWizardStore } from "@/state/assetWizardStore"
-import { useLibraryStore, LibraryAsset } from "@/state/libraryStore"
+import { useAuth } from "@/contexts/AuthContext"
+import { createAsset } from "@/services/assets"
+import type { AssetCategory } from "@/types/database"
 
 export function ReviewStep() {
   const navigate = useNavigate()
+  const { user } = useAuth()
   const { assetType, category, generatedAssets, resetWizard, prevStep } =
     useAssetWizardStore()
-  const { addAssets } = useLibraryStore()
 
   const [assetNames, setAssetNames] = useState<Record<string, string>>(() => {
     const selected = generatedAssets.filter((a) => a.selected)
@@ -23,6 +25,7 @@ export function ReviewStep() {
   })
 
   const [isSaving, setIsSaving] = useState(false)
+  const [error, setError] = useState<string | null>(null)
 
   const selectedAssets = generatedAssets.filter((a) => a.selected)
 
@@ -31,27 +34,34 @@ export function ReviewStep() {
   }
 
   const handleSaveToLibrary = async () => {
+    if (!user) {
+      setError("You must be logged in to save assets")
+      return
+    }
+
     setIsSaving(true)
+    setError(null)
 
-    // Create library assets from selected generated assets
-    const newAssets: LibraryAsset[] = selectedAssets.map((asset) => ({
-      id: `asset-${Date.now()}-${asset.id}`,
-      name: assetNames[asset.id] || `${category} asset`,
-      type: assetType!,
-      category: category!,
-      url: asset.url,
-      thumbnailUrl: asset.thumbnailUrl,
-      createdAt: new Date().toISOString(),
-    }))
+    try {
+      // Save each selected asset to Supabase
+      for (const asset of selectedAssets) {
+        await createAsset({
+          user_id: user.id,
+          name: assetNames[asset.id] || `${category} asset`,
+          type: assetType!,
+          category: category as AssetCategory,
+          url: asset.url,
+          thumbnail_url: asset.thumbnailUrl,
+        })
+      }
 
-    // Add to library store
-    addAssets(newAssets)
-
-    // Simulate a brief delay for UX
-    await new Promise((resolve) => setTimeout(resolve, 500))
-
-    resetWizard()
-    navigate("/library/assets")
+      resetWizard()
+      navigate("/library/assets")
+    } catch (err) {
+      console.error("Error saving assets:", err)
+      setError("Failed to save assets. Please try again.")
+      setIsSaving(false)
+    }
   }
 
   const handleAddToProject = () => {
@@ -123,6 +133,14 @@ export function ReviewStep() {
             </div>
           ))}
         </div>
+
+        {/* Error Message */}
+        {error && (
+          <div className="mb-6 p-4 bg-red-500/10 border border-red-500/30 rounded-xl flex items-center gap-3">
+            <AlertCircle className="w-5 h-5 text-red-400 flex-shrink-0" />
+            <p className="text-sm text-red-400">{error}</p>
+          </div>
+        )}
 
         {/* Actions */}
         <div className="flex flex-col sm:flex-row justify-center gap-3">

@@ -8,8 +8,9 @@ import {
 } from "@/components/dashboard"
 import { BubblePanel } from "@/components/create"
 import { useUIStore } from "@/state/uiStore"
+import { useProjectWizardStore } from "@/state/projectWizardStore"
 import { useAuth } from "@/contexts/AuthContext"
-import { getProjects } from "@/services/projects"
+import { getCompletedProjects, getDraftProjects } from "@/services/projects"
 import { getAssets } from "@/services/assets"
 import { getPlatforms } from "@/services/platforms"
 import type { Project, Asset, Platform } from "@/types/database"
@@ -34,8 +35,10 @@ export function Dashboard() {
   const navigate = useNavigate()
   const { user, profile, signOut } = useAuth()
   const { isBubbleCollapsed, toggleBubbleCollapsed, setBubbleCollapsed } = useUIStore()
+  const resetWizard = useProjectWizardStore((state) => state.resetWizard)
 
   const [projects, setProjects] = useState<Project[]>([])
+  const [draftProjects, setDraftProjects] = useState<Project[]>([])
   const [assets, setAssets] = useState<Asset[]>([])
   const [platforms, setPlatforms] = useState<Platform[]>([])
   const [isLoading, setIsLoading] = useState(true)
@@ -47,12 +50,14 @@ export function Dashboard() {
 
       setIsLoading(true)
       try {
-        const [projectsData, assetsData, platformsData] = await Promise.all([
-          getProjects(user.id),
+        const [completedData, draftsData, assetsData, platformsData] = await Promise.all([
+          getCompletedProjects(user.id),
+          getDraftProjects(user.id),
           getAssets(user.id),
           getPlatforms(user.id),
         ])
-        setProjects(projectsData)
+        setProjects(completedData)
+        setDraftProjects(draftsData)
         setAssets(assetsData)
         setPlatforms(platformsData)
       } catch (error) {
@@ -65,30 +70,44 @@ export function Dashboard() {
     fetchData()
   }, [user])
 
-  // Transform projects for ContentRow (show most recent 3)
-  const recentProjects = projects.slice(0, 3).map(project => ({
+  // Transform projects for ContentRow (show most recent 12 - 4 per row, max 3 rows)
+  const recentProjects = projects.slice(0, 12).map(project => ({
     id: project.id,
     name: project.name,
     updatedAt: formatRelativeTime(project.updated_at),
   }))
 
-  // Transform assets for ContentRow (show most recent 3)
-  const recentAssets = assets.slice(0, 3).map(asset => ({
+  // Transform draft projects for ContentRow
+  const recentDrafts = draftProjects.slice(0, 12).map(project => ({
+    id: project.id,
+    name: project.name,
+    updatedAt: formatRelativeTime(project.updated_at),
+  }))
+
+  // Transform assets for ContentRow (show most recent 12)
+  const recentAssets = assets.slice(0, 12).map(asset => ({
     id: asset.id,
     name: asset.name,
     type: asset.type,
     updatedAt: formatRelativeTime(asset.created_at),
   }))
 
-  // Transform platforms (foundations) for ContentRow (show most recent 3)
-  const recentFoundations = platforms.slice(0, 3).map(platform => ({
+  // Transform platforms (foundations) for ContentRow (show most recent 12)
+  const recentFoundations = platforms.slice(0, 12).map(platform => ({
     id: platform.id,
     name: platform.name,
     updatedAt: formatRelativeTime(platform.updated_at),
   }))
 
   const handleNewProject = () => {
+    // Always reset wizard for a fresh start
+    resetWizard()
     navigate("/create/project")
+  }
+
+  const handleContinueDraft = (projectId: string) => {
+    // TODO: Load draft into wizard and navigate to the right step
+    navigate(`/create/project?draft=${projectId}`)
   }
 
   const handleNewAsset = () => {
@@ -135,6 +154,20 @@ export function Dashboard() {
               onNewAsset={handleNewAsset}
               onStartWithBubble={handleStartWithBubble}
             />
+
+            {/* Draft Projects - Continue Setup */}
+            {recentDrafts.length > 0 && (
+              <>
+                <div className="border-t border-zinc-800/50" />
+                <ContentRow
+                  title="Continue Setup"
+                  type="projects"
+                  items={recentDrafts}
+                  onItemClick={handleContinueDraft}
+                  isDraft
+                />
+              </>
+            )}
 
             <div className="border-t border-zinc-800/50" />
 

@@ -157,10 +157,17 @@ const seedAssets: SeedAsset[] = [
   // Effects
   { name: "Lens Flare", type: "video", category: "effect", url: "https://example.com/flare.mp4", duration: 3 },
   { name: "Particle Burst", type: "video", category: "effect", url: "https://example.com/particles.mp4", duration: 2 },
-  // Audio
-  { name: "Upbeat Background", type: "audio", category: "audio", url: "https://example.com/upbeat.mp3", duration: 120 },
-  { name: "Ambient Office", type: "audio", category: "audio", url: "https://example.com/ambient.mp3", duration: 60 },
-  { name: "Click Sound", type: "audio", category: "audio", url: "https://example.com/click.mp3", duration: 1 },
+  // Audio - Music
+  { name: "Upbeat Background", type: "audio", category: "music", url: "https://example.com/upbeat.mp3", duration: 120 },
+  { name: "Ambient Office", type: "audio", category: "music", url: "https://example.com/ambient.mp3", duration: 60 },
+  { name: "Corporate Inspire", type: "audio", category: "music", url: "https://example.com/corporate.mp3", duration: 180 },
+  // Audio - Sound Effects
+  { name: "Click Sound", type: "audio", category: "sound_effect", url: "https://example.com/click.mp3", duration: 1 },
+  { name: "Whoosh", type: "audio", category: "sound_effect", url: "https://example.com/whoosh.mp3", duration: 2 },
+  { name: "Notification Ding", type: "audio", category: "sound_effect", url: "https://example.com/ding.mp3", duration: 1 },
+  // Audio - Voice
+  { name: "Male Narrator", type: "audio", category: "voice", url: "https://example.com/narrator-male.mp3", duration: 30 },
+  { name: "Female Narrator", type: "audio", category: "voice", url: "https://example.com/narrator-female.mp3", duration: 30 },
 ]
 
 // ============================================

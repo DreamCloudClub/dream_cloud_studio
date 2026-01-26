@@ -21,7 +21,7 @@ export function CreateAssetWizard() {
   const { isBubbleCollapsed, toggleBubbleCollapsed } = useUIStore()
   const { user, profile, signOut } = useAuth()
 
-  const { currentStep, setPrompt } = useAssetWizardStore()
+  const { currentStep, setPrompt, resetWizard } = useAssetWizardStore()
 
   // Extract initial prompt from URL params
   useEffect(() => {
@@ -32,6 +32,7 @@ export function CreateAssetWizard() {
   }, [searchParams, setPrompt])
 
   const handleBack = () => {
+    resetWizard()
     navigate("/library/assets")
   }
 
