@@ -9,7 +9,7 @@ registerRoot(RemotionRoot)
 
 // Re-export everything for programmatic use
 export { RemotionRoot, VIDEO_FPS, VIDEO_WIDTH, VIDEO_HEIGHT } from "./Root"
-export type { Shot, TitleConfig, CompositionProps } from "./Root"
+export type { Shot, TitleConfig, TextOverlayConfig, CompositionProps } from "./Root"
 export { VideoComposition } from "./VideoComposition"
 export { AnimationComposition } from "./AnimationComposition"
 export type { AnimationCompositionProps, AnimationSegment, AnimationConfig, AnimationLayer, EffectElement } from "./AnimationComposition"

@@ -1433,6 +1433,16 @@ ALSO AVAILABLE (from project wizard):
 - set_title_card, set_outro_card, set_transition, add_text_overlay
 - generate_image, generate_voiceover, generate_music, generate_sound_effect
 
+TEXT OVERLAY / MOTION GRAPHICS:
+Use add_text_overlay to add animated text to the video:
+- position: "top", "center", "bottom", "lower-third"
+- animation: "fade", "slide-up", "slide-left", "typewriter", "glitch"
+- shotId: (optional) attach to specific shot
+- startTime: seconds from start (or from shot start if shotId set)
+- duration: how long to show (seconds)
+
+Example: add_text_overlay({ text: "Chapter 1", position: "center", animation: "fade", startTime: 2, duration: 3 })
+
 Ask what the user would like to work on. Common tasks:
 - "Add a new scene" -> workspace_add_scene
 - "Add a shot to Scene 1" -> workspace_add_shot
@@ -1442,7 +1452,9 @@ Ask what the user would like to work on. Common tasks:
 - "Update the shot description" -> workspace_update_shot
 - "Change the project name" -> update_brief
 - "Remove the image from this shot" -> workspace_unlink_asset_from_shot
-- "Set export to 4K" -> workspace_update_export_settings`,
+- "Set export to 4K" -> workspace_update_export_settings
+- "Add text overlay" -> add_text_overlay
+- "Add lower third" -> add_text_overlay with position: "lower-third"`,
 
   // ============================================
   // ASSET CREATOR STEPS

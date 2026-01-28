@@ -1,4 +1,5 @@
-import { useState } from "react"
+import { useState, useMemo, useRef, useCallback } from "react"
+import { PlayerRef } from "@remotion/player"
 import {
   Download,
   Monitor,
@@ -8,15 +9,16 @@ import {
   Clock,
   HardDrive,
   Play,
-  Pause,
   CheckCircle,
   AlertCircle,
   Loader2,
-  Maximize2,
-  Volume2,
+  Copy,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { useWorkspaceStore, ExportSettings } from "@/state/workspaceStore"
+import { VideoPreview } from "@/remotion/VideoPreview"
+import type { Shot as RemotionShot } from "@/remotion/Root"
+import { getAssetDisplayUrl } from "@/services/localStorage"
 
 type RenderStatus = "idle" | "rendering" | "complete" | "error"
 
@@ -48,17 +50,52 @@ export function ExportPage() {
   const { project, updateExportSettings } = useWorkspaceStore()
   const [renderStatus, setRenderStatus] = useState<RenderStatus>("idle")
   const [renderProgress, setRenderProgress] = useState(0)
+  const [copied, setCopied] = useState(false)
+  const playerRef = useRef<PlayerRef>(null)
 
   if (!project) return null
 
   const { exportSettings } = project
 
+  // Transform workspace shots to Remotion format
+  const remotionShots = useMemo((): RemotionShot[] => {
+    const shots: RemotionShot[] = []
+
+    for (const scene of [...project.scenes].sort((a, b) => a.order - b.order)) {
+      for (const shot of [...scene.shots].sort((a, b) => a.order - b.order)) {
+        // Get the media URL - prioritize video over image
+        let src: string | undefined
+        let type: "video" | "image" = "image"
+
+        if (shot.videoAsset) {
+          src = getAssetDisplayUrl(shot.videoAsset)
+          type = "video"
+        } else if (shot.imageAsset) {
+          src = getAssetDisplayUrl(shot.imageAsset)
+          type = "image"
+        }
+
+        if (src) {
+          shots.push({
+            id: shot.id,
+            type,
+            src,
+            duration: shot.videoAsset?.duration || shot.duration || 5,
+            transition: shot.transition || "fade",
+            scale: shot.scale,
+            positionX: shot.positionX,
+            positionY: shot.positionY,
+            pan: shot.pan,
+          })
+        }
+      }
+    }
+
+    return shots
+  }, [project.scenes])
+
   // Calculate estimated values
-  const totalDuration = project.scenes.reduce(
-    (acc, scene) =>
-      acc + scene.shots.reduce((shotAcc, shot) => shotAcc + shot.duration, 0),
-    0
-  )
+  const totalDuration = remotionShots.reduce((acc, shot) => acc + shot.duration, 0)
 
   const estimatedSize = (() => {
     const baseSize = totalDuration * 2 // ~2MB per second at 1080p standard
@@ -67,25 +104,60 @@ export function ExportPage() {
     return Math.round(baseSize * resMultiplier * qualityMultiplier)
   })()
 
-  const handleStartRender = () => {
-    setRenderStatus("rendering")
-    setRenderProgress(0)
+  // Generate Remotion render command
+  const getRenderCommand = useCallback(() => {
+    const resolution = exportSettings.resolution === "4k" ? "3840x2160"
+      : exportSettings.resolution === "720p" ? "1280x720"
+      : "1920x1080"
+    const [width, height] = resolution.split("x")
 
-    // Simulate rendering progress
-    const interval = setInterval(() => {
-      setRenderProgress((prev) => {
-        if (prev >= 100) {
-          clearInterval(interval)
-          setRenderStatus("complete")
-          return 100
-        }
-        return prev + Math.random() * 5
-      })
-    }, 200)
-  }
+    return `npx remotion render src/remotion/index.ts VideoComposition out/${project.name || "video"}.${exportSettings.format} --props='${JSON.stringify({ shots: remotionShots })}' --width=${width} --height=${height} --fps=${exportSettings.frameRate}`
+  }, [project.name, exportSettings, remotionShots])
 
-  const [isPlaying, setIsPlaying] = useState(false)
-  const [previewTime, setPreviewTime] = useState(0)
+  const handleCopyCommand = useCallback(() => {
+    navigator.clipboard.writeText(getRenderCommand())
+    setCopied(true)
+    setTimeout(() => setCopied(false), 2000)
+  }, [getRenderCommand])
+
+  // Download a single video/image source directly
+  const handleDownloadSource = useCallback(async (url: string, filename: string) => {
+    try {
+      const response = await fetch(url)
+      const blob = await response.blob()
+      const downloadUrl = URL.createObjectURL(blob)
+      const a = document.createElement("a")
+      a.href = downloadUrl
+      a.download = filename
+      document.body.appendChild(a)
+      a.click()
+      document.body.removeChild(a)
+      URL.revokeObjectURL(downloadUrl)
+    } catch (error) {
+      console.error("Download error:", error)
+      // Fallback: open in new tab
+      window.open(url, "_blank")
+    }
+  }, [])
+
+  const handleStartRender = useCallback(async () => {
+    if (remotionShots.length === 0) {
+      setRenderStatus("error")
+      return
+    }
+
+    // For single shot, download directly
+    if (remotionShots.length === 1 && remotionShots[0].src) {
+      const shot = remotionShots[0]
+      const ext = shot.type === "video" ? "mp4" : "jpg"
+      await handleDownloadSource(shot.src, `${project.name || "export"}.${ext}`)
+      return
+    }
+
+    // For multiple shots, show the CLI command
+    setRenderStatus("complete")
+    setRenderProgress(100)
+  }, [remotionShots, project.name, handleDownloadSource])
 
   const formatTime = (seconds: number) => {
     const mins = Math.floor(seconds / 60)
@@ -99,55 +171,26 @@ export function ExportPage() {
         {/* Video Preview Panel */}
         <div className="bg-black rounded-2xl overflow-hidden">
           {/* Video Display */}
-          <div className="aspect-video relative bg-zinc-900 flex items-center justify-center">
-            {/* Placeholder for video */}
-            <div className="text-zinc-600 text-center">
-              <Film className="w-16 h-16 mx-auto mb-4 opacity-50" />
-              <p className="text-sm">Final video preview</p>
-            </div>
-
-            {/* Fullscreen button */}
-            <button className="absolute top-4 right-4 w-10 h-10 rounded-lg bg-black/50 hover:bg-black/70 flex items-center justify-center text-white/70 hover:text-white transition-colors">
-              <Maximize2 className="w-5 h-5" />
-            </button>
-          </div>
-
-          {/* Playback Controls */}
-          <div className="p-4 bg-zinc-900/80">
-            {/* Progress bar */}
-            <div className="mb-3">
-              <div className="h-1 bg-zinc-700 rounded-full overflow-hidden cursor-pointer">
-                <div
-                  className="h-full bg-gradient-to-r from-sky-400 to-blue-500 rounded-full transition-all"
-                  style={{ width: `${(previewTime / totalDuration) * 100}%` }}
-                />
-              </div>
-              <div className="flex justify-between text-xs text-zinc-500 mt-1">
-                <span>{formatTime(previewTime)}</span>
-                <span>{formatTime(totalDuration)}</span>
-              </div>
-            </div>
-
-            {/* Control buttons */}
-            <div className="flex items-center justify-center gap-4">
-              <button
-                onClick={() => setIsPlaying(!isPlaying)}
-                className="w-12 h-12 rounded-full bg-gradient-to-br from-sky-400 via-sky-500 to-blue-600 flex items-center justify-center text-white shadow-lg shadow-sky-500/30 hover:shadow-sky-500/50 transition-all hover:scale-105"
-              >
-                {isPlaying ? (
-                  <Pause className="w-5 h-5" />
-                ) : (
-                  <Play className="w-5 h-5 ml-0.5" />
-                )}
-              </button>
-
-              <div className="flex items-center gap-2">
-                <Volume2 className="w-4 h-4 text-zinc-500" />
-                <div className="w-20 h-1 bg-zinc-700 rounded-full">
-                  <div className="w-3/4 h-full bg-zinc-500 rounded-full" />
+          <div className="aspect-video relative bg-zinc-900">
+            {remotionShots.length > 0 ? (
+              <VideoPreview
+                ref={playerRef}
+                shots={remotionShots}
+                width={800}
+                height={450}
+                autoPlay={false}
+                loop={false}
+                controls={true}
+              />
+            ) : (
+              <div className="w-full h-full flex items-center justify-center text-zinc-600 text-center">
+                <div>
+                  <Film className="w-16 h-16 mx-auto mb-4 opacity-50" />
+                  <p className="text-sm">No shots to preview</p>
+                  <p className="text-xs text-zinc-700 mt-2">Add media to your shots first</p>
                 </div>
               </div>
-            </div>
+            )}
           </div>
         </div>
 
@@ -179,7 +222,7 @@ export function ExportPage() {
             </div>
             <div>
               <p className="text-2xl font-bold text-zinc-100">
-                {Math.floor(totalDuration / 60)}:{String(totalDuration % 60).padStart(2, "0")}
+                {Math.floor(totalDuration / 60)}:{String(Math.round(totalDuration % 60)).padStart(2, "0")}
               </p>
               <p className="text-sm text-zinc-500">Duration</p>
             </div>
@@ -296,8 +339,8 @@ export function ExportPage() {
                 <Clock className="w-5 h-5 text-sky-400" />
               </div>
               <div>
-                <p className="text-lg font-semibold text-zinc-100">~2-5 min</p>
-                <p className="text-sm text-zinc-500">Render time</p>
+                <p className="text-lg font-semibold text-zinc-100">~{formatTime(totalDuration)}</p>
+                <p className="text-sm text-zinc-500">Render time (real-time)</p>
               </div>
             </div>
             <div className="flex items-center gap-3">
@@ -316,7 +359,7 @@ export function ExportPage() {
         {renderStatus === "idle" && (
           <button
             onClick={handleStartRender}
-            className="w-full py-4 bg-gradient-to-br from-sky-400 via-sky-500 to-blue-600 rounded-2xl text-white font-semibold text-lg shadow-lg shadow-sky-500/30 hover:shadow-sky-500/50 transition-all hover:scale-[1.02] inline-flex items-center justify-center gap-3"
+            className="w-full py-4 bg-orange-500/10 border-2 border-orange-400 rounded-2xl text-orange-400 font-semibold text-lg hover:bg-orange-500/20 hover:border-orange-300 hover:text-orange-300 transition-all hover:scale-[1.02] inline-flex items-center justify-center gap-3"
           >
             <Download className="w-5 h-5" />
             Start Render
@@ -350,19 +393,65 @@ export function ExportPage() {
           <div className="bg-emerald-500/10 border border-emerald-500/30 rounded-2xl p-6 space-y-4">
             <div className="flex items-center gap-3">
               <CheckCircle className="w-6 h-6 text-emerald-400" />
-              <span className="font-semibold text-emerald-400">Render Complete!</span>
+              <span className="font-semibold text-emerald-400">Export Options</span>
             </div>
-            <p className="text-sm text-zinc-400">
-              Your video has been rendered successfully and is ready for download.
-            </p>
+
+            {/* Download individual shots */}
+            {remotionShots.length > 0 && (
+              <div className="space-y-2">
+                <p className="text-sm text-zinc-400">Download source files:</p>
+                <div className="flex flex-wrap gap-2">
+                  {remotionShots.map((shot, i) => (
+                    <button
+                      key={shot.id}
+                      onClick={() => handleDownloadSource(
+                        shot.src!,
+                        `${project.name || "shot"}-${i + 1}.${shot.type === "video" ? "mp4" : "jpg"}`
+                      )}
+                      className="px-3 py-1.5 bg-zinc-800 hover:bg-zinc-700 rounded-lg text-sm text-zinc-300 transition-colors"
+                    >
+                      Shot {i + 1} ({shot.type})
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* CLI Command */}
+            <div className="pt-2 border-t border-zinc-700">
+              <p className="text-sm text-zinc-400 mb-2">
+                For combined video with transitions, use Remotion CLI:
+              </p>
+              <div className="bg-zinc-900 rounded-lg p-3 font-mono text-xs text-zinc-300 overflow-x-auto">
+                <code>{getRenderCommand()}</code>
+              </div>
+            </div>
+
             <div className="flex items-center gap-3">
-              <button className="flex-1 py-3 bg-emerald-500 hover:bg-emerald-400 rounded-xl text-white font-medium inline-flex items-center justify-center gap-2 transition-colors">
-                <Download className="w-4 h-4" />
-                Download Video
+              <button
+                onClick={handleCopyCommand}
+                className="flex-1 py-3 bg-emerald-500 hover:bg-emerald-400 rounded-xl text-white font-medium inline-flex items-center justify-center gap-2 transition-colors"
+              >
+                {copied ? (
+                  <>
+                    <CheckCircle className="w-4 h-4" />
+                    Copied!
+                  </>
+                ) : (
+                  <>
+                    <Copy className="w-4 h-4" />
+                    Copy CLI Command
+                  </>
+                )}
               </button>
-              <button className="px-4 py-3 bg-zinc-800 hover:bg-zinc-700 rounded-xl text-zinc-300 font-medium inline-flex items-center justify-center gap-2 transition-colors">
-                <Play className="w-4 h-4" />
-                Preview
+              <button
+                onClick={() => {
+                  setRenderStatus("idle")
+                  setRenderProgress(0)
+                }}
+                className="px-4 py-3 bg-zinc-800 hover:bg-zinc-700 rounded-xl text-zinc-300 font-medium inline-flex items-center justify-center gap-2 transition-colors"
+              >
+                Back
               </button>
             </div>
           </div>

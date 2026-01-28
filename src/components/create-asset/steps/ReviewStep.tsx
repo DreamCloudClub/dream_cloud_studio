@@ -69,10 +69,11 @@ export function ReviewStep({ onComplete }: ReviewStepProps) {
           aiPrompt: aiPrompt || userDescription,
           generationModel: assetType === 'audio'
             ? (category === 'music' ? 'replicate_musicgen' : 'elevenlabs')
-            : 'replicate_flux',
+            : assetType === 'video' ? 'kling-v2.1' : 'replicate_flux',
           generationSettings: {
             style: stylePreset,
           },
+          duration: asset.duration,  // Pass video/audio duration
         })
       }
 

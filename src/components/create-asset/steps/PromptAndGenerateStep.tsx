@@ -262,6 +262,7 @@ interface GeneratedBatch {
     selected: boolean
     isVideo?: boolean  // Track if this is a video (vs image)
     isAnimating?: boolean  // Currently being animated
+    duration?: number  // For video/audio assets
   }[]
   prompt: string
   timestamp: number
@@ -576,6 +577,7 @@ export function PromptAndGenerateStep() {
             url: videoUrl,
             selected: false,
             isVideo: true,
+            duration: videoDuration,
           }],
           prompt: effectivePrompt,
           timestamp: Date.now(),
@@ -586,21 +588,25 @@ export function PromptAndGenerateStep() {
         setAdditionalReferences([]) // Clear after successful generation
       } else if (assetType === "audio") {
         let audioUrl: string
+        let audioDuration: number | undefined
 
         if (category === "music") {
           audioUrl = await generateMusic({
             prompt: effectivePrompt,
             duration: 10,
           })
+          audioDuration = 10
         } else if (category === "sound_effect") {
           audioUrl = await generateSoundEffect({
             text: effectivePrompt,
             duration_seconds: 5,
           })
+          audioDuration = 5
         } else {
           audioUrl = await generateVoice({
             text: effectivePrompt,
           })
+          // Voice duration is unknown at generation time
         }
 
         const newBatch: GeneratedBatch = {
@@ -609,6 +615,7 @@ export function PromptAndGenerateStep() {
             id: `${batchId}-0`,
             url: audioUrl,
             selected: false,
+            duration: audioDuration,
           }],
           prompt: effectivePrompt,
           timestamp: Date.now(),
@@ -692,7 +699,7 @@ export function PromptAndGenerateStep() {
           return {
             ...batch,
             assets: batch.assets.map(a =>
-              a.id === assetId ? { ...a, url: videoUrl, isVideo: true, isAnimating: false } : a
+              a.id === assetId ? { ...a, url: videoUrl, isVideo: true, isAnimating: false, duration: videoDuration } : a
             )
           }
         }

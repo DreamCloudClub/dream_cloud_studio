@@ -1,12 +1,14 @@
-import { Player } from "@remotion/player"
+import { forwardRef } from "react"
+import { Player, PlayerRef } from "@remotion/player"
 import { VideoComposition } from "./VideoComposition"
 import { VIDEO_FPS, VIDEO_WIDTH, VIDEO_HEIGHT } from "./Root"
-import type { CompositionProps, Shot } from "./Root"
+import type { CompositionProps, Shot, TextOverlayConfig } from "./Root"
 
 interface VideoPreviewProps {
   shots: Shot[]
   title?: CompositionProps["title"]
   outro?: CompositionProps["outro"]
+  textOverlays?: TextOverlayConfig[]
   backgroundColor?: string
   width?: number
   height?: number
@@ -15,17 +17,18 @@ interface VideoPreviewProps {
   controls?: boolean
 }
 
-export function VideoPreview({
+export const VideoPreview = forwardRef<PlayerRef, VideoPreviewProps>(function VideoPreview({
   shots,
   title,
   outro,
+  textOverlays = [],
   backgroundColor = "#000000",
   width = 640,
   height = 360,
   autoPlay = false,
   loop = false,
   controls = true,
-}: VideoPreviewProps) {
+}, ref) {
   // Calculate total duration in frames
   let totalFrames = 0
 
@@ -48,11 +51,13 @@ export function VideoPreview({
 
   return (
     <Player
+      ref={ref}
       component={VideoComposition}
       inputProps={{
         shots,
         title,
         outro,
+        textOverlays,
         backgroundColor,
       }}
       durationInFrames={totalFrames}
@@ -70,4 +75,4 @@ export function VideoPreview({
       controls={controls}
     />
   )
-}
+})

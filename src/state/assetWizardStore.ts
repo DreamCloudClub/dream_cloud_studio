@@ -35,6 +35,8 @@ interface AssetWizardState {
     id: string
     url: string
     selected: boolean
+    isVideo?: boolean
+    duration?: number  // For video/audio assets
   }[]
 
   // Actions

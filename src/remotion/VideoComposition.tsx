@@ -1,12 +1,13 @@
 import { AbsoluteFill, Sequence, useVideoConfig } from "remotion"
-import type { CompositionProps, Shot } from "./Root"
+import type { CompositionProps, Shot, TextOverlayConfig } from "./Root"
 import { VideoShot } from "./components/VideoShot"
 import { ImageShot } from "./components/ImageShot"
 import { TitleCard } from "./components/TitleCard"
 import { Transition } from "./components/Transition"
+import { TextOverlay } from "./components/TextOverlay"
 import { VIDEO_FPS } from "./Root"
 
-export function VideoComposition({ shots, title, outro, backgroundColor = "#000000" }: CompositionProps) {
+export function VideoComposition({ shots, title, outro, textOverlays = [], backgroundColor = "#000000" }: CompositionProps) {
   const { fps } = useVideoConfig()
 
   // Calculate frame positions for each shot
@@ -96,6 +97,49 @@ export function VideoComposition({ shots, title, outro, backgroundColor = "#0000
           <TitleCard config={outro} />
         </Sequence>
       )}
+
+      {/* Text Overlays */}
+      {textOverlays.map((overlay) => {
+        // Calculate overlay timing
+        let overlayStartFrame = 0
+        let overlayDurationFrames = 3 * fps // Default 3 seconds
+
+        if (overlay.shotId) {
+          // Overlay is relative to a specific shot
+          const shotPosition = shotPositions.find(p => p.shot.id === overlay.shotId)
+          if (shotPosition) {
+            overlayStartFrame = shotPosition.startFrame + Math.round((overlay.startTime || 0) * fps)
+            overlayDurationFrames = overlay.duration
+              ? Math.round(overlay.duration * fps)
+              : shotPosition.durationFrames - Math.round((overlay.startTime || 0) * fps)
+          }
+        } else {
+          // Global overlay - startTime is from video start
+          overlayStartFrame = Math.round((overlay.startTime || 0) * fps)
+          if (overlay.duration) {
+            overlayDurationFrames = Math.round(overlay.duration * fps)
+          }
+        }
+
+        return (
+          <Sequence
+            key={overlay.id}
+            from={overlayStartFrame}
+            durationInFrames={overlayDurationFrames}
+          >
+            <TextOverlay
+              text={overlay.text}
+              position={overlay.position}
+              animation={overlay.animation}
+              font={overlay.font}
+              fontSize={overlay.fontSize}
+              fontWeight={overlay.fontWeight}
+              color={overlay.color}
+              backgroundColor={overlay.backgroundColor}
+            />
+          </Sequence>
+        )
+      })}
     </AbsoluteFill>
   )
 }

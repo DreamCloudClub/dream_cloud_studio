@@ -392,6 +392,17 @@ function PreviewIndicator({ mode, sceneName, shotName, onClear, onSelectScene }:
         </>
       )}
 
+      {/* Shot - visible when shot is selected */}
+      {mode === "shot" && shotName && (
+        <>
+          <ChevronRight className="w-4 h-4 text-zinc-600" />
+          <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-medium bg-orange-500/20 text-orange-400 border border-orange-500/30">
+            <Film className="w-3.5 h-3.5" />
+            <span>{shotName}</span>
+          </div>
+        </>
+      )}
+
     </div>
   )
 }
@@ -534,7 +545,7 @@ function VideoPlayer({ aspectRatio }: VideoPlayerProps) {
     setIsPlaying(false)
   }, [selectedSceneId, selectedShotId, setCurrentTime, setIsPlaying])
 
-  // Playback timer
+  // Playback timer (for images - videos sync via onTimeUpdate but this provides fallback)
   useEffect(() => {
     if (isPlaying) {
       intervalRef.current = setInterval(() => {
@@ -648,7 +659,21 @@ function VideoPlayer({ aspectRatio }: VideoPlayerProps) {
     const rect = e.currentTarget.getBoundingClientRect()
     const x = e.clientX - rect.left
     const percent = x / rect.width
-    setCurrentTime(percent * totalDuration)
+    const newTime = percent * totalDuration
+    setCurrentTime(newTime)
+
+    // Seek the video to the correct position within the current shot
+    if (videoRef.current && isVideo) {
+      // Find which shot this time falls into
+      for (const item of playableShots) {
+        if (newTime >= item.startTime && newTime < item.endTime) {
+          // Calculate time within this shot
+          const timeInShot = newTime - item.startTime
+          videoRef.current.currentTime = timeInShot
+          break
+        }
+      }
+    }
   }
 
   // Sync video playback with Editor controls
@@ -708,6 +733,13 @@ function VideoPlayer({ aspectRatio }: VideoPlayerProps) {
                 loop
                 muted={volume === 0}
                 playsInline
+                onTimeUpdate={(e) => {
+                  // Sync timeline with video playback
+                  if (currentShotInfo && isPlaying) {
+                    const videoTime = e.currentTarget.currentTime
+                    setCurrentTime(currentShotInfo.startTime + videoTime)
+                  }
+                }}
               />
             ) : (
               <img

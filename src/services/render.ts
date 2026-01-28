@@ -1,7 +1,7 @@
 // Remotion Render Service
 // This service builds props for Remotion compositions and can trigger renders
 
-import type { AnimationConfig, AnimationSegment } from "@/remotion"
+import type { AnimationConfig, AnimationSegment, Shot, TitleConfig, TextOverlayConfig } from "@/remotion"
 import type { ShotEffect } from "@/state/workspaceStore"
 
 export interface RenderJob {
@@ -37,6 +37,43 @@ export function buildAnimationSegment(
     type: "animation",
     config,
     effects: effects?.map(shotEffectToEffectElement),
+  }
+}
+
+// Build props for VideoComposition
+export function buildVideoProps(
+  shots: Shot[],
+  options: {
+    title?: TitleConfig
+    outro?: TitleConfig
+    textOverlays?: TextOverlayConfig[]
+    backgroundColor?: string
+  } = {}
+) {
+  const { title, outro, textOverlays = [], backgroundColor = "#000000" } = options
+
+  // Calculate total duration
+  let totalDuration = 0
+  if (title) totalDuration += 3 // 3 seconds for title
+  totalDuration += shots.reduce((acc, shot) => acc + shot.duration, 0)
+  if (outro) totalDuration += 3 // 3 seconds for outro
+
+  const fps = 30
+  const durationInFrames = Math.ceil(totalDuration * fps)
+
+  return {
+    compositionId: "VideoComposition",
+    durationInFrames,
+    fps,
+    width: 1920,
+    height: 1080,
+    props: {
+      shots,
+      title,
+      outro,
+      textOverlays,
+      backgroundColor,
+    },
   }
 }
 

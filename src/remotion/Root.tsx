@@ -38,10 +38,27 @@ export interface TitleConfig {
   animation?: "fade" | "slide-up" | "zoom" | "typewriter"
 }
 
+export interface TextOverlayConfig {
+  id: string
+  text: string
+  position?: "top" | "center" | "bottom" | "lower-third"
+  animation?: "fade" | "slide-up" | "slide-left" | "typewriter" | "glitch"
+  shotId?: string  // If set, overlay is relative to this shot
+  startTime?: number  // Seconds from start (or from shot start if shotId is set)
+  duration?: number  // How long to show (seconds)
+  // Styling
+  font?: string
+  fontSize?: number
+  fontWeight?: number
+  color?: string
+  backgroundColor?: string
+}
+
 export interface CompositionProps {
   shots: Shot[]
   title?: TitleConfig
   outro?: TitleConfig
+  textOverlays?: TextOverlayConfig[]
   backgroundColor?: string
 }
 

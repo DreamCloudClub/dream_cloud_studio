@@ -278,7 +278,7 @@ export async function generateImages(options: GenerateImageOptions): Promise<str
 // ============================================
 
 // Model versions
-const KLING_V21_VERSION = "daad218feb714b03e2a1ac445986aebb9d05243cd00da2af17be2e4049f48f69"
+const KLING_V21_VERSION = "f045f3203a6faeb8a1b47dd4069fa397a8c83c41b418967f5ba095c57322ccb9"
 const MINIMAX_VIDEO_VERSION = "5aa835260ff7f40f4069c41185f72036accf99e29957bb4a3b3a911f3b6c1912"
 
 export interface GenerateVideoOptions {
