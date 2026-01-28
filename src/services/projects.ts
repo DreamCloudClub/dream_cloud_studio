@@ -165,18 +165,51 @@ export async function getProjectWithRelations(projectId: string): Promise<Projec
 
   // Fetch shots for each scene
   const scenes: SceneWithShots[] = []
+  const allShots: Shot[] = []
   if (scenesResult.data) {
     for (const scene of scenesResult.data) {
-      const { data: shots } = await supabase
+      const { data: shots, error: shotsError } = await supabase
         .from('shots')
         .select('*')
         .eq('scene_id', scene.id)
         .order('sort_order')
 
+      if (shotsError) {
+        console.error('Error fetching shots:', shotsError)
+      }
+
+      const sceneShots = (shots || []) as Shot[]
+      allShots.push(...sceneShots)
       scenes.push({
         ...(scene as Scene),
-        shots: (shots || []) as Shot[],
+        shots: sceneShots,
       })
+    }
+  }
+
+  // Collect all linked asset IDs from shots
+  const linkedAssetIds = new Set<string>()
+  for (const shot of allShots) {
+    if (shot.image_asset_id) linkedAssetIds.add(shot.image_asset_id)
+    if (shot.video_asset_id) linkedAssetIds.add(shot.video_asset_id)
+    if (shot.audio_asset_id) linkedAssetIds.add(shot.audio_asset_id)
+  }
+
+  // Fetch linked assets that might not be in the project's assets
+  let allAssets = assetsResult.data || []
+  if (linkedAssetIds.size > 0) {
+    const existingAssetIds = new Set(allAssets.map(a => a.id))
+    const missingAssetIds = [...linkedAssetIds].filter(id => !existingAssetIds.has(id))
+
+    if (missingAssetIds.length > 0) {
+      const { data: linkedAssets, error: linkedError } = await supabase
+        .from('assets')
+        .select('*')
+        .in('id', missingAssetIds)
+
+      if (!linkedError && linkedAssets) {
+        allAssets = [...allAssets, ...linkedAssets]
+      }
     }
   }
 
@@ -189,7 +222,7 @@ export async function getProjectWithRelations(projectId: string): Promise<Projec
     storyboard_cards: (cardsResult.data || []) as StoryboardCard[],
     script_sections: (scriptSectionsResult.data || []) as any[],
     scenes,
-    assets: (assetsResult.data || []) as any[],
+    assets: allAssets as any[],
     export_settings: exportResult.data as ExportSettings | undefined,
     composition: compositionResult.data as ProjectComposition | undefined,
   }

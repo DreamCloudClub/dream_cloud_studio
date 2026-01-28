@@ -1,4 +1,4 @@
-import { FolderOpen, Image, PenLine, Film, Volume2 } from "lucide-react"
+import { FolderOpen, Image, PenLine, Film, Volume2, Play } from "lucide-react"
 
 export type ContentRowType = "projects" | "assets" | "foundations"
 
@@ -57,7 +57,21 @@ function ItemCard({ item, onClick, isDraft, isFoundation }: { item: ContentItem;
       }`}
     >
       <div className="aspect-square bg-zinc-800 relative">
-        {item.thumbnail ? (
+        {item.thumbnail && item.type === 'video' ? (
+          <>
+            <video
+              src={item.thumbnail}
+              className="w-full h-full object-cover"
+              preload="metadata"
+              muted
+              playsInline
+            />
+            {/* Play icon overlay for videos */}
+            <div className="absolute top-2 right-2 w-6 h-6 rounded-full bg-black/60 flex items-center justify-center pointer-events-none">
+              <Play className="w-3 h-3 text-white fill-white" />
+            </div>
+          </>
+        ) : item.thumbnail ? (
           <img
             src={item.thumbnail}
             alt={item.name}

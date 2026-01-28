@@ -276,12 +276,21 @@ function MediaTypeSlot({ type, asset, onClick, onRemove }: MediaTypeSlotProps) {
           // Show preview
           <>
             {asset.type === "video" ? (
-              <video
-                src={assetUrl}
-                className="w-full h-full object-cover"
-                muted
-                playsInline
-              />
+              <>
+                <video
+                  src={assetUrl}
+                  className="w-full h-full object-cover"
+                  preload="metadata"
+                  muted
+                  playsInline
+                />
+                {/* Play icon overlay for videos */}
+                <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+                  <div className="w-10 h-10 rounded-full bg-black/50 flex items-center justify-center">
+                    <Play className="w-5 h-5 text-white fill-white ml-0.5" />
+                  </div>
+                </div>
+              </>
             ) : asset.type === "audio" ? (
               <div className="w-full h-full bg-gradient-to-br from-purple-500/20 to-pink-500/20 flex items-center justify-center">
                 <Volume2 className="w-8 h-8 text-purple-400" />
@@ -606,9 +615,9 @@ function ShotCard({ shot, sceneId, isExpanded, onToggle, onDragStart, onDragOver
 
         {isExpanded ? (
           // Editable fields when expanded
-          <div className="flex-1 flex gap-4">
+          <div className="flex-1">
             {/* Title Field */}
-            <div className="flex-1">
+            <div>
               <label className="block text-xs font-medium text-zinc-500 mb-1">Title</label>
               <textarea
                 ref={nameRef}
@@ -620,43 +629,34 @@ function ShotCard({ shot, sceneId, isExpanded, onToggle, onDragStart, onDragOver
                 className="w-full text-sm font-medium text-zinc-200 bg-zinc-800/50 border border-zinc-700 rounded-lg px-3 py-2 focus:outline-none focus:border-sky-500 resize-none overflow-hidden transition-colors h-9"
               />
             </div>
-            {/* Duration Field */}
-            <div className="flex-shrink-0">
-              <label className="block text-xs font-medium text-zinc-500 mb-1">Duration</label>
-              <div className="flex items-center gap-1">
-                <input
-                  type="number"
-                  value={shot.duration}
-                  min={1}
-                  max={60}
-                  onChange={(e) => updateShot(sceneId, shot.id, { duration: parseInt(e.target.value) || 1 })}
-                  className="w-16 px-3 py-2 bg-zinc-800/50 border border-zinc-700 rounded-lg text-sm text-zinc-200 focus:outline-none focus:border-sky-500 text-center h-9"
-                />
-                <span className="text-xs text-zinc-500">sec</span>
-              </div>
-            </div>
           </div>
         ) : (
           // Clickable display when collapsed
-          <>
-            <button
-              onClick={onToggle}
-              className="flex-1 text-left hover:bg-zinc-800/50 -my-1 py-1 px-2 rounded-lg transition-colors"
-            >
-              <p className="text-sm font-medium text-zinc-200">{shot.name}</p>
-              <p className="text-xs text-zinc-500 truncate">{shot.description}</p>
-            </button>
-            <span className="text-xs text-zinc-500 flex-shrink-0">{shot.duration}s</span>
-          </>
+          <button
+            onClick={onToggle}
+            className="flex-1 text-left hover:bg-zinc-800/50 -my-1 py-1 px-2 rounded-lg transition-colors"
+          >
+            <p className="text-sm font-medium text-zinc-200">{shot.name}</p>
+            <p className="text-xs text-zinc-500 truncate">{shot.description}</p>
+          </button>
         )}
 
         {/* Show linked asset thumbnail when collapsed */}
         {!isExpanded && (shot.imageAsset || shot.videoAsset || shot.audioAsset || shot.media) && (
-          <div className="w-10 h-10 rounded-lg bg-zinc-700 overflow-hidden flex-shrink-0">
+          <div className="w-10 h-10 rounded-lg bg-zinc-700 overflow-hidden flex-shrink-0 relative">
             {shot.videoAsset ? (
-              <div className="w-full h-full flex items-center justify-center bg-zinc-800 relative">
-                <Play className="w-4 h-4 text-sky-400" />
-              </div>
+              <>
+                <video
+                  src={getAssetDisplayUrl(shot.videoAsset)}
+                  className="w-full h-full object-cover"
+                  preload="metadata"
+                  muted
+                  playsInline
+                />
+                <div className="absolute inset-0 flex items-center justify-center bg-black/30">
+                  <Play className="w-3 h-3 text-white fill-white" />
+                </div>
+              </>
             ) : shot.imageAsset ? (
               <img
                 src={getAssetDisplayUrl(shot.imageAsset)}

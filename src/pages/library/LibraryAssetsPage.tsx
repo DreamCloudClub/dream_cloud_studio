@@ -186,6 +186,14 @@ function AssetCard({ asset, onDelete, onViewDetails }: AssetCardProps) {
           <div className="absolute inset-0 flex items-center justify-center">
             {getAudioIcon()}
           </div>
+        ) : isVideo && displayUrl ? (
+          <video
+            src={displayUrl}
+            className="absolute inset-0 w-full h-full object-cover"
+            preload="metadata"
+            muted
+            playsInline
+          />
         ) : displayUrl ? (
           <img
             src={displayUrl}

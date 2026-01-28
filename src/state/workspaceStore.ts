@@ -454,16 +454,16 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
           name: s.name,
           description: s.description || "",
           order: s.sort_order,
-          shots: (s.shots || []).map((shot) => {
-            // Find linked assets from the project assets
+          shots: (s.shots || []).map((shot: any) => {
+            // Look up linked assets from the project assets array
             const imageAsset = shot.image_asset_id
-              ? (dbProject.assets || []).find(a => a.id === shot.image_asset_id)
+              ? (dbProject.assets || []).find((a: any) => a.id === shot.image_asset_id)
               : null
             const videoAsset = shot.video_asset_id
-              ? (dbProject.assets || []).find(a => a.id === shot.video_asset_id)
+              ? (dbProject.assets || []).find((a: any) => a.id === shot.video_asset_id)
               : null
             const audioAsset = shot.audio_asset_id
-              ? (dbProject.assets || []).find(a => a.id === shot.audio_asset_id)
+              ? (dbProject.assets || []).find((a: any) => a.id === shot.audio_asset_id)
               : null
 
             return {

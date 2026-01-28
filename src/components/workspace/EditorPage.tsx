@@ -50,25 +50,28 @@ interface ShotBlockProps {
 }
 
 function ShotBlock({ shot, sceneId, isSelected, scale, onClick, onDragStart, onDragOver, onDrop, isDragOver }: ShotBlockProps) {
-  const width = shot.duration * BASE_SCALE * scale
+  // Use video duration if available, default 5s for images
+  const effectiveDuration = shot.videoAsset?.duration || 5
+  const width = effectiveDuration * BASE_SCALE * scale
 
   const handleClick = (e: React.MouseEvent) => {
     e.stopPropagation()
     onClick()
   }
 
-  // Get thumbnail URL from shot assets
-  const getThumbnailUrl = () => {
+  // Get thumbnail info from shot assets
+  const getThumbnailInfo = () => {
     if (shot.imageAsset) {
-      return getAssetDisplayUrl(shot.imageAsset)
+      return { url: getAssetDisplayUrl(shot.imageAsset), isVideo: false }
     }
     if (shot.videoAsset) {
-      return getAssetDisplayUrl(shot.videoAsset)
+      return { url: getAssetDisplayUrl(shot.videoAsset), isVideo: true }
     }
     return null
   }
 
-  const thumbnailUrl = getThumbnailUrl()
+  const thumbnailInfo = getThumbnailInfo()
+  const thumbnailUrl = thumbnailInfo?.url
 
   return (
     <div
@@ -91,11 +94,21 @@ function ShotBlock({ shot, sceneId, isSelected, scale, onClick, onDragStart, onD
     >
       {thumbnailUrl ? (
         <>
-          <img
-            src={thumbnailUrl}
-            alt={shot.name}
-            className="absolute inset-0 w-full h-full object-cover"
-          />
+          {thumbnailInfo?.isVideo ? (
+            <video
+              src={thumbnailUrl}
+              className="absolute inset-0 w-full h-full object-cover"
+              preload="metadata"
+              muted
+              playsInline
+            />
+          ) : (
+            <img
+              src={thumbnailUrl}
+              alt={shot.name}
+              className="absolute inset-0 w-full h-full object-cover"
+            />
+          )}
           <div className="absolute inset-0 bg-gradient-to-r from-black/60 via-transparent to-black/60" />
           <div className="relative flex items-center w-full px-1">
             <GripVertical className="w-3 h-3 text-white/70 flex-shrink-0" />
@@ -123,7 +136,9 @@ interface VoiceoverBlockProps {
 }
 
 function VoiceoverBlock({ scene, scale }: VoiceoverBlockProps) {
-  const sceneDuration = scene.shots.reduce((acc, s) => acc + s.duration, 0)
+  // Use video duration if available, default 5s for images
+  const getEffectiveDuration = (shot: Shot) => shot.videoAsset?.duration || 5
+  const sceneDuration = scene.shots.reduce((acc, s) => acc + getEffectiveDuration(s), 0)
   const width = sceneDuration * BASE_SCALE * scale
   const hasVoiceover = scene.voiceover?.audioUrl
 
@@ -178,7 +193,9 @@ function SceneContainer({
   isDragOver,
   dragOverShotId,
 }: SceneContainerProps) {
-  const sceneDuration = scene.shots.reduce((acc, s) => acc + s.duration, 0)
+  // Use video duration if available, default 5s for images (same as ShotBlock)
+  const getEffectiveDuration = (shot: Shot) => shot.videoAsset?.duration || 5
+  const sceneDuration = scene.shots.reduce((acc, s) => acc + getEffectiveDuration(s), 0)
   const width = sceneDuration * BASE_SCALE * scale + 24 // padding for inner container
 
   return (
@@ -230,12 +247,6 @@ function SceneContainer({
                 isDragOver={dragOverShotId === shot.id}
               />
             ))}
-          {/* Add shot button */}
-          <button
-            className="w-8 h-12 rounded-lg border-2 border-dashed border-orange-500/30 hover:border-orange-500/60 flex items-center justify-center text-orange-500/50 hover:text-orange-500 transition-colors"
-          >
-            <Plus className="w-4 h-4" />
-          </button>
         </div>
 
         {/* Voiceover Row */}
@@ -322,6 +333,15 @@ function VideoPlayer({ aspectRatio }: VideoPlayerProps) {
   const [volume, setVolume] = useState(0.75)
   const aspectValue = getAspectRatioValue(aspectRatio)
 
+  // Get effective duration for a shot (video duration if video, default 5s for images)
+  const getShotDuration = (shot: Shot) => {
+    if (shot.videoAsset?.duration) {
+      return shot.videoAsset.duration
+    }
+    // Default 5 seconds for images
+    return 5
+  }
+
   // Build shot list based on selection mode
   const getPlayableShots = () => {
     if (!project) return []
@@ -333,11 +353,12 @@ function VideoPlayer({ aspectRatio }: VideoPlayerProps) {
       for (const scene of project.scenes) {
         const shot = scene.shots.find(s => s.id === selectedShotId)
         if (shot) {
+          const duration = getShotDuration(shot)
           return [{
             shot,
             scene,
             startTime: 0,
-            endTime: shot.duration,
+            endTime: duration,
           }]
         }
       }
@@ -349,13 +370,14 @@ function VideoPlayer({ aspectRatio }: VideoPlayerProps) {
       const scene = project.scenes.find(s => s.id === selectedSceneId)
       if (scene) {
         for (const shot of [...scene.shots].sort((a, b) => a.order - b.order)) {
+          const duration = getShotDuration(shot)
           shots.push({
             shot,
             scene,
             startTime: cumTime,
-            endTime: cumTime + shot.duration,
+            endTime: cumTime + duration,
           })
-          cumTime += shot.duration
+          cumTime += duration
         }
       }
       return shots
@@ -364,13 +386,14 @@ function VideoPlayer({ aspectRatio }: VideoPlayerProps) {
     // Full project - all shots
     for (const scene of [...project.scenes].sort((a, b) => a.order - b.order)) {
       for (const shot of [...scene.shots].sort((a, b) => a.order - b.order)) {
+        const duration = getShotDuration(shot)
         shots.push({
           shot,
           scene,
           startTime: cumTime,
-          endTime: cumTime + shot.duration,
+          endTime: cumTime + duration,
         })
-        cumTime += shot.duration
+        cumTime += duration
       }
     }
     return shots
@@ -459,13 +482,15 @@ function VideoPlayer({ aspectRatio }: VideoPlayerProps) {
   const getCurrentMediaUrl = () => {
     if (!currentShotInfo) return null
     const { shot } = currentShotInfo
-    if (shot.imageAsset) return getAssetDisplayUrl(shot.imageAsset)
+    // Prioritize video over image for playback
     if (shot.videoAsset) return getAssetDisplayUrl(shot.videoAsset)
+    if (shot.imageAsset) return getAssetDisplayUrl(shot.imageAsset)
     return null
   }
 
   const currentMediaUrl = getCurrentMediaUrl()
-  const isVideo = currentShotInfo?.shot.videoAsset?.type === "video"
+  // Check if current shot has a video asset
+  const isVideo = !!currentShotInfo?.shot.videoAsset
 
   const formatTime = (seconds: number) => {
     const mins = Math.floor(seconds / 60)
@@ -484,6 +509,29 @@ function VideoPlayer({ aspectRatio }: VideoPlayerProps) {
     const percent = x / rect.width
     setCurrentTime(percent * totalDuration)
   }
+
+  // Sync video playback with Editor controls
+  useEffect(() => {
+    if (videoRef.current && isVideo) {
+      if (isPlaying) {
+        videoRef.current.play().catch(() => {})
+      } else {
+        videoRef.current.pause()
+      }
+    }
+  }, [isPlaying, isVideo])
+
+  // Reload video when shot changes (new video source)
+  useEffect(() => {
+    if (videoRef.current && isVideo && currentMediaUrl) {
+      // Reset video to beginning and reload
+      videoRef.current.currentTime = 0
+      videoRef.current.load()
+      if (isPlaying) {
+        videoRef.current.play().catch(() => {})
+      }
+    }
+  }, [currentMediaUrl])
 
   // Update video volume when it changes
   useEffect(() => {
@@ -515,7 +563,8 @@ function VideoPlayer({ aspectRatio }: VideoPlayerProps) {
                 ref={videoRef}
                 src={currentMediaUrl}
                 className="absolute inset-0 w-full h-full object-contain bg-black"
-                autoPlay={isPlaying}
+                loop
+                muted={volume === 0}
                 playsInline
               />
             ) : (
@@ -640,10 +689,13 @@ function Timeline() {
 
   const { scenes } = project
 
+  // Use video duration if available, default 5s for images
+  const getEffectiveDuration = (shot: Shot) => shot.videoAsset?.duration || 5
+
   // Calculate total timeline width
   const totalDuration = scenes.reduce(
     (acc, scene) =>
-      acc + scene.shots.reduce((shotAcc, shot) => shotAcc + shot.duration, 0),
+      acc + scene.shots.reduce((shotAcc, shot) => shotAcc + getEffectiveDuration(shot), 0),
     0
   )
 

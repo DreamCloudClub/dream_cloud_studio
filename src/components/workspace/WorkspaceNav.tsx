@@ -37,15 +37,31 @@ export function WorkspaceNav() {
           const Icon = iconMap[tab.icon]
           const isActive = activeTab === tab.id
 
+          // Custom colors for specific tabs
+          const getTabStyles = () => {
+            if (tab.id === "editor") {
+              return isActive
+                ? "bg-gradient-to-br from-sky-400/20 via-sky-500/20 to-blue-600/20 text-sky-400"
+                : "text-sky-500/70 hover:text-sky-400 hover:bg-sky-500/10"
+            }
+            if (tab.id === "export") {
+              return isActive
+                ? "bg-gradient-to-br from-orange-400/20 via-orange-500/20 to-amber-600/20 text-orange-400"
+                : "text-orange-500/70 hover:text-orange-400 hover:bg-orange-500/10"
+            }
+            // Default style for other tabs
+            return isActive
+              ? "bg-gradient-to-br from-sky-400/20 via-sky-500/20 to-blue-600/20 text-sky-400"
+              : "text-zinc-500 hover:text-zinc-300 hover:bg-zinc-800/50"
+          }
+
           return (
             <button
               key={tab.id}
               onClick={() => setActiveTab(tab.id)}
               className={cn(
                 "flex flex-col items-center gap-1 px-4 py-2 rounded-xl transition-all",
-                isActive
-                  ? "bg-gradient-to-br from-sky-400/20 via-sky-500/20 to-blue-600/20 text-sky-400"
-                  : "text-zinc-500 hover:text-zinc-300 hover:bg-zinc-800/50"
+                getTabStyles()
               )}
             >
               <Icon
@@ -59,7 +75,7 @@ export function WorkspaceNav() {
           )
         })}
 
-        {/* Save button - same style as tabs */}
+        {/* Save button - Green */}
         <button
           onClick={handleSave}
           disabled={isSaving || !project}
@@ -68,8 +84,8 @@ export function WorkspaceNav() {
             saveStatus === "saved"
               ? "bg-gradient-to-br from-green-400/20 via-green-500/20 to-emerald-600/20 text-green-400"
               : saveStatus === "saving"
-              ? "bg-gradient-to-br from-sky-400/20 via-sky-500/20 to-blue-600/20 text-sky-400"
-              : "text-zinc-500 hover:text-zinc-300 hover:bg-zinc-800/50",
+              ? "bg-gradient-to-br from-green-400/20 via-green-500/20 to-emerald-600/20 text-green-400"
+              : "text-green-500/70 hover:text-green-400 hover:bg-green-500/10",
             (isSaving || !project) && "opacity-50 cursor-not-allowed"
           )}
         >

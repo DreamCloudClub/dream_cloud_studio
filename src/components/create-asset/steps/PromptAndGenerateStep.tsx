@@ -1271,13 +1271,15 @@ export function PromptAndGenerateStep() {
               <Sparkles className="w-4 h-4" />
               {batches.length === 0
                 ? assetType === "video"
-                  ? "Generate 4 Frames"
+                  ? "Generate Video"
                   : assetType === "audio"
                     ? "Generate Audio"
                     : "Generate 4 Images"
-                : assetType === "audio"
-                  ? "Generate More"
-                  : "Generate 4 More"
+                : assetType === "video"
+                  ? "Generate Another"
+                  : assetType === "audio"
+                    ? "Generate More"
+                    : "Generate 4 More"
               }
             </button>
           </div>

@@ -292,11 +292,13 @@ export function AssetDetailsModal({
               </div>
             )}
             {asset.type === "video" && previewUrl && (
-              <video
-                src={previewUrl}
-                controls
-                className="w-full max-h-64"
-              />
+              <div className="aspect-square w-full flex items-center justify-center bg-black">
+                <video
+                  src={previewUrl}
+                  controls
+                  className="w-full h-full object-contain"
+                />
+              </div>
             )}
             {asset.type === "audio" && previewUrl && (
               <div className="p-6 flex flex-col items-center gap-4">

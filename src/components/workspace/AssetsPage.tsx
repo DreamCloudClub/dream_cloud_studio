@@ -23,15 +23,15 @@ import {
   Loader2,
   Trash2,
   AlertTriangle,
+  Check,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { useWorkspaceStore } from "@/state/workspaceStore"
-import { useAssetWizardStore } from "@/state/assetWizardStore"
+import { useAssetWizardStore, ASSET_WIZARD_STEPS } from "@/state/assetWizardStore"
 import { getAssets, deleteAsset } from "@/services/assets"
 import { getAssetDisplayUrl } from "@/services/localStorage"
 import { AssetDetailsModal, UploadAssetModal } from "@/components/library"
 import {
-  AssetStepTimeline,
   TypeStep,
   CategoryStep,
   PromptAndGenerateStep,
@@ -197,6 +197,14 @@ function AssetCard({ asset, onDelete, onViewDetails }: AssetCardProps) {
           <div className="absolute inset-0 flex items-center justify-center">
             {getAudioIcon()}
           </div>
+        ) : isVideo && displayUrl ? (
+          <video
+            src={displayUrl}
+            className="absolute inset-0 w-full h-full object-cover"
+            preload="metadata"
+            muted
+            playsInline
+          />
         ) : displayUrl ? (
           <img
             src={displayUrl}
@@ -293,27 +301,83 @@ function AssetCreationWizard({
     onBack()
   }
 
+  const currentIndex = ASSET_WIZARD_STEPS.findIndex((s) => s.id === currentStep)
+
   return (
     <div className="h-full flex flex-col">
-      {/* Header */}
-      <div className="px-6 lg:px-8 py-4 border-b border-zinc-800">
+      {/* Header with Steps */}
+      <div className="px-6 lg:px-8 py-4 border-b border-zinc-800 flex items-center">
+        {/* Back Button - Left */}
         <button
           onClick={handleBack}
-          className="flex items-center gap-2 text-zinc-400 hover:text-zinc-200 transition-colors"
+          className="flex items-center gap-2 text-zinc-400 hover:text-zinc-200 transition-colors flex-shrink-0"
         >
           <ArrowLeft className="w-4 h-4" />
           <span className="text-sm font-medium">Back to Assets</span>
         </button>
-        <h1 className="text-xl font-bold text-zinc-100 mt-3">Create New Asset</h1>
+
+        {/* Step Timeline - Centered */}
+        <div className="flex-1 flex items-center justify-center gap-1">
+          {ASSET_WIZARD_STEPS.map((step, index) => {
+            const isActive = step.id === currentStep
+            const isCompleted = index < currentIndex
+
+            return (
+              <div key={step.id} className="flex items-center">
+                {/* Step indicator */}
+                <div className="flex items-center gap-2">
+                  <div
+                    className={cn(
+                      "w-7 h-7 rounded-full flex items-center justify-center text-xs font-medium transition-colors",
+                      isActive
+                        ? "bg-sky-500 text-white"
+                        : isCompleted
+                          ? "bg-sky-500/20 text-sky-400"
+                          : "bg-zinc-800 text-zinc-500"
+                    )}
+                  >
+                    {isCompleted ? (
+                      <Check className="w-3.5 h-3.5" />
+                    ) : (
+                      index + 1
+                    )}
+                  </div>
+                  <span
+                    className={cn(
+                      "text-xs font-medium hidden sm:block",
+                      isActive
+                        ? "text-sky-400"
+                        : isCompleted
+                          ? "text-zinc-400"
+                          : "text-zinc-600"
+                    )}
+                  >
+                    {step.label}
+                  </span>
+                </div>
+
+                {/* Connector line */}
+                {index < ASSET_WIZARD_STEPS.length - 1 && (
+                  <div
+                    className={cn(
+                      "w-6 sm:w-10 h-0.5 mx-2",
+                      index < currentIndex ? "bg-sky-500/50" : "bg-zinc-800"
+                    )}
+                  />
+                )}
+              </div>
+            )
+          })}
+        </div>
+
+        {/* Spacer to balance the back button */}
+        <div className="w-[120px] flex-shrink-0" />
       </div>
 
       {/* Step Content */}
       <div className="flex-1 overflow-y-auto">
         {renderStepContent()}
       </div>
-
-      {/* Step Timeline */}
-      <AssetStepTimeline />
     </div>
   )
 }
