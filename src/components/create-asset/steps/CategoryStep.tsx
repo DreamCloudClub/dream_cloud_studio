@@ -10,6 +10,12 @@ import {
   Mic,
   Check,
   ArrowLeft,
+  Type,
+  Hexagon,
+  ArrowRightLeft,
+  Subtitles,
+  LayoutTemplate,
+  Layers,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { useAssetWizardStore, AssetCategory } from "@/state/assetWizardStore"
@@ -39,10 +45,28 @@ const AUDIO_CATEGORIES: {
   { id: "voice", label: "Voice", description: "Narration and dialogue", icon: Mic },
 ]
 
+const ANIMATION_CATEGORIES: {
+  id: AssetCategory
+  label: string
+  description: string
+  icon: React.ElementType
+}[] = [
+  { id: "text", label: "Text", description: "Animated text and titles", icon: Type },
+  { id: "logo", label: "Logo", description: "Logo animations and reveals", icon: Hexagon },
+  { id: "transition", label: "Transition", description: "Scene transitions and wipes", icon: ArrowRightLeft },
+  { id: "lower_third", label: "Lower Third", description: "Name plates and info bars", icon: Subtitles },
+  { id: "title_card", label: "Title Card", description: "Full screen title cards", icon: LayoutTemplate },
+  { id: "overlay", label: "Overlay", description: "Animated overlays and effects", icon: Layers },
+]
+
 export function CategoryStep() {
   const { assetType, category, setCategory, nextStep, prevStep } = useAssetWizardStore()
 
-  const categories = assetType === "audio" ? AUDIO_CATEGORIES : IMAGE_VIDEO_CATEGORIES
+  const categories = assetType === "audio"
+    ? AUDIO_CATEGORIES
+    : assetType === "animation"
+    ? ANIMATION_CATEGORIES
+    : IMAGE_VIDEO_CATEGORIES
 
   const handleSelect = (cat: AssetCategory) => {
     setCategory(cat)

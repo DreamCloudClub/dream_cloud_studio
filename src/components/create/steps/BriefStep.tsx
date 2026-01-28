@@ -266,8 +266,9 @@ export function BriefStep() {
       const description = buildDescription()
 
       // Update project name
-      console.log("Updating project name...")
-      await updateProject(currentProjectId, { name: projectName })
+      console.log("Updating project name to:", projectName, "for project:", currentProjectId)
+      const updatedProject = await updateProject(currentProjectId, { name: projectName })
+      console.log("Project updated successfully:", updatedProject)
 
       // Create or update brief in DB - check database directly to avoid race conditions
       const briefData = {

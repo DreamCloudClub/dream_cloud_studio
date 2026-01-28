@@ -16,6 +16,7 @@ import {
   Loader2,
   Check,
   Mountain,
+  Sparkles,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
 import {
@@ -34,6 +35,7 @@ const MEDIA_TYPES = [
   { id: "video", label: "Video", icon: Film },
   { id: "image", label: "Image", icon: Image },
   { id: "audio", label: "Audio", icon: Volume2 },
+  { id: "animation", label: "Animation", icon: Sparkles },
 ] as const
 
 type MediaType = typeof MEDIA_TYPES[number]["id"]
@@ -83,7 +85,7 @@ function MediaActionModal({ isOpen, onClose, mediaType, onGenerate, onSelectExis
           {/* Select Existing Button */}
           <button
             onClick={() => { onSelectExisting(); onClose(); }}
-            className="w-full flex items-center gap-4 p-4 rounded-xl bg-zinc-800/50 border border-zinc-700 hover:border-zinc-600 transition-colors group"
+            className="w-full flex items-center gap-4 p-4 rounded-xl bg-gradient-to-r from-sky-500/10 to-sky-600/10 border border-sky-500/30 hover:border-sky-500/50 transition-colors group"
           >
             <div className="w-12 h-12 rounded-xl bg-sky-500/20 flex items-center justify-center group-hover:bg-sky-500/30 transition-colors">
               <FolderOpen className="w-6 h-6 text-sky-400" />
@@ -97,10 +99,10 @@ function MediaActionModal({ isOpen, onClose, mediaType, onGenerate, onSelectExis
           {/* Upload Button */}
           <button
             onClick={() => { onUpload(); onClose(); }}
-            className="w-full flex items-center gap-4 p-4 rounded-xl bg-zinc-800/50 border border-zinc-700 hover:border-zinc-600 transition-colors group"
+            className="w-full flex items-center gap-4 p-4 rounded-xl bg-gradient-to-r from-emerald-500/10 to-emerald-600/10 border border-emerald-500/30 hover:border-emerald-500/50 transition-colors group"
           >
-            <div className="w-12 h-12 rounded-xl bg-sky-500/20 flex items-center justify-center group-hover:bg-sky-500/30 transition-colors">
-              <Upload className="w-6 h-6 text-sky-400" />
+            <div className="w-12 h-12 rounded-xl bg-emerald-500/20 flex items-center justify-center group-hover:bg-emerald-500/30 transition-colors">
+              <Upload className="w-6 h-6 text-emerald-400" />
             </div>
             <div className="text-left">
               <p className="font-medium text-zinc-100">Upload File</p>
@@ -195,8 +197,27 @@ function AssetPickerModal({ isOpen, onClose, assetType, onSelect }: AssetPickerM
                       <Volume2 className="w-8 h-8 text-zinc-500" />
                     </div>
                   ) : asset.type === "video" ? (
-                    <div className="w-full h-full bg-zinc-800 flex items-center justify-center">
-                      <Play className="w-8 h-8 text-zinc-500" />
+                    <div className="w-full h-full bg-zinc-800">
+                      {(asset.url || asset.local_path) ? (
+                        <video
+                          src={getAssetDisplayUrl(asset as any)}
+                          className="w-full h-full object-cover"
+                          preload="metadata"
+                          muted
+                          playsInline
+                        />
+                      ) : (
+                        <div className="w-full h-full flex items-center justify-center">
+                          <Play className="w-8 h-8 text-zinc-500" />
+                        </div>
+                      )}
+                      <div className="absolute top-2 right-2 w-6 h-6 rounded-full bg-black/60 flex items-center justify-center">
+                        <Play className="w-3 h-3 text-white fill-white" />
+                      </div>
+                    </div>
+                  ) : asset.type === "animation" ? (
+                    <div className="w-full h-full bg-gradient-to-br from-purple-600/30 to-violet-500/30 flex items-center justify-center">
+                      <Sparkles className="w-8 h-8 text-purple-400" />
                     </div>
                   ) : (asset.url || asset.local_path) ? (
                     <img
@@ -262,11 +283,11 @@ function MediaTypeSlot({ type, asset, onClick, onRemove }: MediaTypeSlotProps) {
   const assetUrl = asset ? getAssetDisplayUrl(asset) : null
 
   return (
-    <div className="relative">
+    <div className="relative group">
       <button
         onClick={onClick}
         className={cn(
-          "relative aspect-square rounded-xl border-2 overflow-hidden transition-all group w-full",
+          "relative aspect-square rounded-xl border-2 overflow-hidden transition-all w-full",
           hasAsset
             ? "border-sky-500/50 hover:border-sky-400"
             : "border-zinc-700/50 border-dashed hover:border-zinc-600 bg-zinc-800/30"
@@ -294,6 +315,10 @@ function MediaTypeSlot({ type, asset, onClick, onRemove }: MediaTypeSlotProps) {
             ) : asset.type === "audio" ? (
               <div className="w-full h-full bg-gradient-to-br from-purple-500/20 to-pink-500/20 flex items-center justify-center">
                 <Volume2 className="w-8 h-8 text-purple-400" />
+              </div>
+            ) : asset.type === "animation" ? (
+              <div className="w-full h-full bg-gradient-to-br from-purple-600/30 to-violet-500/30 flex items-center justify-center">
+                <Sparkles className="w-8 h-8 text-purple-400" />
               </div>
             ) : (
               <img
@@ -332,7 +357,7 @@ function MediaTypeSlot({ type, asset, onClick, onRemove }: MediaTypeSlotProps) {
             e.stopPropagation()
             onRemove()
           }}
-          className="absolute top-1 right-1 w-8 h-8 rounded-lg bg-orange-500/10 hover:bg-orange-500/20 flex items-center justify-center text-orange-400 hover:text-orange-300 transition-colors z-10"
+          className="absolute top-2 right-2 p-1.5 rounded-lg bg-zinc-900/80 hover:bg-orange-500 text-zinc-400 hover:text-white opacity-0 group-hover:opacity-100 transition-all z-10"
         >
           <Trash2 className="w-3.5 h-3.5" />
         </button>
@@ -425,6 +450,8 @@ function ShotCard({ shot, sceneId, isExpanded, onToggle, onDragStart, onDragOver
       input.accept = "image/*"
     } else if (activeMediaModal === "audio") {
       input.accept = "audio/*"
+    } else if (activeMediaModal === "animation") {
+      input.accept = ".json,application/json"
     }
 
     const currentMediaType = activeMediaModal
@@ -478,8 +505,23 @@ function ShotCard({ shot, sceneId, isExpanded, onToggle, onDragStart, onDragOver
             audioAsset: {
               id: asset.id,
               name: asset.name,
-              type: asset.type as "image" | "video" | "audio",
+              type: asset.type as "image" | "video" | "audio" | "animation",
               category: (asset.category || "audio") as any,
+              url: asset.url,
+              localPath: asset.local_path,
+              storageType: (asset.storage_type || "cloud") as "local" | "cloud",
+              duration: asset.duration || undefined,
+              createdAt: asset.created_at,
+            },
+          })
+        } else if (currentMediaType === "animation") {
+          updateShot(sceneId, shot.id, {
+            animationAssetId: asset.id,
+            animationAsset: {
+              id: asset.id,
+              name: asset.name,
+              type: asset.type as "image" | "video" | "audio" | "animation",
+              category: (asset.category || "animation") as any,
               url: asset.url,
               localPath: asset.local_path,
               storageType: (asset.storage_type || "cloud") as "local" | "cloud",
@@ -538,8 +580,23 @@ function ShotCard({ shot, sceneId, isExpanded, onToggle, onDragStart, onDragOver
         audioAsset: {
           id: asset.id,
           name: asset.name,
-          type: asset.type as "image" | "video" | "audio",
+          type: asset.type as "image" | "video" | "audio" | "animation",
           category: (asset.category || "audio") as any,
+          url: asset.url,
+          localPath: asset.local_path,
+          storageType: (asset.storage_type || "cloud") as "local" | "cloud",
+          duration: asset.duration || undefined,
+          createdAt: asset.created_at,
+        },
+      })
+    } else if (assetPickerType === "animation") {
+      updateShot(sceneId, shot.id, {
+        animationAssetId: asset.id,
+        animationAsset: {
+          id: asset.id,
+          name: asset.name,
+          type: asset.type as "image" | "video" | "audio" | "animation",
+          category: (asset.category || "animation") as any,
           url: asset.url,
           localPath: asset.local_path,
           storageType: (asset.storage_type || "cloud") as "local" | "cloud",
@@ -561,6 +618,8 @@ function ShotCard({ shot, sceneId, isExpanded, onToggle, onDragStart, onDragOver
         return shot.imageAsset ?? undefined
       case "audio":
         return shot.audioAsset ?? undefined
+      case "animation":
+        return shot.animationAsset ?? undefined
       default:
         return undefined
     }
@@ -574,6 +633,8 @@ function ShotCard({ shot, sceneId, isExpanded, onToggle, onDragStart, onDragOver
       updateShot(sceneId, shot.id, { imageAssetId: null, imageAsset: null })
     } else if (type === "audio") {
       updateShot(sceneId, shot.id, { audioAssetId: null, audioAsset: null })
+    } else if (type === "animation") {
+      updateShot(sceneId, shot.id, { animationAssetId: null, animationAsset: null })
     }
   }
 
@@ -597,8 +658,8 @@ function ShotCard({ shot, sceneId, isExpanded, onToggle, onDragStart, onDragOver
         <button
           onClick={onToggle}
           className={cn(
-            "w-6 h-6 rounded-md bg-orange-500/20 flex items-center justify-center flex-shrink-0",
-            isExpanded && "mt-1"
+            "w-8 h-8 rounded-lg bg-orange-500/20 flex items-center justify-center flex-shrink-0",
+            isExpanded && "mt-5"
           )}
         >
           {isExpanded ? (
@@ -684,7 +745,7 @@ function ShotCard({ shot, sceneId, isExpanded, onToggle, onDragStart, onDragOver
           onClick={() => removeShot(sceneId, shot.id)}
           className={cn(
             "w-8 h-8 rounded-lg bg-orange-500/10 hover:bg-orange-500/20 flex items-center justify-center text-orange-400 hover:text-orange-300 transition-colors flex-shrink-0",
-            isExpanded && "mt-0.5"
+            isExpanded && "mt-5"
           )}
         >
           <Trash2 className="w-3.5 h-3.5" />
@@ -710,7 +771,7 @@ function ShotCard({ shot, sceneId, isExpanded, onToggle, onDragStart, onDragOver
           {/* Media Types */}
           <div>
             <label className="block text-xs text-zinc-500 mb-2">Media</label>
-            <div className="grid grid-cols-3 gap-3 pt-1">
+            <div className="grid grid-cols-4 gap-3 pt-1">
               {MEDIA_TYPES.map((type) => (
                 <MediaTypeSlot
                   key={type.id}
@@ -898,7 +959,7 @@ function SceneSection({ scene, onDragStart, onDragOver, onDragEnd, isDragging, i
           onClick={() => toggleSceneExpanded(scene.id)}
           className={cn(
             "w-8 h-8 rounded-lg bg-sky-500/20 flex items-center justify-center flex-shrink-0",
-            isExpanded && "mt-1"
+            isExpanded && "mt-5"
           )}
         >
           {isExpanded ? (
@@ -948,7 +1009,7 @@ function SceneSection({ scene, onDragStart, onDragOver, onDragEnd, isDragging, i
 
         <div className={cn(
           "flex items-center gap-4 text-sm text-zinc-400 flex-shrink-0",
-          isExpanded && "mt-2"
+          isExpanded && "mt-6"
         )}>
           <span>{scene.shots.length} shots</span>
           <span>{sceneDuration}s</span>
@@ -958,7 +1019,7 @@ function SceneSection({ scene, onDragStart, onDragOver, onDragEnd, isDragging, i
           onClick={() => removeScene(scene.id)}
           className={cn(
             "w-9 h-9 rounded-lg bg-orange-500/10 hover:bg-orange-500/20 flex items-center justify-center text-orange-400 hover:text-orange-300 transition-colors flex-shrink-0",
-            isExpanded && "mt-1"
+            isExpanded && "mt-5"
           )}
         >
           <Trash2 className="w-4 h-4" />

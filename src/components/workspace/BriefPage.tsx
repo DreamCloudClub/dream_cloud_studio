@@ -130,10 +130,22 @@ const emptyContent: VideoContent = {
 
 export function BriefPage() {
   const { project, updateBrief } = useWorkspaceStore()
+  const [saveError, setSaveError] = useState<string | null>(null)
 
   if (!project) return null
 
   const { brief } = project
+
+  // Wrapper to handle save errors
+  const handleUpdateBrief = async (data: Parameters<typeof updateBrief>[0]) => {
+    setSaveError(null)
+    try {
+      await updateBrief(data)
+    } catch (error) {
+      console.error("Failed to save:", error)
+      setSaveError("Failed to save changes. Check your connection.")
+    }
+  }
 
   // Parse video content from brief if stored
   const [videoContent, setVideoContent] = useState<VideoContent>(() => {
@@ -179,7 +191,7 @@ export function BriefPage() {
   const handleContentChange = (field: keyof VideoContent, value: string | string[]) => {
     const newContent = { ...videoContent, [field]: value }
     setVideoContent(newContent)
-    updateBrief({ videoContent: newContent })
+    handleUpdateBrief({ videoContent: newContent })
   }
 
   // Check if video content has been filled in
@@ -238,6 +250,13 @@ export function BriefPage() {
           </p>
         </div>
 
+        {/* Error Message */}
+        {saveError && (
+          <div className="mb-6 p-4 bg-red-500/10 border border-red-500/30 rounded-lg text-red-400 text-sm">
+            {saveError}
+          </div>
+        )}
+
         {/* Form */}
         <div className="space-y-6">
           {/* Project Name */}
@@ -252,7 +271,7 @@ export function BriefPage() {
               type="text"
               id="name"
               value={brief.name}
-              onChange={(e) => updateBrief({ name: e.target.value })}
+              onChange={(e) => handleUpdateBrief({ name: e.target.value })}
               placeholder="e.g., Summer Product Launch"
               className="w-full h-12 px-4 bg-zinc-900 border border-zinc-700 focus:border-sky-500 rounded-lg text-white placeholder:text-zinc-500 focus:outline-none focus:ring-2 focus:ring-sky-500/20 transition-all"
             />
@@ -355,7 +374,7 @@ export function BriefPage() {
               type="text"
               id="audience"
               value={brief.audience}
-              onChange={(e) => updateBrief({ audience: e.target.value })}
+              onChange={(e) => handleUpdateBrief({ audience: e.target.value })}
               placeholder="e.g., Small business owners, 25-45 years old"
               className="w-full h-12 px-4 bg-zinc-900 border border-zinc-700 focus:border-sky-500 rounded-lg text-white placeholder:text-zinc-500 focus:outline-none focus:ring-2 focus:ring-sky-500/20 transition-all"
             />
@@ -370,7 +389,7 @@ export function BriefPage() {
               </label>
               <CustomDropdown
                 value={brief.aspectRatio || "16:9"}
-                onChange={(value) => updateBrief({ aspectRatio: value })}
+                onChange={(value) => handleUpdateBrief({ aspectRatio: value as import("@/types/database").AspectRatio })}
                 options={aspectRatioOptions}
                 placeholder="Select ratio..."
               />
@@ -383,7 +402,7 @@ export function BriefPage() {
               </label>
               <CustomDropdown
                 value={brief.tone}
-                onChange={(value) => updateBrief({ tone: value })}
+                onChange={(value) => handleUpdateBrief({ tone: value })}
                 options={toneOptions}
                 placeholder="Select a tone..."
               />
@@ -396,7 +415,7 @@ export function BriefPage() {
               </label>
               <CustomDropdown
                 value={brief.duration}
-                onChange={(value) => updateBrief({ duration: value })}
+                onChange={(value) => handleUpdateBrief({ duration: value })}
                 options={durationOptions}
                 placeholder="Select duration..."
               />

@@ -1,4 +1,4 @@
-import { Image, Film, Volume2, Check } from "lucide-react"
+import { Image, Film, Volume2, Check, Sparkles } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { useAssetWizardStore, AssetType } from "@/state/assetWizardStore"
 
@@ -25,6 +25,12 @@ const ASSET_TYPES: {
     label: "Audio",
     description: "Generate music, sound effects, and voiceovers",
     icon: Volume2,
+  },
+  {
+    id: "animation",
+    label: "Animation",
+    description: "Create text animations, motion graphics, and animated overlays",
+    icon: Sparkles,
   },
 ]
 
@@ -53,7 +59,7 @@ export function TypeStep() {
           </p>
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-8">
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-8">
           {ASSET_TYPES.map((type) => {
             const Icon = type.icon
             const isSelected = assetType === type.id

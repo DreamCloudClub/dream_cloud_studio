@@ -8,13 +8,14 @@ import {
 } from "@/components/dashboard"
 import { AssetDetailsModal } from "@/components/library/AssetDetailsModal"
 import { BubblePanel } from "@/components/create"
+import { InspectorPanel } from "@/components/workspace"
 import { useUIStore } from "@/state/uiStore"
 import { useProjectWizardStore } from "@/state/projectWizardStore"
 import { useAuth } from "@/contexts/AuthContext"
-import { getCompletedProjects, getDraftProjects } from "@/services/projects"
+import { getCompletedProjects, getDraftProjects, ProjectWithThumbnail } from "@/services/projects"
 import { getAssets } from "@/services/assets"
 import { getAssetDisplayUrl } from "@/services/localStorage"
-import type { Project, Asset, AssetCategory } from "@/types/database"
+import type { Asset, AssetCategory } from "@/types/database"
 
 // Asset categories in display order (same as Assets page)
 const ASSET_CATEGORIES: { id: AssetCategory; label: string }[] = [
@@ -51,11 +52,12 @@ export function Dashboard() {
   const { isBubbleCollapsed, toggleBubbleCollapsed, setBubbleCollapsed } = useUIStore()
   const resetWizard = useProjectWizardStore((state) => state.resetWizard)
 
-  const [projects, setProjects] = useState<Project[]>([])
-  const [draftProjects, setDraftProjects] = useState<Project[]>([])
+  const [projects, setProjects] = useState<ProjectWithThumbnail[]>([])
+  const [draftProjects, setDraftProjects] = useState<ProjectWithThumbnail[]>([])
   const [assets, setAssets] = useState<Asset[]>([])
   const [isLoading, setIsLoading] = useState(true)
   const [selectedAsset, setSelectedAsset] = useState<Asset | null>(null)
+  const [isInspectorCollapsed, setIsInspectorCollapsed] = useState(false)
 
   // Fetch data from Supabase
   useEffect(() => {
@@ -86,6 +88,7 @@ export function Dashboard() {
   const recentProjects = projects.slice(0, 12).map(project => ({
     id: project.id,
     name: project.name,
+    thumbnail: null,
     updatedAt: formatRelativeTime(project.updated_at),
   }))
 
@@ -93,6 +96,7 @@ export function Dashboard() {
   const recentDrafts = draftProjects.slice(0, 12).map(project => ({
     id: project.id,
     name: project.name,
+    thumbnail: null,
     updatedAt: formatRelativeTime(project.updated_at),
   }))
 
@@ -228,6 +232,19 @@ export function Dashboard() {
 
           </div>
         </main>
+
+        {/* Inspector Panel (Right Sidebar) */}
+        <div
+          className={`${
+            isInspectorCollapsed ? "w-16" : "w-80"
+          } flex-shrink-0 hidden md:flex transition-all duration-300 overflow-hidden`}
+        >
+          <InspectorPanel
+            isCollapsed={isInspectorCollapsed}
+            onToggleCollapse={() => setIsInspectorCollapsed(!isInspectorCollapsed)}
+            libraryPage="dashboard"
+          />
+        </div>
       </div>
 
       <DashboardNav />

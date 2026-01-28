@@ -1,5 +1,5 @@
 import { useState } from "react"
-import { ArrowLeft, Save, FolderPlus, Check, AlertCircle, Loader2 } from "lucide-react"
+import { ArrowLeft, Save, FolderPlus, Check, AlertCircle, Loader2, Film, Image, Volume2, Sparkles } from "lucide-react"
 import { useNavigate } from "react-router-dom"
 import { cn } from "@/lib/utils"
 import { useAssetWizardStore } from "@/state/assetWizardStore"
@@ -132,10 +132,33 @@ export function ReviewStep({ onComplete }: ReviewStepProps) {
               className="flex items-center gap-4 p-4 bg-zinc-900 rounded-xl border border-zinc-800"
             >
               {/* Thumbnail */}
-              <div className="w-20 h-20 rounded-lg bg-zinc-800 flex-shrink-0 flex items-center justify-center">
-                <span className="text-2xl text-zinc-600">
-                  {assetType === "audio" ? "🎵" : "🖼️"}
-                </span>
+              <div className="w-20 h-20 rounded-lg bg-zinc-800 flex-shrink-0 overflow-hidden">
+                {assetType === "image" && asset.url ? (
+                  <img
+                    src={asset.url}
+                    alt="Preview"
+                    className="w-full h-full object-cover"
+                  />
+                ) : assetType === "video" && asset.url ? (
+                  <video
+                    src={asset.url}
+                    className="w-full h-full object-cover"
+                    preload="metadata"
+                    muted
+                  />
+                ) : (
+                  <div className="w-full h-full flex items-center justify-center">
+                    {assetType === "audio" ? (
+                      <Volume2 className="w-8 h-8 text-zinc-600" />
+                    ) : assetType === "animation" ? (
+                      <Sparkles className="w-8 h-8 text-zinc-600" />
+                    ) : assetType === "video" ? (
+                      <Film className="w-8 h-8 text-zinc-600" />
+                    ) : (
+                      <Image className="w-8 h-8 text-zinc-600" />
+                    )}
+                  </div>
+                )}
               </div>
 
               {/* Name Input */}

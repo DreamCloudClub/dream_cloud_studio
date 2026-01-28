@@ -21,6 +21,7 @@ import {
   Mic,
   Play,
   Palette,
+  Video,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { LibraryLayout } from "@/components/library"
@@ -67,39 +68,40 @@ interface ProjectCardProps {
 }
 
 function ProjectCard({ project, onClick }: ProjectCardProps) {
-  const isDraft = project.status === "draft"
+  const isActive = project.status === "in_progress"
+  const isCompleted = project.status === "completed"
 
   return (
     <div
       onClick={onClick}
-      className={cn(
-        "group text-left bg-zinc-900 rounded-xl overflow-hidden transition-colors focus:outline-none flex flex-col cursor-pointer relative",
-        isDraft
-          ? "border-2 border-dashed border-orange-500/50 hover:border-orange-400/70"
-          : "border border-zinc-800 hover:border-zinc-700"
-      )}
+      className="group text-left bg-zinc-900 rounded-xl overflow-hidden transition-colors focus:outline-none flex flex-col cursor-pointer relative border border-zinc-800 hover:border-zinc-700"
     >
-      <div className="aspect-square bg-zinc-800 relative flex-shrink-0">
+      <div className="aspect-square bg-zinc-800 relative flex-shrink-0 overflow-hidden">
         <div className="absolute inset-0 flex items-center justify-center">
-          {isDraft ? (
-            <PenLine className="w-10 h-10 text-orange-500/70" />
+          {isActive ? (
+            <>
+              <div className="absolute inset-0 bg-gradient-to-b from-emerald-600 via-emerald-700 to-green-800" />
+              <Video className="w-10 h-10 text-white/60 relative z-10 drop-shadow-lg" />
+            </>
+          ) : isCompleted ? (
+            <>
+              <div className="absolute inset-0 bg-gradient-to-b from-sky-600 via-sky-700 to-blue-800" />
+              <Video className="w-10 h-10 text-white/60 relative z-10 drop-shadow-lg" />
+            </>
           ) : (
             <FolderOpen className="w-12 h-12 text-zinc-700" />
           )}
         </div>
         <div className="absolute inset-0 bg-black/0 group-hover:bg-black/20 transition-colors" />
-        {isDraft && (
-          <div className="absolute top-2 right-2 px-2 py-0.5 bg-orange-500/90 text-white text-[10px] font-medium rounded">
-            Draft
-          </div>
-        )}
       </div>
       <div className="p-3">
         <h3 className={cn(
           "text-sm font-medium truncate transition-colors",
-          isDraft
-            ? "text-orange-200 group-hover:text-orange-300"
-            : "text-zinc-200 group-hover:text-sky-400"
+          isActive
+            ? "text-zinc-200 group-hover:text-emerald-400"
+            : isCompleted
+              ? "text-zinc-200 group-hover:text-sky-400"
+              : "text-zinc-200 group-hover:text-zinc-100"
         )}>
           {project.name}
         </h3>
@@ -299,7 +301,7 @@ export function PlatformDetail() {
   }
 
   return (
-    <LibraryLayout>
+    <LibraryLayout libraryPage="platforms">
       <div className="max-w-4xl mx-auto px-6 lg:px-8 py-6 lg:py-8 space-y-8">
         {/* Header */}
         <div className="flex items-start justify-between gap-4">
@@ -368,7 +370,7 @@ export function PlatformDetail() {
           <div className="space-y-3">
             <button
               onClick={() => toggleSection("active")}
-              className="flex items-center gap-2 text-sky-400 hover:text-sky-300 transition-colors"
+              className="flex items-center gap-2 text-emerald-400 hover:text-emerald-300 transition-colors"
             >
               {expandedSections.active ? (
                 <ChevronDown className="w-4 h-4" />
@@ -400,7 +402,7 @@ export function PlatformDetail() {
           <div className="space-y-3">
             <button
               onClick={() => toggleSection("completed")}
-              className="flex items-center gap-2 text-emerald-400 hover:text-emerald-300 transition-colors"
+              className="flex items-center gap-2 text-sky-400 hover:text-sky-300 transition-colors"
             >
               {expandedSections.completed ? (
                 <ChevronDown className="w-4 h-4" />

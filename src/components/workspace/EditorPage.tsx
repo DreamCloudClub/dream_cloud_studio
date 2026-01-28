@@ -6,6 +6,7 @@ import {
   SkipForward,
   Volume2,
   Maximize2,
+  Minimize2,
   Mic,
   Plus,
   ZoomIn,
@@ -15,9 +16,12 @@ import {
   Clapperboard,
   GripVertical,
   Image,
+  ChevronRight,
+  Sparkles,
+  Wand2,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
-import { useWorkspaceStore, Scene, Shot, AspectRatio } from "@/state/workspaceStore"
+import { useWorkspaceStore, Scene, Shot, AspectRatio, ShotEffect } from "@/state/workspaceStore"
 import { getAssetDisplayUrl } from "@/services/localStorage"
 
 // Drag data types
@@ -72,6 +76,8 @@ function ShotBlock({ shot, sceneId, isSelected, scale, onClick, onDragStart, onD
 
   const thumbnailInfo = getThumbnailInfo()
   const thumbnailUrl = thumbnailInfo?.url
+  const hasEffects = shot.effectsLayer && shot.effectsLayer.length > 0
+  const isAnimationShot = !!shot.animationAsset
 
   return (
     <div
@@ -82,7 +88,9 @@ function ShotBlock({ shot, sceneId, isSelected, scale, onClick, onDragStart, onD
       onClick={handleClick}
       className={cn(
         "h-12 rounded-lg flex items-center text-xs font-medium transition-all overflow-hidden cursor-grab active:cursor-grabbing relative",
-        thumbnailUrl
+        isAnimationShot
+          ? "bg-gradient-to-br from-purple-500 to-purple-600"
+          : thumbnailUrl
           ? "bg-zinc-800"
           : "bg-gradient-to-br from-orange-500 to-orange-600",
         isSelected
@@ -92,6 +100,12 @@ function ShotBlock({ shot, sceneId, isSelected, scale, onClick, onDragStart, onD
       )}
       style={{ width: `${Math.max(width, 50)}px` }}
     >
+      {/* Effects indicator */}
+      {hasEffects && (
+        <div className="absolute top-1 right-1 w-4 h-4 rounded-full bg-purple-500 flex items-center justify-center z-10">
+          <Sparkles className="w-2.5 h-2.5 text-white" />
+        </div>
+      )}
       {thumbnailUrl ? (
         <>
           {thumbnailInfo?.isVideo ? (
@@ -156,6 +170,86 @@ function VoiceoverBlock({ scene, scale }: VoiceoverBlockProps) {
       <span className="truncate">
         {scene.voiceover?.script || "No voiceover"}
       </span>
+    </div>
+  )
+}
+
+interface EffectsRowProps {
+  scene: Scene
+  scale: number
+  selectedShotId: string | null
+}
+
+function EffectsRow({ scene, scale, selectedShotId }: EffectsRowProps) {
+  const getEffectiveDuration = (shot: Shot) => shot.videoAsset?.duration || 5
+
+  // Collect all effects from all shots in this scene
+  const allEffects: { shot: Shot; effect: ShotEffect; startOffset: number }[] = []
+  let cumulativeTime = 0
+
+  for (const shot of [...scene.shots].sort((a, b) => a.order - b.order)) {
+    const shotDuration = getEffectiveDuration(shot)
+    if (shot.effectsLayer) {
+      for (const effect of shot.effectsLayer) {
+        allEffects.push({
+          shot,
+          effect,
+          startOffset: cumulativeTime,
+        })
+      }
+    }
+    cumulativeTime += shotDuration
+  }
+
+  const sceneDuration = cumulativeTime
+  const width = sceneDuration * BASE_SCALE * scale
+  const hasEffects = allEffects.length > 0
+
+  return (
+    <div
+      className={cn(
+        "h-6 rounded-md flex items-center gap-1 px-1 text-xs relative",
+        hasEffects
+          ? "bg-purple-500/20"
+          : "border border-dashed border-zinc-700 text-zinc-600"
+      )}
+      style={{ width: `${Math.max(width, 50)}px` }}
+    >
+      {hasEffects ? (
+        // Render effect blocks positioned on the timeline
+        allEffects.map(({ shot, effect, startOffset }) => {
+          const effectStart = startOffset + effect.timing[0]
+          const effectEnd = startOffset + effect.timing[1]
+          const effectDuration = effectEnd - effectStart
+          const left = effectStart * BASE_SCALE * scale
+          const effectWidth = effectDuration * BASE_SCALE * scale
+
+          return (
+            <div
+              key={effect.id}
+              className={cn(
+                "absolute h-4 rounded flex items-center gap-1 px-1 text-[10px]",
+                shot.id === selectedShotId
+                  ? "bg-purple-500 text-white"
+                  : "bg-purple-500/60 text-purple-200"
+              )}
+              style={{
+                left: `${left}px`,
+                width: `${Math.max(effectWidth, 20)}px`,
+              }}
+              title={`${effect.name} (${effect.timing[0]}s - ${effect.timing[1]}s)`}
+            >
+              <Sparkles className="w-2.5 h-2.5 flex-shrink-0" />
+              <span className="truncate">{effect.name}</span>
+            </div>
+          )
+        })
+      ) : (
+        <>
+          <Wand2 className="w-3 h-3 flex-shrink-0" />
+          <span className="truncate">No effects</span>
+        </>
+      )}
     </div>
   )
 }
@@ -251,12 +345,17 @@ function SceneContainer({
 
         {/* Voiceover Row */}
         <VoiceoverBlock scene={scene} scale={scale} />
+
+        {/* Effects Row */}
+        <div className="mt-1">
+          <EffectsRow scene={scene} scale={scale} selectedShotId={selectedShotId} />
+        </div>
       </div>
     </div>
   )
 }
 
-// Preview mode indicator
+// Preview mode indicator - breadcrumb style
 type PreviewMode = "project" | "scene" | "shot"
 
 interface PreviewIndicatorProps {
@@ -264,49 +363,35 @@ interface PreviewIndicatorProps {
   sceneName?: string
   shotName?: string
   onClear: () => void
+  onSelectScene: () => void
 }
 
-function PreviewIndicator({ mode, sceneName, shotName, onClear }: PreviewIndicatorProps) {
-  const getIcon = () => {
-    switch (mode) {
-      case "project": return Film
-      case "scene": return Layers
-      case "shot": return Clapperboard
-    }
-  }
-
-  const getLabel = () => {
-    switch (mode) {
-      case "project": return "Full Project"
-      case "scene": return sceneName || "Scene"
-      case "shot": return shotName || "Shot"
-    }
-  }
-
-  const getColor = () => {
-    switch (mode) {
-      case "project": return "bg-zinc-700 text-zinc-300"
-      case "scene": return "bg-sky-500/20 text-sky-400 border border-sky-500/30"
-      case "shot": return "bg-orange-500/20 text-orange-400 border border-orange-500/30"
-    }
-  }
-
-  const Icon = getIcon()
-
+function PreviewIndicator({ mode, sceneName, shotName, onClear, onSelectScene }: PreviewIndicatorProps) {
   return (
-    <div className="flex items-center gap-2">
-      <div className={cn("flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-medium", getColor())}>
-        <Icon className="w-3.5 h-3.5" />
-        <span>{getLabel()}</span>
-      </div>
-      {mode !== "project" && (
-        <button
-          onClick={onClear}
-          className="px-2 py-1.5 rounded-lg bg-zinc-800 hover:bg-zinc-700 text-zinc-400 hover:text-zinc-200 text-xs transition-colors"
-        >
-          View All
-        </button>
+    <div className="flex items-center gap-1.5">
+      {/* Full Project - always visible */}
+      <button
+        onClick={onClear}
+        className="flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors bg-zinc-800 text-zinc-300 border border-zinc-500 hover:bg-zinc-700 hover:text-white"
+      >
+        <Film className="w-3.5 h-3.5" />
+        <span>Full Project</span>
+      </button>
+
+      {/* Scene - visible when scene or shot is selected */}
+      {(mode === "scene" || mode === "shot") && sceneName && (
+        <>
+          <ChevronRight className="w-4 h-4 text-zinc-600" />
+          <button
+            onClick={onSelectScene}
+            className="flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors bg-sky-500/20 text-sky-400 border border-sky-500/30 hover:bg-sky-500/30"
+          >
+            <Layers className="w-3.5 h-3.5" />
+            <span>{sceneName}</span>
+          </button>
+        </>
       )}
+
     </div>
   )
 }
@@ -330,8 +415,36 @@ function VideoPlayer({ aspectRatio }: VideoPlayerProps) {
 
   const intervalRef = useRef<NodeJS.Timeout | null>(null)
   const videoRef = useRef<HTMLVideoElement>(null)
+  const playerContainerRef = useRef<HTMLDivElement>(null)
   const [volume, setVolume] = useState(0.75)
+  const [isFullscreen, setIsFullscreen] = useState(false)
   const aspectValue = getAspectRatioValue(aspectRatio)
+
+  // Handle fullscreen toggle
+  const toggleFullscreen = async () => {
+    if (!playerContainerRef.current) return
+
+    try {
+      if (!document.fullscreenElement) {
+        await playerContainerRef.current.requestFullscreen()
+        setIsFullscreen(true)
+      } else {
+        await document.exitFullscreen()
+        setIsFullscreen(false)
+      }
+    } catch (err) {
+      console.error("Fullscreen error:", err)
+    }
+  }
+
+  // Listen for fullscreen changes (e.g., user presses Escape)
+  useEffect(() => {
+    const handleFullscreenChange = () => {
+      setIsFullscreen(!!document.fullscreenElement)
+    }
+    document.addEventListener("fullscreenchange", handleFullscreenChange)
+    return () => document.removeEventListener("fullscreenchange", handleFullscreenChange)
+  }, [])
 
   // Get effective duration for a shot (video duration if video, default 5s for images)
   const getShotDuration = (shot: Shot) => {
@@ -451,6 +564,7 @@ function VideoPlayer({ aspectRatio }: VideoPlayerProps) {
         if (shot) {
           return {
             mode: "shot" as PreviewMode,
+            sceneId: scene.id,
             sceneName: scene.name,
             shotName: shot.name,
           }
@@ -463,6 +577,7 @@ function VideoPlayer({ aspectRatio }: VideoPlayerProps) {
       if (scene) {
         return {
           mode: "scene" as PreviewMode,
+          sceneId: scene.id,
           sceneName: scene.name,
           shotName: undefined,
         }
@@ -471,6 +586,7 @@ function VideoPlayer({ aspectRatio }: VideoPlayerProps) {
 
     return {
       mode: "project" as PreviewMode,
+      sceneId: undefined,
       sceneName: undefined,
       shotName: undefined,
     }
@@ -492,6 +608,24 @@ function VideoPlayer({ aspectRatio }: VideoPlayerProps) {
   // Check if current shot has a video asset
   const isVideo = !!currentShotInfo?.shot.videoAsset
 
+  // Get transform style from shot scale/position
+  const getMediaTransform = () => {
+    if (!currentShotInfo) return {}
+    const { shot } = currentShotInfo
+    const scale = shot.scale || 1
+    const posX = shot.positionX || 0
+    const posY = shot.positionY || 0
+
+    if (scale === 1 && posX === 0 && posY === 0) return {}
+
+    return {
+      transform: `scale(${scale}) translate(${posX}%, ${posY}%)`,
+      transformOrigin: 'center center',
+    }
+  }
+
+  const mediaTransform = getMediaTransform()
+
   const formatTime = (seconds: number) => {
     const mins = Math.floor(seconds / 60)
     const secs = Math.floor(seconds % 60)
@@ -501,6 +635,13 @@ function VideoPlayer({ aspectRatio }: VideoPlayerProps) {
   const handleClearSelection = () => {
     setSelectedScene(null)
     setSelectedShot(null)
+  }
+
+  const handleSelectScene = () => {
+    if (previewInfo.sceneId) {
+      setSelectedScene(previewInfo.sceneId)
+      setSelectedShot(null)
+    }
   }
 
   const handleProgressClick = (e: React.MouseEvent<HTMLDivElement>) => {
@@ -548,7 +689,7 @@ function VideoPlayer({ aspectRatio }: VideoPlayerProps) {
   }
 
   return (
-    <div className="flex flex-col bg-black rounded-2xl overflow-hidden">
+    <div ref={playerContainerRef} className="flex flex-col bg-black rounded-2xl overflow-hidden">
       {/* Video Preview Container */}
       <div className="flex-1 relative flex items-center justify-center bg-zinc-900 p-4">
         {/* Aspect Ratio Video Frame */}
@@ -563,6 +704,7 @@ function VideoPlayer({ aspectRatio }: VideoPlayerProps) {
                 ref={videoRef}
                 src={currentMediaUrl}
                 className="absolute inset-0 w-full h-full object-contain bg-black"
+                style={mediaTransform}
                 loop
                 muted={volume === 0}
                 playsInline
@@ -571,7 +713,8 @@ function VideoPlayer({ aspectRatio }: VideoPlayerProps) {
               <img
                 src={currentMediaUrl}
                 alt={currentShotInfo?.shot.name || "Shot"}
-                className="absolute inset-0 w-full h-full object-contain bg-black"
+                className="absolute inset-0 w-full h-full object-cover bg-black"
+                style={mediaTransform}
               />
             )
           ) : (
@@ -584,29 +727,29 @@ function VideoPlayer({ aspectRatio }: VideoPlayerProps) {
             </div>
           )}
 
-          {/* Fullscreen button */}
-          <button className="absolute top-4 right-4 w-10 h-10 rounded-lg bg-black/50 hover:bg-black/70 flex items-center justify-center text-white/70 hover:text-white transition-colors">
-            <Maximize2 className="w-5 h-5" />
-          </button>
         </div>
       </div>
 
       {/* Controls */}
       <div className="p-4 bg-zinc-900/80 border-t border-zinc-800 flex-shrink-0">
-        {/* Preview Mode Indicator - moved here */}
+        {/* Preview Mode Indicator */}
         <div className="flex items-center justify-between mb-3">
           <PreviewIndicator
             mode={previewInfo.mode}
             sceneName={previewInfo.sceneName}
             shotName={previewInfo.shotName}
             onClear={handleClearSelection}
+            onSelectScene={handleSelectScene}
           />
-          {/* Current shot info */}
-          {currentShotInfo && (
-            <div className="text-xs text-zinc-400">
-              {currentShotInfo.scene.name} / {currentShotInfo.shot.name}
-            </div>
-          )}
+          {/* Fullscreen button */}
+          <button
+            onClick={toggleFullscreen}
+            className="flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors bg-zinc-800 text-zinc-300 border border-zinc-500 hover:bg-zinc-700 hover:text-white"
+            title={isFullscreen ? "Exit fullscreen" : "Enter fullscreen"}
+          >
+            {isFullscreen ? <Minimize2 className="w-3.5 h-3.5" /> : <Maximize2 className="w-3.5 h-3.5" />}
+            <span>{isFullscreen ? "Exit" : "Fullscreen"}</span>
+          </button>
         </div>
 
         {/* Progress bar */}
@@ -829,6 +972,12 @@ function Timeline() {
           <span className="text-xs text-zinc-500">
             {scenes.length} scenes • {scenes.reduce((acc, s) => acc + s.shots.length, 0)} shots
           </span>
+          {scenes.reduce((acc, s) => acc + s.shots.reduce((shotAcc, shot) => shotAcc + (shot.effectsLayer?.length || 0), 0), 0) > 0 && (
+            <span className="text-xs text-purple-400 flex items-center gap-1">
+              <Sparkles className="w-3 h-3" />
+              {scenes.reduce((acc, s) => acc + s.shots.reduce((shotAcc, shot) => shotAcc + (shot.effectsLayer?.length || 0), 0), 0)} effects
+            </span>
+          )}
         </div>
         <div className="flex items-center gap-2">
           <button
@@ -906,13 +1055,13 @@ export function EditorPage() {
   const aspectRatio = project.brief.aspectRatio || "16:9"
 
   return (
-    <div className="h-full overflow-y-auto">
+    <div className="h-full overflow-y-auto [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]">
       {/* Video Player Section - fills viewport height minus header (~56px) and bottom nav (~72px) */}
       <div
         className="p-4 lg:p-6 flex flex-col"
         style={{ minHeight: "calc(100vh - 56px - 72px)" }}
       >
-        <div className="flex-1 max-w-5xl w-full mx-auto flex flex-col">
+        <div className="flex-1 max-w-6xl w-full mx-auto flex flex-col">
           <VideoPlayer aspectRatio={aspectRatio} />
         </div>
       </div>

@@ -383,7 +383,7 @@ export function PlatformEdit() {
 
   if (isLoading) {
     return (
-      <LibraryLayout>
+      <LibraryLayout libraryPage="platforms">
         <div className="flex items-center justify-center h-full">
           <Loader2 className="w-8 h-8 text-sky-400 animate-spin" />
         </div>
@@ -393,7 +393,7 @@ export function PlatformEdit() {
 
   if (!platform) {
     return (
-      <LibraryLayout>
+      <LibraryLayout libraryPage="platforms">
         <div className="max-w-4xl mx-auto px-6 lg:px-8 py-6 lg:py-8">
           <div className="flex flex-col items-center justify-center py-12 px-6 border border-dashed border-zinc-800 rounded-xl bg-zinc-900/30">
             <FolderOpen className="w-12 h-12 text-zinc-600 mb-3" />
@@ -405,7 +405,7 @@ export function PlatformEdit() {
   }
 
   return (
-    <LibraryLayout>
+    <LibraryLayout libraryPage="platforms">
       <div className="max-w-4xl mx-auto px-6 lg:px-8 py-6 lg:py-8 space-y-8">
         {/* Header */}
         <div className="flex items-center justify-between gap-4">
@@ -470,18 +470,9 @@ export function PlatformEdit() {
           <h2 className="text-lg font-semibold text-zinc-200">Projects</h2>
 
           <CategorySection
-            title="Drafts"
-            icon={PenLine}
-            iconColor="text-orange-400"
-            items={draftProjects.map((p) => ({ id: p.id, name: p.name }))}
-            onRemove={handleRemoveProject}
-            onAdd={() => setAddModal({ isOpen: true, type: "drafts" })}
-          />
-
-          <CategorySection
             title="Active"
             icon={FolderOpen}
-            iconColor="text-sky-400"
+            iconColor="text-emerald-400"
             items={activeProjects.map((p) => ({ id: p.id, name: p.name }))}
             onRemove={handleRemoveProject}
             onAdd={() => setAddModal({ isOpen: true, type: "active" })}
@@ -490,42 +481,10 @@ export function PlatformEdit() {
           <CategorySection
             title="Completed"
             icon={CheckCircle2}
-            iconColor="text-emerald-400"
+            iconColor="text-sky-400"
             items={completedProjects.map((p) => ({ id: p.id, name: p.name }))}
             onRemove={handleRemoveProject}
             onAdd={() => setAddModal({ isOpen: true, type: "completed" })}
-          />
-        </div>
-
-        {/* Assets Section */}
-        <div className="space-y-6">
-          <h2 className="text-lg font-semibold text-zinc-200">Assets</h2>
-
-          <CategorySection
-            title="Assets"
-            icon={Box}
-            iconColor="text-purple-400"
-            items={assets.map((a) => ({
-              id: a.id,
-              name: a.name,
-              thumbnail: a.url || undefined,
-            }))}
-            onRemove={handleRemoveAsset}
-            onAdd={() => setAddModal({ isOpen: true, type: "assets" })}
-          />
-        </div>
-
-        {/* Foundations Section */}
-        <div className="space-y-6">
-          <h2 className="text-lg font-semibold text-zinc-200">Foundations</h2>
-
-          <CategorySection
-            title="Foundations"
-            icon={Palette}
-            iconColor="text-amber-400"
-            items={foundations.map((f) => ({ id: f.id, name: f.name }))}
-            onRemove={handleRemoveFoundation}
-            onAdd={() => setAddModal({ isOpen: true, type: "foundations" })}
           />
         </div>
       </div>

@@ -1,9 +1,9 @@
 import { create } from "zustand"
 import type { Asset } from "@/types/database"
 
-export type AssetType = "image" | "video" | "audio"
-// Visual categories (for image/video) + Audio categories (for audio)
-export type AssetCategory = "scene" | "stage" | "character" | "weather" | "prop" | "effect" | "music" | "sound_effect" | "voice"
+export type AssetType = "image" | "video" | "audio" | "animation"
+// Visual categories (for image/video) + Audio categories (for audio) + Animation categories
+export type AssetCategory = "scene" | "stage" | "character" | "weather" | "prop" | "effect" | "music" | "sound_effect" | "voice" | "text" | "logo" | "transition" | "lower_third" | "title_card" | "overlay"
 
 export type AssetWizardStep = "type" | "category" | "prompt" | "review"
 

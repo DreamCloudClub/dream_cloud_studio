@@ -1,15 +1,19 @@
+import { useState } from "react"
 import { DashboardHeader, DashboardNav } from "@/components/dashboard"
 import { BubblePanel } from "@/components/create"
+import { InspectorPanel, LibraryPageType } from "@/components/workspace"
 import { useUIStore } from "@/state/uiStore"
 import { useAuth } from "@/contexts/AuthContext"
 
 interface LibraryLayoutProps {
   children: React.ReactNode
+  libraryPage?: LibraryPageType
 }
 
-export function LibraryLayout({ children }: LibraryLayoutProps) {
+export function LibraryLayout({ children, libraryPage }: LibraryLayoutProps) {
   const { isBubbleCollapsed, toggleBubbleCollapsed } = useUIStore()
   const { user, profile, signOut } = useAuth()
+  const [isInspectorCollapsed, setIsInspectorCollapsed] = useState(false)
 
   return (
     <div className="h-screen bg-zinc-950 flex flex-col">
@@ -38,6 +42,19 @@ export function LibraryLayout({ children }: LibraryLayoutProps) {
         <main className="flex-1 overflow-auto">
           {children}
         </main>
+
+        {/* Inspector Panel (Right Sidebar) */}
+        <div
+          className={`${
+            isInspectorCollapsed ? "w-16" : "w-80"
+          } flex-shrink-0 hidden md:flex transition-all duration-300 overflow-hidden`}
+        >
+          <InspectorPanel
+            isCollapsed={isInspectorCollapsed}
+            onToggleCollapse={() => setIsInspectorCollapsed(!isInspectorCollapsed)}
+            libraryPage={libraryPage}
+          />
+        </div>
       </div>
 
       <DashboardNav />

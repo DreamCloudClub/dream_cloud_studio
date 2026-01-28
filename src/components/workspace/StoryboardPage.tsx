@@ -373,11 +373,11 @@ function FullCard({ card, displayNumber, onUpdate, onDelete, onAddImage }: FullC
 
         {/* Image */}
         {card.thumbnail_url ? (
-          <div className="relative group aspect-square w-full rounded-xl overflow-hidden border border-zinc-700">
+          <div className="relative group w-fit max-w-full mx-auto rounded-xl overflow-hidden border border-zinc-700">
             <img
               src={card.thumbnail_url}
               alt={card.title}
-              className="w-full h-full object-cover"
+              className="max-w-[500px] max-h-[500px] w-auto h-auto"
             />
             <button
               onClick={onAddImage}
@@ -389,7 +389,7 @@ function FullCard({ card, displayNumber, onUpdate, onDelete, onAddImage }: FullC
         ) : (
           <button
             onClick={onAddImage}
-            className="aspect-square w-full border border-dashed border-zinc-700 hover:border-sky-500 rounded-xl flex flex-col items-center justify-center transition-colors"
+            className="w-full h-48 border border-dashed border-zinc-700 hover:border-sky-500 rounded-xl flex flex-col items-center justify-center transition-colors"
           >
             <ImagePlus className="w-10 h-10 text-zinc-500 mb-2" />
             <span className="text-sky-400 text-sm">Add visual reference</span>

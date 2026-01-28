@@ -1,4 +1,4 @@
-import { FolderOpen, Image, PenLine, Film, Volume2, Play } from "lucide-react"
+import { FolderOpen, Image, PenLine, Film, Volume2, Play, Video } from "lucide-react"
 
 export type ContentRowType = "projects" | "assets" | "foundations"
 
@@ -7,7 +7,7 @@ interface ContentItem {
   name: string
   thumbnail?: string | null
   updatedAt: string
-  type?: "image" | "video" | "audio"
+  type?: "image" | "video" | "audio" | "animation"
   category?: string | null
   // Foundation-specific fields
   colorPalette?: string[]
@@ -57,7 +57,7 @@ function ItemCard({ item, onClick, isDraft, isFoundation }: { item: ContentItem;
       }`}
     >
       <div className="aspect-square bg-zinc-800 relative">
-        {item.thumbnail && item.type === 'video' ? (
+        {item.thumbnail && item.thumbnail.length > 0 && item.type === 'video' ? (
           <>
             <video
               src={item.thumbnail}
@@ -71,7 +71,7 @@ function ItemCard({ item, onClick, isDraft, isFoundation }: { item: ContentItem;
               <Play className="w-3 h-3 text-white fill-white" />
             </div>
           </>
-        ) : item.thumbnail ? (
+        ) : item.thumbnail && item.thumbnail.length > 0 ? (
           <img
             src={item.thumbnail}
             alt={item.name}
@@ -106,11 +106,17 @@ function ItemCard({ item, onClick, isDraft, isFoundation }: { item: ContentItem;
             )}
           </div>
         ) : (
-          <div className="w-full h-full flex items-center justify-center">
+          <div className="w-full h-full flex items-center justify-center relative overflow-hidden">
             {isDraft ? (
-              <PenLine className="w-8 h-8 text-orange-500/70" />
+              <>
+                <div className="absolute inset-0 bg-gradient-to-b from-orange-400/20 via-orange-500/10 to-orange-600/20" />
+                <PenLine className="w-8 h-8 text-orange-500/70 relative z-10" />
+              </>
             ) : (
-              <TypeIcon className="w-8 h-8 text-zinc-700" />
+              <>
+                <div className="absolute inset-0 bg-gradient-to-b from-emerald-600 via-emerald-700 to-green-800" />
+                <Video className="w-10 h-10 text-white/60 relative z-10 drop-shadow-lg" />
+              </>
             )}
           </div>
         )}
@@ -122,7 +128,7 @@ function ItemCard({ item, onClick, isDraft, isFoundation }: { item: ContentItem;
         )}
       </div>
       <div className="p-3">
-        <p className={`text-sm font-medium truncate ${isDraft ? "text-orange-200 group-hover:text-orange-300" : "text-zinc-200 group-hover:text-sky-400"} transition-colors`}>{item.name}</p>
+        <p className={`text-sm font-medium truncate ${isDraft ? "text-orange-200 group-hover:text-orange-300" : "text-zinc-200 group-hover:text-emerald-400"} transition-colors`}>{item.name}</p>
         <p className="text-xs text-zinc-500 mt-0.5">
           {item.type ? (
             <>

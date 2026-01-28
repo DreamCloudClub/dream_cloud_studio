@@ -1,4 +1,4 @@
-import { supabase, getStorageBucket, getStoragePath, getSignedUrl } from '@/lib/supabase'
+import { supabase, getStorageBucket, getStoragePath, getSignedUrl, getPublicUrl } from '@/lib/supabase'
 import type {
   Asset,
   AssetInsert,
@@ -247,23 +247,38 @@ export async function createGeneratedAsset(options: GeneratedAssetOptions): Prom
       console.warn('Failed to download to local storage, falling back to cloud:', downloadResult.error)
     }
   } else {
-    // Browser mode: only convert images to base64 (they're smaller)
-    // Videos and audio are too large - keep original URL (may expire)
-    if (type === 'image') {
-      console.log('Browser mode: downloading image as base64...')
-      const result = await downloadAsBase64(sourceUrl)
-      if (result.success && result.dataUrl) {
-        finalUrl = result.dataUrl
-        storageType = 'cloud' // Still "cloud" but URL is now a data URL
-        fileSize = result.dataUrl.length
-        console.log('Successfully converted to base64, size:', fileSize)
-      } else {
-        console.warn('Failed to download as base64:', result.error)
+    // Browser mode: upload to Supabase Storage for permanent URLs
+    if (type === 'image' || type === 'video' || type === 'audio') {
+      console.log(`Browser mode: uploading ${type} to Supabase Storage...`)
+      try {
+        const response = await fetch(sourceUrl)
+        if (!response.ok) throw new Error(`HTTP ${response.status}`)
+        const blob = await response.blob()
+        fileSize = blob.size
+
+        const extension = getExtensionFromUrl(sourceUrl) || getDefaultExtension(type)
+        const storagePath = `${userId}/${assetId}.${extension}`
+
+        const { error: uploadError } = await getStorageBucket('generated-media').upload(storagePath, blob, {
+          cacheControl: '31536000', // 1 year cache
+          contentType: blob.type || `${type}/${extension}`,
+          upsert: false,
+        })
+
+        if (uploadError) throw uploadError
+
+        // Get public URL (permanent, no expiry)
+        finalUrl = getPublicUrl('generated-media', storagePath)
+        storageType = 'cloud'
+        console.log(`Successfully uploaded ${type} to storage, size:`, fileSize)
+      } catch (err) {
+        console.warn(`Failed to upload ${type} to storage:`, err)
+        // Keep original URL as fallback (may expire)
+        finalUrl = sourceUrl
       }
     } else {
-      // Videos and audio - keep original URL
-      // Note: These URLs may expire, recommend using Tauri desktop app for persistence
-      console.log(`Browser mode: keeping original URL for ${type} (too large for base64)`)
+      // Other types - keep original URL
+      console.log(`Browser mode: keeping original URL for ${type}`)
       finalUrl = sourceUrl
       storageType = 'cloud'
     }
@@ -405,17 +420,17 @@ export async function uploadFile(
   const storage = getStorageBucket(bucket)
 
   const { error: uploadError } = await storage.upload(path, file, {
-    cacheControl: '3600',
+    cacheControl: '31536000', // 1 year cache
     upsert: false,
   })
 
   if (uploadError) throw uploadError
 
-  // Get signed URL for private buckets
-  const signedUrl = await getSignedUrl(bucket, path)
+  // Get public URL (permanent, no expiry)
+  const publicUrl = getPublicUrl(bucket, path)
 
   return {
-    url: signedUrl,
+    url: publicUrl,
     path,
     size: file.size,
   }
@@ -467,13 +482,21 @@ export async function uploadAndCreateAsset(
       finalUrl = url
     }
   } else {
-    // Browser mode: convert to base64 data URL for persistence
-    const bytes = await file.arrayBuffer()
-    const base64 = btoa(
-      new Uint8Array(bytes).reduce((data, byte) => data + String.fromCharCode(byte), '')
-    )
-    finalUrl = `data:${file.type};base64,${base64}`
-    console.log('Saved upload as base64 data URL')
+    // Browser mode: upload to Supabase Storage for permanent URLs
+    console.log('Browser mode: uploading to Supabase Storage...')
+    const storagePath = `${userId}/${assetId}.${extension}`
+
+    const { error: uploadError } = await getStorageBucket('generated-media').upload(storagePath, file, {
+      cacheControl: '31536000', // 1 year cache
+      contentType: file.type,
+      upsert: false,
+    })
+
+    if (uploadError) throw uploadError
+
+    // Get public URL (permanent, no expiry)
+    finalUrl = getPublicUrl('generated-media', storagePath)
+    console.log('Uploaded to Supabase Storage:', finalUrl)
   }
 
   // Create asset record

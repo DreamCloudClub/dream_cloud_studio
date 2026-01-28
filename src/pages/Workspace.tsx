@@ -16,6 +16,7 @@ import {
   SceneManagerPage,
   AssetsPage,
   ExportPage,
+  InspectorPanel,
 } from "@/components/workspace"
 
 export function Workspace() {
@@ -24,6 +25,7 @@ export function Workspace() {
   const { user, profile, signOut } = useAuth()
   const { project, isLoading, activeTab, loadProject } = useWorkspaceStore()
   const [isBubbleCollapsed, setIsBubbleCollapsed] = useState(false)
+  const [isInspectorCollapsed, setIsInspectorCollapsed] = useState(false)
 
   // Load project on mount
   useEffect(() => {
@@ -135,9 +137,21 @@ export function Workspace() {
         </div>
 
         {/* Tab Content (Main Area) */}
-        <main className="flex-1 flex flex-col overflow-hidden bg-zinc-950">
+        <main className="flex-1 min-w-0 flex flex-col overflow-hidden bg-zinc-950">
           {renderTabContent()}
         </main>
+
+        {/* Inspector Panel (Right Sidebar) - always visible, content swaps based on tab */}
+        <div
+          className={`${
+            isInspectorCollapsed ? "w-16" : "w-80"
+          } flex-shrink-0 hidden md:flex transition-all duration-300 overflow-hidden`}
+        >
+          <InspectorPanel
+            isCollapsed={isInspectorCollapsed}
+            onToggleCollapse={() => setIsInspectorCollapsed(!isInspectorCollapsed)}
+          />
+        </div>
       </div>
 
       {/* Bottom Navigation */}

@@ -67,10 +67,23 @@ export function VideoComposition({ shots, title, outro, backgroundColor = "#0000
               {/* Transition wrapper */}
               <Transition type={shot.transition || "fade"} durationInFrames={transitionFrames}>
                 {shot.type === "video" && shot.src && (
-                  <VideoShot src={shot.src} />
+                  <VideoShot
+                    src={shot.src}
+                    scale={shot.scale}
+                    positionX={shot.positionX}
+                    positionY={shot.positionY}
+                  />
                 )}
                 {shot.type === "image" && shot.src && (
-                  <ImageShot src={shot.src} durationInFrames={durationFrames} />
+                  <ImageShot
+                    src={shot.src}
+                    durationInFrames={durationFrames}
+                    pan={shot.pan}
+                    startPosition={shot.startPosition}
+                    endPosition={shot.endPosition}
+                    startScale={shot.startScale}
+                    endScale={shot.endScale}
+                  />
                 )}
               </Transition>
             </Sequence>

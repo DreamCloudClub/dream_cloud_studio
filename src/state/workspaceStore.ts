@@ -1,4 +1,5 @@
 import { create } from "zustand"
+import type { PanDirection } from "@/remotion/components"
 import {
   getProjectWithRelations,
   updateProject,
@@ -53,6 +54,22 @@ export const WORKSPACE_TABS: {
   { id: "export", label: "Export", icon: "Download" },
 ]
 
+// Re-export PanDirection for easy access
+export type { PanDirection } from "@/remotion/components"
+
+// Available pan directions for image shots
+export const PAN_DIRECTIONS: { value: PanDirection; label: string; description: string }[] = [
+  { value: "none", label: "None", description: "Static center crop" },
+  { value: "zoom-in", label: "Zoom In", description: "Push into center" },
+  { value: "zoom-out", label: "Zoom Out", description: "Pull back from center" },
+  { value: "left-to-right", label: "Pan Right", description: "Move left to right" },
+  { value: "right-to-left", label: "Pan Left", description: "Move right to left" },
+  { value: "top-to-bottom", label: "Pan Down", description: "Move top to bottom" },
+  { value: "bottom-to-top", label: "Pan Up", description: "Move bottom to top" },
+  { value: "top-left-to-bottom-right", label: "Diagonal ↘", description: "Top-left to bottom-right" },
+  { value: "bottom-right-to-top-left", label: "Diagonal ↖", description: "Bottom-right to top-left" },
+]
+
 // Asset categories for mood board and scene manager
 export type AssetCategory =
   | "scene"
@@ -77,7 +94,7 @@ export const ASSET_CATEGORIES: { id: AssetCategory; label: string; icon: string 
 export interface ProjectAsset {
   id: string
   name: string
-  type: "image" | "video" | "audio"
+  type: "image" | "video" | "audio" | "animation"
   category: AssetCategory
   url: string | null  // nullable for local-only assets
   localPath?: string | null  // local file path (Tauri)
@@ -89,6 +106,27 @@ export interface ProjectAsset {
   createdAt: string
 }
 
+// Animation layer for effects overlay
+export interface ShotEffect {
+  id: string
+  type: 'text' | 'lower_third' | 'watermark' | 'custom'
+  name: string
+  config: {
+    duration: number
+    layers: {
+      id: string
+      type: 'text' | 'shape' | 'image'
+      content: string
+      animation: string
+      timing: [number, number]
+      position?: { x: number; y: number }
+      style?: Record<string, unknown>
+    }[]
+    background?: { color?: string; gradient?: string }
+  }
+  timing: [number, number] // [startSec, endSec] relative to shot
+}
+
 // Scene with shots
 export interface Shot {
   id: string
@@ -96,7 +134,7 @@ export interface Shot {
   description: string
   duration: number // seconds
   order: number
-  shotType?: string // Wide, Medium, Close-up, etc.
+  shotType?: string // 'media' | 'animation' - or camera: Wide, Medium, Close-up
   // Assets used in this shot
   assets: {
     scene?: ProjectAsset
@@ -110,10 +148,24 @@ export interface Shot {
   imageAssetId?: string | null
   videoAssetId?: string | null
   audioAssetId?: string | null
+  animationAssetId?: string | null // For standalone animation shots
   // Full asset objects when loaded (expanded from asset IDs)
   imageAsset?: ProjectAsset | null
   videoAsset?: ProjectAsset | null
   audioAsset?: ProjectAsset | null
+  animationAsset?: ProjectAsset | null
+  // Effects layer (overlays that play on top of this shot)
+  effectsLayer?: ShotEffect[]
+  // Scale/crop settings (works for both images and videos)
+  scale?: number  // 1 = 100%, 1.5 = 150% zoomed in
+  positionX?: number  // -50 to 50, percentage offset from center
+  positionY?: number  // -50 to 50, percentage offset from center
+  // Pan/zoom animation settings for image shots (Ken Burns effect)
+  pan?: PanDirection
+  startPosition?: { x: number; y: number } // 0-100 percentage
+  endPosition?: { x: number; y: number }   // 0-100 percentage
+  startScale?: number
+  endScale?: number
   // Legacy media fields (deprecated - use linked assets instead)
   media?: {
     type: "image" | "video"
@@ -267,8 +319,8 @@ interface WorkspaceState {
 
   // Asset Creation Mode (for launching generator from other pages)
   assetCreationMode: boolean
-  assetCreationType: "image" | "video" | "audio" | null
-  startAssetCreation: (type?: "image" | "video" | "audio") => void
+  assetCreationType: "image" | "video" | "audio" | "animation" | null
+  startAssetCreation: (type?: "image" | "video" | "audio" | "animation") => void
   clearAssetCreationMode: () => void
 
   // Storyboard
@@ -465,6 +517,9 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
             const audioAsset = shot.audio_asset_id
               ? (dbProject.assets || []).find((a: any) => a.id === shot.audio_asset_id)
               : null
+            const animationAsset = shot.animation_asset_id
+              ? (dbProject.assets || []).find((a: any) => a.id === shot.animation_asset_id)
+              : null
 
             return {
               id: shot.id,
@@ -482,6 +537,7 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
               imageAssetId: shot.image_asset_id || null,
               videoAssetId: shot.video_asset_id || null,
               audioAssetId: shot.audio_asset_id || null,
+              animationAssetId: shot.animation_asset_id || null,
               imageAsset: imageAsset ? {
                 id: imageAsset.id,
                 name: imageAsset.name,
@@ -524,6 +580,22 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
                 generationModel: audioAsset.generation_model || undefined,
                 createdAt: audioAsset.created_at,
               } : null,
+              animationAsset: animationAsset ? {
+                id: animationAsset.id,
+                name: animationAsset.name,
+                type: animationAsset.type as "image" | "video" | "audio",
+                category: (animationAsset.category || "effect") as AssetCategory,
+                url: animationAsset.url,
+                localPath: animationAsset.local_path || undefined,
+                storageType: (animationAsset.storage_type || "cloud") as "local" | "cloud",
+                duration: animationAsset.duration || undefined,
+                userDescription: animationAsset.user_description || undefined,
+                aiPrompt: animationAsset.ai_prompt || undefined,
+                generationModel: animationAsset.generation_model || undefined,
+                createdAt: animationAsset.created_at,
+              } : null,
+              // Effects layer (overlays)
+              effectsLayer: (shot.effects as ShotEffect[]) || [],
               // Legacy media fields (fallback if no linked assets)
               media: shot.media_url
                 ? {
@@ -629,8 +701,10 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
       if (data.audioPlans !== undefined) dbData.audio_plans = data.audioPlans
 
       // Also update project name if brief name changed
-      if (data.name) {
-        await updateProject(project.id, { name: data.name })
+      if (data.name !== undefined) {
+        console.log("Syncing project name to projects table:", data.name)
+        const updated = await updateProject(project.id, { name: data.name || "Untitled Project" })
+        console.log("Project name synced successfully:", updated.name)
       }
 
       const existingBrief = await getProjectBrief(project.id)
@@ -652,6 +726,8 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
       }
     } catch (error) {
       console.error("Failed to save brief to database:", error)
+      // Re-throw so callers can handle/display the error
+      throw error
     }
   },
 

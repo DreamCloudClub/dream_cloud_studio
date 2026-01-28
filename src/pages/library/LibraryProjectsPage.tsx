@@ -1,12 +1,11 @@
 import { useState, useEffect } from "react"
 import { useNavigate } from "react-router-dom"
-import { Search, Plus, FolderOpen, Clock, PenLine, CheckCircle2, Trash2, AlertTriangle, Filter, ChevronDown, ChevronRight } from "lucide-react"
+import { Search, Plus, FolderOpen, Clock, PenLine, CheckCircle2, Trash2, AlertTriangle, Filter, ChevronDown, ChevronRight, Video } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { LibraryLayout } from "@/components/library"
 import { useAuth } from "@/contexts/AuthContext"
 import { useProjectWizardStore } from "@/state/projectWizardStore"
-import { getCompletedProjects, getDraftProjects, deleteProject } from "@/services/projects"
-import type { Project as DBProject } from "@/types/database"
+import { getCompletedProjects, getDraftProjects, deleteProject, ProjectWithThumbnail } from "@/services/projects"
 
 interface Project {
   id: string
@@ -18,7 +17,7 @@ interface Project {
   status: string
 }
 
-type StatusFilter = "all" | "draft" | "in_progress" | "completed"
+type StatusFilter = "all" | "in_progress" | "completed"
 
 function formatRelativeTime(dateString: string): string {
   const date = new Date(dateString)
@@ -69,11 +68,17 @@ function ProjectCard({ project, onClick, onDelete }: ProjectCardProps) {
             className="w-full h-full object-cover"
           />
         ) : (
-          <div className="absolute inset-0 flex items-center justify-center">
+          <div className="absolute inset-0 flex items-center justify-center overflow-hidden">
             {isDraft ? (
-              <PenLine className="w-10 h-10 text-orange-500/70" />
+              <>
+                <div className="absolute inset-0 bg-gradient-to-b from-orange-400/20 via-orange-500/10 to-orange-600/20" />
+                <PenLine className="w-10 h-10 text-orange-500/70 relative z-10" />
+              </>
             ) : (
-              <FolderOpen className="w-12 h-12 text-zinc-700" />
+              <>
+                <div className="absolute inset-0 bg-gradient-to-b from-emerald-600 via-emerald-700 to-green-800" />
+                <Video className="w-12 h-12 text-white/60 relative z-10 drop-shadow-lg" />
+              </>
             )}
           </div>
         )}
@@ -99,7 +104,7 @@ function ProjectCard({ project, onClick, onDelete }: ProjectCardProps) {
           "text-sm font-medium truncate transition-colors",
           isDraft
             ? "text-orange-200 group-hover:text-orange-300"
-            : "text-zinc-200 group-hover:text-sky-400"
+            : "text-zinc-200 group-hover:text-emerald-400"
         )}>
           {project.name}
         </h3>
@@ -121,8 +126,8 @@ export function LibraryProjectsPage() {
   const navigate = useNavigate()
   const { user } = useAuth()
   const resetWizard = useProjectWizardStore((state) => state.resetWizard)
-  const [completedProjects, setCompletedProjects] = useState<DBProject[]>([])
-  const [draftProjects, setDraftProjects] = useState<DBProject[]>([])
+  const [completedProjects, setCompletedProjects] = useState<ProjectWithThumbnail[]>([])
+  const [draftProjects, setDraftProjects] = useState<ProjectWithThumbnail[]>([])
   const [isLoading, setIsLoading] = useState(true)
   const [searchQuery, setSearchQuery] = useState("")
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("all")
@@ -163,9 +168,10 @@ export function LibraryProjectsPage() {
   }, [user])
 
   // Transform DB projects to display format
-  const transformProject = (p: DBProject): Project => ({
+  const transformProject = (p: ProjectWithThumbnail): Project => ({
     id: p.id,
     name: p.name,
+    thumbnail: undefined,
     updatedAt: formatRelativeTime(p.updated_at),
     createdAt: new Date(p.created_at).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" }),
     status: p.status,
@@ -179,7 +185,6 @@ export function LibraryProjectsPage() {
 
   const statusLabels: Record<StatusFilter, string> = {
     all: "All",
-    draft: "Drafts",
     in_progress: "Active",
     completed: "Completed",
   }
@@ -239,7 +244,7 @@ export function LibraryProjectsPage() {
   }
 
   return (
-    <LibraryLayout>
+    <LibraryLayout libraryPage="projects">
       <div className="max-w-4xl mx-auto px-6 lg:px-8 py-6 lg:py-8 space-y-8">
         {/* Header */}
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
@@ -351,7 +356,7 @@ export function LibraryProjectsPage() {
             {statusFilter === "all" ? (
               <button
                 onClick={() => toggleSection("active")}
-                className="flex items-center gap-2 text-sky-400 hover:text-sky-300 transition-colors"
+                className="flex items-center gap-2 text-emerald-400 hover:text-emerald-300 transition-colors"
               >
                 {expandedSections.active ? (
                   <ChevronDown className="w-4 h-4" />
@@ -367,7 +372,7 @@ export function LibraryProjectsPage() {
                 </span>
               </button>
             ) : (
-              <div className="flex items-center gap-2 text-sky-400">
+              <div className="flex items-center gap-2 text-emerald-400">
                 <FolderOpen className="w-4 h-4" />
                 <span className="text-sm font-semibold uppercase tracking-wide">
                   Active Projects
@@ -401,7 +406,7 @@ export function LibraryProjectsPage() {
             {statusFilter === "all" ? (
               <button
                 onClick={() => toggleSection("completed")}
-                className="flex items-center gap-2 text-emerald-400 hover:text-emerald-300 transition-colors"
+                className="flex items-center gap-2 text-sky-400 hover:text-sky-300 transition-colors"
               >
                 {expandedSections.completed ? (
                   <ChevronDown className="w-4 h-4" />
@@ -417,7 +422,7 @@ export function LibraryProjectsPage() {
                 </span>
               </button>
             ) : (
-              <div className="flex items-center gap-2 text-emerald-400">
+              <div className="flex items-center gap-2 text-sky-400">
                 <CheckCircle2 className="w-4 h-4" />
                 <span className="text-sm font-semibold uppercase tracking-wide">
                   Completed

@@ -105,8 +105,8 @@ export async function generateImages(options: GenerateImageOptions): Promise<str
     negativePrompt,
     style,
     referenceImageUrl,
-    width = 1024,
-    height = 1024,
+    width = 1344,
+    height = 768,
     numOutputs = 4,
   } = options
 

@@ -12,7 +12,7 @@ export type Json =
 export type AspectRatio = '16:9' | '9:16' | '1:1' | '4:5' | '4:3' | '21:9'
 export type SubscriptionTier = 'trial' | 'lite' | 'basic' | 'enterprise'
 export type ProjectStatus = 'draft' | 'in_progress' | 'completed' | 'archived'
-export type AssetType = 'image' | 'video' | 'audio'
+export type AssetType = 'image' | 'video' | 'audio' | 'animation'
 // Visual categories (for image/video assets)
 export type VisualAssetCategory = 'scene' | 'stage' | 'character' | 'weather' | 'prop' | 'effect'
 // Audio categories (for audio assets)
@@ -21,6 +21,50 @@ export type AudioAssetCategory = 'music' | 'sound_effect' | 'voice'
 export type AssetCategory = VisualAssetCategory | AudioAssetCategory
 // Storage type for assets (local filesystem vs cloud storage)
 export type AssetStorageType = 'local' | 'cloud'
+
+// Animation types
+export type AnimationType = 'fadeIn' | 'fadeOut' | 'slideUp' | 'slideDown' | 'slideLeft' | 'slideRight' | 'scale' | 'typewriter' | 'bounce' | 'pulse'
+export type AnimationLayerType = 'text' | 'shape' | 'image'
+
+export interface AnimationLayer {
+  id: string
+  type: AnimationLayerType
+  content: string // text content, shape type, or image URL
+  animation: AnimationType
+  timing: [number, number] // [startSec, endSec]
+  position?: { x: number; y: number } // percentage (0-100)
+  style?: {
+    fontSize?: number
+    fontFamily?: string
+    color?: string
+    backgroundColor?: string
+    opacity?: number
+    scale?: number
+    rotation?: number
+  }
+}
+
+export interface AnimationConfig {
+  duration: number // total duration in seconds
+  fps?: number // frames per second (default 30)
+  width?: number // output width (default from project)
+  height?: number // output height (default from project)
+  background?: {
+    color?: string
+    gradient?: string
+    image?: string
+  }
+  layers: AnimationLayer[]
+}
+
+// Effects layer for shots (overlays that play on top of content)
+export interface ShotEffect {
+  id: string
+  type: 'text' | 'lower_third' | 'watermark' | 'custom'
+  config: AnimationConfig
+  timing: [number, number] // [startSec, endSec] relative to shot
+}
+
 export type ExportResolution = '720p' | '1080p' | '4k'
 export type ExportFormat = 'mp4' | 'webm' | 'mov'
 export type ExportQuality = 'draft' | 'standard' | 'high'
@@ -136,7 +180,7 @@ export interface Shot {
   description: string | null
   duration: number
   sort_order: number
-  shot_type: string | null
+  shot_type: string | null // 'media' | 'animation' - type of shot content
   notes: string | null
   asset_config: Json
   media_type: AssetType | null
@@ -148,6 +192,9 @@ export interface Shot {
   image_asset_id: string | null
   video_asset_id: string | null
   audio_asset_id: string | null
+  animation_asset_id: string | null // For standalone animation shots
+  // Effects layer (overlays that play on top of this shot)
+  effects: Json // Array of ShotEffect
   created_at: string
   updated_at: string
 }
@@ -367,6 +414,8 @@ export interface ShotInsert {
   image_asset_id?: string | null
   video_asset_id?: string | null
   audio_asset_id?: string | null
+  animation_asset_id?: string | null
+  effects?: Json
 }
 
 export interface AssetInsert {
@@ -436,6 +485,12 @@ export interface ShotWithAssets extends Shot {
   image_asset?: Asset | null
   video_asset?: Asset | null
   audio_asset?: Asset | null
+  animation_asset?: Asset | null
+}
+
+// Parsed shot with typed effects (for client-side use)
+export interface ShotWithEffects extends ShotWithAssets {
+  parsedEffects: ShotEffect[]
 }
 
 // Subscription limits by tier

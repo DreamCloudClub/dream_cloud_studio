@@ -155,6 +155,13 @@ const VIDEO_DURATIONS = [
   { id: 10 as const, label: "10 seconds" },
 ]
 
+const ASPECT_RATIOS = [
+  { id: "16:9" as const, label: "Landscape (16:9)", width: 1344, height: 768 },
+  { id: "9:16" as const, label: "Portrait (9:16)", width: 768, height: 1344 },
+  { id: "1:1" as const, label: "Square (1:1)", width: 1024, height: 1024 },
+  { id: "4:3" as const, label: "Standard (4:3)", width: 1152, height: 864 },
+]
+
 // Category-specific options and prompt modifiers
 interface CategoryConfig {
   label: string // Label for the dropdown
@@ -375,6 +382,7 @@ export function PromptAndGenerateStep() {
   const [imageModel, setImageModel] = useState<"flux-pro" | "gpt" | "sdxl">("flux-pro")
   const [videoModel, setVideoModel] = useState<"kling" | "minimax">("kling")
   const [videoDuration, setVideoDuration] = useState<5 | 10>(5)
+  const [aspectRatio, setAspectRatio] = useState<"16:9" | "9:16" | "1:1" | "4:3">("16:9")
   const [batches, setBatches] = useState<GeneratedBatch[]>([])
   const [pendingRefinement, setPendingRefinement] = useState("")
 
@@ -519,6 +527,7 @@ export function PromptAndGenerateStep() {
     try {
       if (assetType === "image") {
         // Generate 4 images
+        const selectedAspect = ASPECT_RATIOS.find(r => r.id === aspectRatio) || ASPECT_RATIOS[0]
         const urls = await generateImages({
           prompt: effectivePrompt,
           negativePrompt,
@@ -526,6 +535,8 @@ export function PromptAndGenerateStep() {
           referenceImageUrls: referenceUrls.length > 0 ? referenceUrls : undefined,
           model: imageModel,
           numOutputs: 4,
+          width: selectedAspect.width,
+          height: selectedAspect.height,
         })
 
         const newBatch: GeneratedBatch = {
@@ -548,11 +559,13 @@ export function PromptAndGenerateStep() {
         // Use reference image if provided, otherwise generate without
         const referenceImage = referenceUrls.length > 0 ? referenceUrls[0] : undefined
 
+        // Video only supports 16:9, 9:16, 1:1 - fall back to 16:9 if 4:3 selected
+        const videoAspect = aspectRatio === "4:3" ? "16:9" : aspectRatio
         const videoUrl = await generateVideo({
           imageUrl: referenceImage,
           prompt: effectivePrompt,
           duration: videoDuration,
-          aspectRatio: "16:9",
+          aspectRatio: videoAspect,
           model: videoModel,
         })
 
@@ -841,6 +854,20 @@ export function PromptAndGenerateStep() {
                     { value: "", label: "None", description: "No style preset" },
                     ...STYLE_PRESETS.map(s => ({ value: s.id, label: s.label }))
                   ]}
+                />
+              </div>
+            )}
+            {/* Aspect Ratio (images and video) */}
+            {(assetType === "image" || assetType === "video") && (
+              <div className="flex-1">
+                <label className="block text-xs font-medium text-zinc-400 mb-1.5">Aspect Ratio</label>
+                <CustomDropdown
+                  value={aspectRatio}
+                  onChange={(val) => setAspectRatio(val as "16:9" | "9:16" | "1:1" | "4:3")}
+                  options={ASPECT_RATIOS.map(r => ({
+                    value: r.id,
+                    label: r.label,
+                  }))}
                 />
               </div>
             )}
@@ -1133,32 +1160,31 @@ export function PromptAndGenerateStep() {
                     ))}
                   </div>
                 ) : (
-                  /* Image layout - grid of 4 */
-                  <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                  /* Image layout - 2x2 grid */
+                  <div className="grid grid-cols-2 gap-3">
                     {batch.assets.map(asset => (
                       <div
                         key={asset.id}
                         className={cn(
-                          "group relative aspect-square rounded-xl overflow-hidden border-2 transition-all cursor-pointer",
+                          "group relative rounded-xl overflow-hidden border-2 transition-all cursor-pointer",
                           asset.selected
                             ? "border-sky-500 ring-2 ring-sky-500/30"
                             : "border-zinc-700 hover:border-zinc-600"
                         )}
                         onClick={() => handleToggleSelection(batch.id, asset.id)}
                       >
-                        <img src={asset.url} alt="Generated" className="absolute inset-0 w-full h-full object-cover" />
+                        <img src={asset.url} alt="Generated" className="w-full h-auto block" />
 
                         {/* Hover overlay with actions */}
-                        <div className="absolute inset-0 bg-black/0 group-hover:bg-black/30 transition-all">
-                          <div className="absolute top-2 left-2 opacity-0 group-hover:opacity-100 transition-opacity flex gap-1">
-                            <button
-                              onClick={(e) => { e.stopPropagation(); handleRemoveAsset(batch.id, asset.id) }}
-                              className="p-1.5 bg-zinc-900/80 hover:bg-orange-500 text-zinc-400 hover:text-white rounded-lg transition-all"
-                              title="Remove"
-                            >
-                              <Trash2 className="w-3.5 h-3.5" />
-                            </button>
-                          </div>
+                        <div className="absolute inset-0 bg-black/0 group-hover:bg-black/30 transition-all pointer-events-none" />
+                        <div className="absolute top-2 left-2 opacity-0 group-hover:opacity-100 transition-opacity flex gap-1">
+                          <button
+                            onClick={(e) => { e.stopPropagation(); handleRemoveAsset(batch.id, asset.id) }}
+                            className="p-1.5 bg-zinc-900/80 hover:bg-orange-500 text-zinc-400 hover:text-white rounded-lg transition-all"
+                            title="Remove"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
                         </div>
 
                         {/* Selection indicator (blue checkmark) */}

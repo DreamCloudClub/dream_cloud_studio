@@ -61,6 +61,7 @@ const TYPE_ICONS: Record<AssetType, React.ElementType> = {
   image: Image,
   video: Film,
   audio: Volume2,
+  animation: Sparkles,
 }
 
 function formatFileSize(bytes: number | null): string {

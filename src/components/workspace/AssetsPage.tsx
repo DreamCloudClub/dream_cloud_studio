@@ -257,7 +257,7 @@ function AssetCreationWizard({
 }: {
   onBack: () => void
   onComplete: () => void
-  initialType?: "image" | "video" | "audio" | null
+  initialType?: "image" | "video" | "audio" | "animation" | null
 }) {
   const { currentStep, resetWizard, initWithType } = useAssetWizardStore()
   const hasInitialized = useRef(false)
@@ -388,7 +388,7 @@ export function AssetsPage() {
   const [searchQuery, setSearchQuery] = useState("")
   const [selectedType, setSelectedType] = useState<"all" | AssetType>("all")
   const [isCreating, setIsCreating] = useState(false)
-  const [creationInitialType, setCreationInitialType] = useState<"image" | "video" | "audio" | null>(null)
+  const [creationInitialType, setCreationInitialType] = useState<"image" | "video" | "audio" | "animation" | null>(null)
   const [allUserAssets, setAllUserAssets] = useState<Asset[]>([])
   const [isLoading, setIsLoading] = useState(true)
   const [isUploadModalOpen, setIsUploadModalOpen] = useState(false)

@@ -47,28 +47,116 @@ export async function getProjects(userId: string): Promise<Project[]> {
   return data as Project[]
 }
 
-export async function getCompletedProjects(userId: string): Promise<Project[]> {
+export interface ProjectWithThumbnail extends Project {
+  thumbnail_url?: string | null
+}
+
+export async function getCompletedProjects(userId: string): Promise<ProjectWithThumbnail[]> {
   const { data, error } = await supabase
     .from('projects')
-    .select('*')
+    .select(`
+      *,
+      scenes (
+        id,
+        sort_order,
+        shots (
+          id,
+          sort_order,
+          image_asset_id,
+          video_asset_id,
+          image_asset:assets!shots_image_asset_id_fkey (
+            url,
+            local_path,
+            storage_type
+          ),
+          video_asset:assets!shots_video_asset_id_fkey (
+            url,
+            local_path,
+            storage_type
+          )
+        )
+      )
+    `)
     .eq('user_id', userId)
     .in('status', ['completed', 'in_progress'])
     .order('updated_at', { ascending: false })
 
   if (error) throw error
-  return data as Project[]
+
+  // Extract thumbnail from first scene's first shot (prefer image, fallback to video)
+  return (data || []).map(project => {
+    const scenes = (project.scenes || []).sort((a: any, b: any) => a.sort_order - b.sort_order)
+    const firstScene = scenes[0]
+    const shots = firstScene?.shots?.sort((a: any, b: any) => a.sort_order - b.sort_order) || []
+
+    // Find first shot with an asset (image or video)
+    let thumbnail_url: string | null = null
+    for (const shot of shots) {
+      const asset = shot.image_asset || shot.video_asset
+      if (asset) {
+        thumbnail_url = asset.storage_type === 'local' ? asset.local_path : asset.url
+        break
+      }
+    }
+
+    // Remove nested data, just return project with thumbnail
+    const { scenes: _, ...projectData } = project
+    return { ...projectData, thumbnail_url } as ProjectWithThumbnail
+  })
 }
 
-export async function getDraftProjects(userId: string): Promise<Project[]> {
+export async function getDraftProjects(userId: string): Promise<ProjectWithThumbnail[]> {
   const { data, error } = await supabase
     .from('projects')
-    .select('*')
+    .select(`
+      *,
+      scenes (
+        id,
+        sort_order,
+        shots (
+          id,
+          sort_order,
+          image_asset_id,
+          video_asset_id,
+          image_asset:assets!shots_image_asset_id_fkey (
+            url,
+            local_path,
+            storage_type
+          ),
+          video_asset:assets!shots_video_asset_id_fkey (
+            url,
+            local_path,
+            storage_type
+          )
+        )
+      )
+    `)
     .eq('user_id', userId)
     .eq('status', 'draft')
     .order('updated_at', { ascending: false })
 
   if (error) throw error
-  return data as Project[]
+
+  // Extract thumbnail from first scene's first shot (prefer image, fallback to video)
+  return (data || []).map(project => {
+    const scenes = (project.scenes || []).sort((a: any, b: any) => a.sort_order - b.sort_order)
+    const firstScene = scenes[0]
+    const shots = firstScene?.shots?.sort((a: any, b: any) => a.sort_order - b.sort_order) || []
+
+    // Find first shot with an asset (image or video)
+    let thumbnail_url: string | null = null
+    for (const shot of shots) {
+      const asset = shot.image_asset || shot.video_asset
+      if (asset) {
+        thumbnail_url = asset.storage_type === 'local' ? asset.local_path : asset.url
+        break
+      }
+    }
+
+    // Remove nested data, just return project with thumbnail
+    const { scenes: _, ...projectData } = project
+    return { ...projectData, thumbnail_url } as ProjectWithThumbnail
+  })
 }
 
 export async function createDraftProject(userId: string, platformId?: string): Promise<Project> {

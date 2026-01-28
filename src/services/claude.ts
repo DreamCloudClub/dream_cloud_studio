@@ -70,7 +70,7 @@ export interface BubbleContext {
   }
   // Asset Creator wizard data
   assetWizard?: {
-    type?: 'image' | 'video' | 'audio'
+    type?: 'image' | 'video' | 'audio' | 'animation'
     category?: string
     name?: string
     userDescription?: string

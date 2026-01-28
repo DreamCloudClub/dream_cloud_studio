@@ -97,8 +97,8 @@ export async function generateImages(options: GenerateImageOptions): Promise<str
     style,
     referenceImageUrl,
     referenceImageUrls,
-    width = 1024,
-    height = 1024,
+    width = 1344,
+    height = 768,
     numOutputs = 4,
     model = "flux-pro",
   } = options
@@ -117,6 +117,14 @@ export async function generateImages(options: GenerateImageOptions): Promise<str
     allReferenceUrls.push(referenceImageUrl)
   }
 
+  // Calculate aspect ratio string from dimensions
+  const getAspectRatioString = (w: number, h: number): string => {
+    if (w === h) return "1:1"
+    if (w > h) return w / h >= 1.7 ? "16:9" : "4:3"
+    return h / w >= 1.7 ? "9:16" : "3:4"
+  }
+  const aspectRatioStr = getAspectRatioString(width, height)
+
   // If we have multiple reference images OR model is explicitly "gpt", use GPT-image-1.5
   // GPT-image-1.5 supports multiple input images for compositing (character + scene)
   if (allReferenceUrls.length > 1 || model === "gpt") {
@@ -129,7 +137,7 @@ export async function generateImages(options: GenerateImageOptions): Promise<str
         input_images: allReferenceUrls,
         input_fidelity: "high",  // Match style and features closely
         quality: "high",
-        aspect_ratio: "1:1",
+        aspect_ratio: aspectRatioStr,
         number_of_images: numOutputs,
         output_format: "png",
       }
@@ -167,7 +175,7 @@ export async function generateImages(options: GenerateImageOptions): Promise<str
         const input: Record<string, unknown> = {
           prompt: `${fullPrompt}. Keep the character/subject from the reference image consistent.`,
           input_image: allReferenceUrls[0],
-          aspect_ratio: "1:1",
+          aspect_ratio: aspectRatioStr,
           output_format: "png",
           safety_tolerance: 2,
           prompt_upsampling: true,
@@ -209,9 +217,7 @@ export async function generateImages(options: GenerateImageOptions): Promise<str
 
         const input: Record<string, unknown> = {
           prompt: fullPrompt,
-          width,
-          height,
-          aspect_ratio: "custom",
+          aspect_ratio: aspectRatioStr,
           output_format: "webp",
           output_quality: 90,
           safety_tolerance: 2,
@@ -290,17 +296,19 @@ export async function generateVideo(options: GenerateVideoOptions): Promise<stri
     prompt = "",
     duration = 5,
     quality = "pro",
+    aspectRatio = "16:9",
     model = "kling",
   } = options
 
   // Kling v2.1 - Best quality, 5 or 10 second videos
   if (model === "kling") {
-    console.log(`Generating ${duration}s video with Kling v2.1 (${quality} mode)${imageUrl ? ' from reference image' : ' from prompt'}...`)
+    console.log(`Generating ${duration}s ${aspectRatio} video with Kling v2.1 (${quality} mode)${imageUrl ? ' from reference image' : ' from prompt'}...`)
 
     const input: Record<string, unknown> = {
       prompt: prompt || "Smooth cinematic motion, professional cinematography, high quality",
       duration,
       mode: quality,  // "standard" = 720p, "pro" = 1080p
+      aspect_ratio: aspectRatio,
       negative_prompt: "blurry, low quality, distorted, glitchy",
     }
 

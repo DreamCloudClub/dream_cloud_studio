@@ -63,7 +63,7 @@ export function CreateNewHero({ onNewProject, onNewAsset, onStartWithBubble }: C
 
   return (
     <div className="py-6 sm:py-8 md:py-10 lg:py-12">
-      <div className="w-full max-w-[90%] md:max-w-[80%] lg:max-w-3xl mx-auto space-y-6 md:space-y-8">
+      <div className="w-full max-w-[90%] md:max-w-[80%] lg:max-w-3xl mx-auto space-y-4">
 
         {/* Instruction Carousel */}
         <div className="relative">
@@ -149,7 +149,7 @@ export function CreateNewHero({ onNewProject, onNewAsset, onStartWithBubble }: C
         {/* Start with Bubble Card - Soft white with glowing border */}
         <button
           onClick={onStartWithBubble}
-          className="group relative w-full overflow-hidden rounded-xl p-6 sm:p-8 bg-zinc-200 hover:bg-zinc-100 ring-4 ring-sky-500 shadow-xl shadow-sky-500/20 hover:shadow-sky-500/30 transition-all hover:scale-[1.01] text-left"
+          className="group relative w-full overflow-hidden rounded-xl p-6 sm:p-8 bg-zinc-200 hover:bg-zinc-100 ring-4 ring-inset ring-sky-500 shadow-xl shadow-sky-500/20 hover:shadow-sky-500/30 transition-all hover:scale-[1.01] text-left"
         >
           <div className="relative z-10 flex items-center gap-5 sm:gap-6">
             {/* Glowing blue cloud icon */}
