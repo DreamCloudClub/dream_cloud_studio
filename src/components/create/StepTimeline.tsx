@@ -1,4 +1,4 @@
-import { Check, Box, FileText, Palette, BookOpen, Clapperboard, Video, Volume2, Sparkles } from "lucide-react"
+import { Check, Box, FileText, Palette, BookOpen, Sparkles, ScrollText } from "lucide-react"
 import { cn } from "@/lib/utils"
 import {
   useProjectWizardStore,
@@ -10,11 +10,9 @@ import {
 const stepIcons: Record<WizardStep, React.ElementType> = {
   platform: Box,
   brief: FileText,
+  script: ScrollText,
   mood: Palette,
   story: BookOpen,
-  shots: Clapperboard,
-  filming: Video,
-  audio: Volume2,
   review: Sparkles,
 }
 
@@ -23,7 +21,7 @@ interface StepTimelineProps {
 }
 
 export function StepTimeline({ className }: StepTimelineProps) {
-  const { currentStep, completedSteps, setStep, canNavigateToStep, filmingProgress, shots } =
+  const { currentStep, completedSteps, setStep, canNavigateToStep } =
     useProjectWizardStore()
 
   const currentIndex = WIZARD_STEPS.findIndex((s) => s.id === currentStep)
@@ -33,15 +31,6 @@ export function StepTimeline({ className }: StepTimelineProps) {
       setStep(step)
     }
   }
-
-  // Calculate filming sub-progress text
-  const getFilmingSubtext = () => {
-    if (currentStep !== "filming" || shots.length === 0) return null
-    const completedCount = filmingProgress.completedShots.length
-    return `Shot ${Math.min(completedCount + 1, shots.length)} of ${shots.length}`
-  }
-
-  const filmingSubtext = getFilmingSubtext()
 
   return (
     <div
@@ -123,14 +112,6 @@ export function StepTimeline({ className }: StepTimelineProps) {
           })}
         </div>
 
-        {/* Filming sub-progress indicator */}
-        {filmingSubtext && (
-          <div className="text-center mt-3">
-            <span className="text-xs text-zinc-500 bg-zinc-800/50 px-3 py-1 rounded-full">
-              {filmingSubtext}
-            </span>
-          </div>
-        )}
       </div>
     </div>
   )

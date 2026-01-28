@@ -1,7 +1,9 @@
 import { useParams, useNavigate } from "react-router-dom"
-import { ArrowLeft, Edit2, Trash2, Copy } from "lucide-react"
+import { useEffect } from "react"
+import { ArrowLeft, Edit2, Trash2, Copy, Loader2 } from "lucide-react"
 import { useFoundationStore } from "@/state/foundationStore"
 import { useUIStore } from "@/state/uiStore"
+import { useAuth } from "@/contexts/AuthContext"
 import { DashboardHeader, DashboardNav } from "@/components/dashboard"
 import { BubblePanel } from "@/components/create"
 import {
@@ -15,11 +17,27 @@ import {
 export function FoundationDetail() {
   const { foundationId } = useParams()
   const navigate = useNavigate()
+  const { user } = useAuth()
   const { isBubbleCollapsed, toggleBubbleCollapsed } = useUIStore()
-  const { foundations, removeFoundation, duplicateFoundation } = useFoundationStore()
+  const { foundations, isLoading, loadFoundations, removeFoundation, duplicateFoundation } = useFoundationStore()
   const { loadFoundation } = useFoundationWizardStore()
 
+  // Load foundations if not loaded
+  useEffect(() => {
+    if (user && foundations.length === 0 && !isLoading) {
+      loadFoundations(user.id)
+    }
+  }, [user, foundations.length, isLoading, loadFoundations])
+
   const foundation = foundations.find((f) => f.id === foundationId)
+
+  if (isLoading) {
+    return (
+      <div className="h-screen bg-zinc-950 flex items-center justify-center">
+        <Loader2 className="w-8 h-8 text-sky-400 animate-spin" />
+      </div>
+    )
+  }
 
   if (!foundation) {
     return (
@@ -36,6 +54,9 @@ export function FoundationDetail() {
       </div>
     )
   }
+
+  // Safely access color_palette with fallback
+  const colorPalette = foundation.color_palette || []
 
   const getLabel = (options: { id: string; label: string }[], id: string | null) => {
     return options.find((o) => o.id === id)?.label || "Not set"
@@ -56,7 +77,17 @@ export function FoundationDetail() {
   }
 
   const handleEdit = () => {
-    loadFoundation(foundation)
+    loadFoundation({
+      id: foundation.id,
+      name: foundation.name,
+      description: foundation.description || undefined,
+      colorPalette: colorPalette,
+      style: foundation.style,
+      mood: foundation.mood,
+      typography: foundation.typography,
+      tone: foundation.tone,
+      moodImages: foundation.mood_images || [],
+    })
     navigate("/create/foundation")
   }
 
@@ -101,7 +132,7 @@ export function FoundationDetail() {
             <div className="flex items-start justify-between mb-8">
               <div className="flex items-start gap-4">
                 <div className="w-20 h-20 rounded-xl overflow-hidden grid grid-cols-2 grid-rows-2 flex-shrink-0">
-                  {foundation.colorPalette.slice(0, 4).map((color, i) => (
+                  {colorPalette.slice(0, 4).map((color, i) => (
                     <div key={i} style={{ backgroundColor: color }} />
                   ))}
                 </div>
@@ -111,8 +142,8 @@ export function FoundationDetail() {
                     <p className="text-zinc-400 mt-1">{foundation.description}</p>
                   )}
                   <p className="text-sm text-zinc-500 mt-2">
-                    Used in {foundation.projectCount} project{foundation.projectCount !== 1 ? "s" : ""} •
-                    Created {formatDate(foundation.createdAt)}
+                    Used in {foundation.project_count} project{foundation.project_count !== 1 ? "s" : ""} •
+                    Created {formatDate(foundation.created_at)}
                   </p>
                 </div>
               </div>
@@ -146,7 +177,7 @@ export function FoundationDetail() {
             <section className="mb-8">
               <h2 className="text-sm font-medium text-zinc-300 mb-3">Color Palette</h2>
               <div className="flex gap-3 flex-wrap">
-                {foundation.colorPalette.map((color, i) => (
+                {colorPalette.map((color, i) => (
                   <div key={i} className="flex flex-col items-center">
                     <div
                       className="w-16 h-16 rounded-xl border border-zinc-700"
@@ -182,11 +213,11 @@ export function FoundationDetail() {
             </section>
 
             {/* Mood Images */}
-            {foundation.moodImages.length > 0 && (
+            {foundation.mood_images && foundation.mood_images.length > 0 && (
               <section className="mb-8">
                 <h2 className="text-sm font-medium text-zinc-300 mb-3">Reference Images</h2>
                 <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-                  {foundation.moodImages.map((image) => (
+                  {foundation.mood_images.map((image) => (
                     <div
                       key={image.id}
                       className="aspect-square rounded-xl overflow-hidden bg-zinc-800"
@@ -207,7 +238,7 @@ export function FoundationDetail() {
               <h2 className="text-sm font-medium text-zinc-300 mb-3">Preview</h2>
               <div className="p-6 bg-zinc-900 rounded-xl border border-zinc-800">
                 <div className="flex gap-1 h-16 rounded-lg overflow-hidden mb-4">
-                  {foundation.colorPalette.map((color, i) => (
+                  {colorPalette.map((color, i) => (
                     <div key={i} className="flex-1" style={{ backgroundColor: color }} />
                   ))}
                 </div>

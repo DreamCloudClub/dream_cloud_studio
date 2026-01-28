@@ -63,7 +63,7 @@ export function TypeStep() {
                 key={type.id}
                 onClick={() => handleSelect(type.id)}
                 className={cn(
-                  "relative p-6 rounded-2xl border-2 transition-all text-left",
+                  "relative p-6 rounded-2xl border-2 transition-all text-left flex flex-col items-start h-full",
                   isSelected
                     ? "border-sky-500 bg-sky-500/10"
                     : "border-zinc-800 bg-zinc-900 hover:border-zinc-700"

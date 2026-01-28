@@ -6,7 +6,10 @@ import { CreateAssetWizard } from "@/pages/CreateAssetWizard"
 import { CreateFoundationWizard } from "@/pages/CreateFoundationWizard"
 import { FoundationDetail } from "@/pages/FoundationDetail"
 import { Workspace } from "@/pages/Workspace"
-import { LibraryAssetsPage, LibraryProjectsPage, LibraryFoundationsPage } from "@/pages/library"
+import { LibraryAssetsPage, LibraryProjectsPage, LibraryFoundationsPage, LibraryPlatformsPage } from "@/pages/library"
+import { PlatformDetail } from "@/pages/PlatformDetail"
+import { PlatformEdit } from "@/pages/PlatformEdit"
+import { CreatePlatform } from "@/pages/CreatePlatform"
 import { DevTools } from "@/pages/DevTools"
 import { Profile } from "@/pages/Profile"
 import Login from "@/pages/Login"
@@ -65,14 +68,20 @@ function AppRoutes() {
       <Route path="/create/project" element={<ProtectedRoute><CreateProjectWizard /></ProtectedRoute>} />
       <Route path="/create/asset" element={<ProtectedRoute><CreateAssetWizard /></ProtectedRoute>} />
       <Route path="/create/foundation" element={<ProtectedRoute><CreateFoundationWizard /></ProtectedRoute>} />
+      <Route path="/create/platform" element={<ProtectedRoute><CreatePlatform /></ProtectedRoute>} />
       <Route path="/project/:projectId" element={<ProtectedRoute><Workspace /></ProtectedRoute>} />
       <Route path="/foundation/:foundationId" element={<ProtectedRoute><FoundationDetail /></ProtectedRoute>} />
 
       {/* Library routes */}
-      <Route path="/library" element={<Navigate to="/library/assets" replace />} />
-      <Route path="/library/assets" element={<ProtectedRoute><LibraryAssetsPage /></ProtectedRoute>} />
+      <Route path="/library" element={<Navigate to="/library/platforms" replace />} />
+      <Route path="/library/platforms" element={<ProtectedRoute><LibraryPlatformsPage /></ProtectedRoute>} />
       <Route path="/library/projects" element={<ProtectedRoute><LibraryProjectsPage /></ProtectedRoute>} />
+      <Route path="/library/assets" element={<ProtectedRoute><LibraryAssetsPage /></ProtectedRoute>} />
       <Route path="/library/foundations" element={<ProtectedRoute><LibraryFoundationsPage /></ProtectedRoute>} />
+
+      {/* Platform routes */}
+      <Route path="/platform/:platformId" element={<ProtectedRoute><PlatformDetail /></ProtectedRoute>} />
+      <Route path="/platform/:platformId/edit" element={<ProtectedRoute><PlatformEdit /></ProtectedRoute>} />
 
       {/* User routes */}
       <Route path="/profile" element={<ProtectedRoute><Profile /></ProtectedRoute>} />

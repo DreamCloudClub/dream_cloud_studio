@@ -1,11 +1,14 @@
 import { useState, useEffect } from "react"
-import { useNavigate } from "react-router-dom"
-import { Upload, Wand2, X, Plus, Palette, ChevronDown, Check, Loader2, Save } from "lucide-react"
+import { Upload, X, Plus, Palette, ChevronDown, Check, Loader2, Save, ImagePlus } from "lucide-react"
 import { useProjectWizardStore } from "@/state/projectWizardStore"
 import { useFoundationStore, Foundation } from "@/state/foundationStore"
+import { useAuth } from "@/contexts/AuthContext"
 import { Button } from "@/components/ui/button"
 import { cn } from "@/lib/utils"
 import { getMoodBoard, createMoodBoard, updateMoodBoard } from "@/services/projects"
+import { getAssets, uploadAndCreateAsset } from "@/services/assets"
+import { getAssetDisplayUrl } from "@/services/localStorage"
+import type { Asset } from "@/types/database"
 
 // Preset color palettes for quick selection
 const presetPalettes = [
@@ -33,11 +36,267 @@ const styleKeywords = [
   "Dynamic",
 ]
 
+// Reference Modal Component
+interface ReferenceModalProps {
+  isOpen: boolean
+  onClose: () => void
+  onSelect: (image: { id: string; url: string; name: string }) => void
+}
+
+function ReferenceModal({ isOpen, onClose, onSelect }: ReferenceModalProps) {
+  const { user } = useAuth()
+  const [activeTab, setActiveTab] = useState<"library" | "upload">("library")
+  const [libraryAssets, setLibraryAssets] = useState<Asset[]>([])
+  const [isLoadingAssets, setIsLoadingAssets] = useState(true)
+  const [selectedAssetId, setSelectedAssetId] = useState<string | null>(null)
+  const [file, setFile] = useState<File | null>(null)
+  const [isDragging, setIsDragging] = useState(false)
+  const [isUploading, setIsUploading] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+
+  useEffect(() => {
+    async function fetchAssets() {
+      if (!user || !isOpen) return
+      setIsLoadingAssets(true)
+      try {
+        const allAssets = await getAssets(user.id)
+        const filtered = allAssets.filter((a) => a.type === "image")
+        setLibraryAssets(filtered)
+      } catch (err) {
+        console.error("Error fetching assets:", err)
+      } finally {
+        setIsLoadingAssets(false)
+      }
+    }
+    fetchAssets()
+  }, [user, isOpen])
+
+  const handleDrop = (e: React.DragEvent) => {
+    e.preventDefault()
+    setIsDragging(false)
+    const droppedFile = e.dataTransfer.files[0]
+    if (droppedFile && droppedFile.type.startsWith("image/")) {
+      setFile(droppedFile)
+      setError(null)
+    }
+  }
+
+  const handleBrowse = () => {
+    const input = document.createElement("input")
+    input.type = "file"
+    input.accept = "image/*"
+    input.onchange = (e) => {
+      const selectedFile = (e.target as HTMLInputElement).files?.[0]
+      if (selectedFile) {
+        setFile(selectedFile)
+        setError(null)
+      }
+    }
+    input.click()
+  }
+
+  const handleUpload = async () => {
+    if (!user || !file) return
+    setIsUploading(true)
+    setError(null)
+    try {
+      const asset = await uploadAndCreateAsset(user.id, file, {
+        category: "scene",
+        bucket: "project-assets",
+      })
+      onSelect({
+        id: asset.id,
+        url: getAssetDisplayUrl(asset),
+        name: asset.name,
+      })
+      handleClose()
+    } catch (err) {
+      console.error("Upload error:", err)
+      setError("Failed to upload. Please try again.")
+    } finally {
+      setIsUploading(false)
+    }
+  }
+
+  const handleSelectFromLibrary = () => {
+    if (!selectedAssetId) return
+    const asset = libraryAssets.find((a) => a.id === selectedAssetId)
+    if (asset) {
+      onSelect({
+        id: asset.id,
+        url: getAssetDisplayUrl(asset),
+        name: asset.name,
+      })
+      handleClose()
+    }
+  }
+
+  const handleClose = () => {
+    setFile(null)
+    setSelectedAssetId(null)
+    setError(null)
+    setActiveTab("library")
+    onClose()
+  }
+
+  if (!isOpen) return null
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center">
+      <div className="absolute inset-0 bg-black/70 backdrop-blur-sm" onClick={handleClose} />
+      <div className="relative bg-zinc-900 border border-zinc-700 rounded-2xl w-full max-w-lg mx-4 max-h-[80vh] flex flex-col">
+        <div className="flex items-center justify-between p-4 border-b border-zinc-800">
+          <h2 className="text-lg font-semibold text-zinc-100">Add Reference Image</h2>
+          <button onClick={handleClose} className="p-1 text-zinc-400 hover:text-zinc-200 transition-colors">
+            <X className="w-5 h-5" />
+          </button>
+        </div>
+
+        <div className="flex border-b border-zinc-800">
+          <button
+            onClick={() => setActiveTab("library")}
+            className={cn(
+              "flex-1 px-4 py-3 text-sm font-medium transition-colors",
+              activeTab === "library" ? "text-sky-400 border-b-2 border-sky-400" : "text-zinc-400 hover:text-zinc-200"
+            )}
+          >
+            From Library
+          </button>
+          <button
+            onClick={() => setActiveTab("upload")}
+            className={cn(
+              "flex-1 px-4 py-3 text-sm font-medium transition-colors",
+              activeTab === "upload" ? "text-sky-400 border-b-2 border-sky-400" : "text-zinc-400 hover:text-zinc-200"
+            )}
+          >
+            Upload New
+          </button>
+        </div>
+
+        <div className="flex-1 overflow-y-auto p-4">
+          {activeTab === "library" ? (
+            <div>
+              {isLoadingAssets ? (
+                <div className="flex items-center justify-center py-12">
+                  <Loader2 className="w-6 h-6 text-sky-400 animate-spin" />
+                </div>
+              ) : libraryAssets.length === 0 ? (
+                <div className="text-center py-12">
+                  <ImagePlus className="w-10 h-10 text-zinc-600 mx-auto mb-3" />
+                  <p className="text-zinc-400 text-sm">No images in your library</p>
+                  <button onClick={() => setActiveTab("upload")} className="mt-3 text-sky-400 hover:text-sky-300 text-sm">
+                    Upload one instead
+                  </button>
+                </div>
+              ) : (
+                <div className="grid grid-cols-3 gap-2">
+                  {libraryAssets.map((asset) => (
+                    <button
+                      key={asset.id}
+                      onClick={() => setSelectedAssetId(asset.id)}
+                      className={cn(
+                        "relative aspect-square rounded-lg overflow-hidden border-2 transition-all",
+                        selectedAssetId === asset.id ? "border-sky-500 ring-2 ring-sky-500/30" : "border-zinc-700 hover:border-zinc-600"
+                      )}
+                    >
+                      <img src={getAssetDisplayUrl(asset)} alt={asset.name} className="w-full h-full object-cover" />
+                      {selectedAssetId === asset.id && (
+                        <div className="absolute top-1 right-1 w-5 h-5 rounded-full bg-sky-500 flex items-center justify-center">
+                          <Check className="w-3 h-3 text-white" />
+                        </div>
+                      )}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+          ) : (
+            <div className="space-y-4">
+              {!file ? (
+                <div
+                  onDrop={handleDrop}
+                  onDragOver={(e) => { e.preventDefault(); setIsDragging(true) }}
+                  onDragLeave={(e) => { e.preventDefault(); setIsDragging(false) }}
+                  onClick={handleBrowse}
+                  className={cn(
+                    "border-2 border-dashed rounded-xl p-8 text-center cursor-pointer transition-colors",
+                    isDragging ? "border-sky-500 bg-sky-500/10" : "border-zinc-700 hover:border-zinc-600"
+                  )}
+                >
+                  <Upload className="w-10 h-10 text-zinc-500 mx-auto mb-3" />
+                  <p className="text-zinc-300 font-medium mb-1">Drop your image here</p>
+                  <p className="text-sm text-zinc-500">or click to browse</p>
+                </div>
+              ) : (
+                <div className="bg-zinc-800/50 rounded-xl p-4 flex items-center gap-3">
+                  <div className="w-12 h-12 rounded-lg bg-sky-500/20 flex items-center justify-center flex-shrink-0">
+                    <ImagePlus className="w-6 h-6 text-sky-400" />
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-zinc-200 font-medium truncate">{file.name}</p>
+                    <p className="text-xs text-zinc-500">{(file.size / 1024 / 1024).toFixed(2)} MB</p>
+                  </div>
+                  <button onClick={() => setFile(null)} className="p-1 text-zinc-400 hover:text-zinc-200">
+                    <X className="w-4 h-4" />
+                  </button>
+                </div>
+              )}
+              {error && (
+                <div className="p-3 bg-red-500/10 border border-red-500/30 rounded-xl text-sm text-red-400">{error}</div>
+              )}
+            </div>
+          )}
+        </div>
+
+        <div className="flex justify-end gap-3 p-4 border-t border-zinc-800">
+          <button onClick={handleClose} className="px-4 py-2 rounded-lg text-zinc-300 hover:bg-zinc-800 transition-colors">
+            Cancel
+          </button>
+          {activeTab === "library" ? (
+            <button
+              onClick={handleSelectFromLibrary}
+              disabled={!selectedAssetId}
+              className={cn(
+                "px-6 py-2 rounded-lg font-medium transition-all",
+                selectedAssetId
+                  ? "bg-gradient-to-br from-sky-400 via-sky-500 to-blue-600 text-white hover:opacity-90"
+                  : "bg-zinc-800 text-zinc-500 cursor-not-allowed"
+              )}
+            >
+              Select
+            </button>
+          ) : (
+            <button
+              onClick={handleUpload}
+              disabled={!file || isUploading}
+              className={cn(
+                "px-6 py-2 rounded-lg font-medium transition-all inline-flex items-center gap-2",
+                file && !isUploading
+                  ? "bg-gradient-to-br from-sky-400 via-sky-500 to-blue-600 text-white hover:opacity-90"
+                  : "bg-zinc-800 text-zinc-500 cursor-not-allowed"
+              )}
+            >
+              {isUploading ? (
+                <>
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                  Uploading...
+                </>
+              ) : (
+                "Upload & Select"
+              )}
+            </button>
+          )}
+        </div>
+      </div>
+    </div>
+  )
+}
+
 export function MoodBoardStep() {
-  const navigate = useNavigate()
+  const { user } = useAuth()
   const { moodBoard, setMoodBoard, goToNextStep, goToPreviousStep, markStepComplete, projectId } =
     useProjectWizardStore()
-  const { foundations } = useFoundationStore()
+  const { foundations, loadFoundations, isLoading: isLoadingFoundations } = useFoundationStore()
 
   const [images, setImages] = useState<{ id: string; url: string; name: string }[]>(
     moodBoard?.images || []
@@ -50,9 +309,17 @@ export function MoodBoardStep() {
   )
   const [selectedFoundation, setSelectedFoundation] = useState<Foundation | null>(null)
   const [showFoundationPicker, setShowFoundationPicker] = useState(false)
+  const [showReferenceModal, setShowReferenceModal] = useState(false)
   const [isSaving, setIsSaving] = useState(false)
   const [isSavingDraft, setIsSavingDraft] = useState(false)
   const [moodBoardExists, setMoodBoardExists] = useState(false)
+
+  // Load foundations on mount
+  useEffect(() => {
+    if (user && foundations.length === 0 && !isLoadingFoundations) {
+      loadFoundations(user.id)
+    }
+  }, [user, foundations.length, isLoadingFoundations, loadFoundations])
 
   // Check if mood board exists on mount
   useEffect(() => {
@@ -72,14 +339,8 @@ export function MoodBoardStep() {
     }
   }, [moodBoard])
 
-  const handleAddImage = () => {
-    // In a real app, this would open a file picker or generate with AI
-    const mockImage = {
-      id: crypto.randomUUID(),
-      url: `https://picsum.photos/seed/${Math.random()}/400/300`,
-      name: `Reference ${images.length + 1}`,
-    }
-    setImages([...images, mockImage])
+  const handleAddImage = (image: { id: string; url: string; name: string }) => {
+    setImages([...images, image])
   }
 
   const handleRemoveImage = (imageId: string) => {
@@ -100,7 +361,7 @@ export function MoodBoardStep() {
 
   const handleApplyFoundation = (foundation: Foundation) => {
     setSelectedFoundation(foundation)
-    setSelectedColors(foundation.colorPalette)
+    setSelectedColors(foundation.color_palette || [])
     // Map foundation style to keywords if it exists
     const keywords: string[] = []
     if (foundation.style) {
@@ -127,8 +388,8 @@ export function MoodBoardStep() {
     }
     setSelectedKeywords(keywords)
     // Add foundation mood images if any
-    if (foundation.moodImages.length > 0) {
-      setImages(foundation.moodImages)
+    if (foundation.mood_images && foundation.mood_images.length > 0) {
+      setImages(foundation.mood_images)
     }
     setShowFoundationPicker(false)
   }
@@ -163,7 +424,7 @@ export function MoodBoardStep() {
         foundationId: selectedFoundation?.id,
       })
 
-      navigate("/library/projects")
+      // Stay on page - user can use back button to exit
     } catch (error) {
       console.error("Error saving draft:", error)
     } finally {
@@ -257,7 +518,7 @@ export function MoodBoardStep() {
               {selectedFoundation ? (
                 <div className="flex items-center gap-3 p-3 bg-zinc-900 border border-sky-500/50 rounded-xl">
                   <div className="w-10 h-10 rounded-lg overflow-hidden grid grid-cols-2 grid-rows-2 flex-shrink-0">
-                    {selectedFoundation.colorPalette.slice(0, 4).map((color, i) => (
+                    {(selectedFoundation.color_palette || []).slice(0, 4).map((color, i) => (
                       <div key={i} style={{ backgroundColor: color }} />
                     ))}
                   </div>
@@ -307,7 +568,7 @@ export function MoodBoardStep() {
                         className="w-full flex items-center gap-3 p-3 hover:bg-zinc-800 transition-colors text-left"
                       >
                         <div className="w-10 h-10 rounded-lg overflow-hidden grid grid-cols-2 grid-rows-2 flex-shrink-0">
-                          {foundation.colorPalette.slice(0, 4).map((color, i) => (
+                          {(foundation.color_palette || []).slice(0, 4).map((color, i) => (
                             <div key={i} style={{ backgroundColor: color }} />
                           ))}
                         </div>
@@ -347,30 +608,20 @@ export function MoodBoardStep() {
                 />
                 <button
                   onClick={() => handleRemoveImage(image.id)}
-                  className="absolute top-2 right-2 w-6 h-6 bg-zinc-900/80 rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity hover:bg-red-500"
+                  className="absolute top-2 right-2 w-6 h-6 bg-zinc-900/80 rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity hover:bg-orange-500"
                 >
                   <X className="w-4 h-4 text-white" />
                 </button>
               </div>
             ))}
 
-            {/* Add Image Buttons */}
+            {/* Add Image Button */}
             <button
-              onClick={handleAddImage}
-              className="aspect-video bg-zinc-900 border-2 border-dashed border-zinc-700 hover:border-zinc-600 rounded-lg flex flex-col items-center justify-center gap-2 transition-colors"
+              onClick={() => setShowReferenceModal(true)}
+              className="aspect-video bg-zinc-900 border-2 border-dashed border-zinc-700 hover:border-sky-500 hover:bg-sky-500/5 rounded-lg flex flex-col items-center justify-center gap-2 transition-colors text-zinc-500 hover:text-sky-400"
             >
-              <Upload className="w-6 h-6 text-zinc-500" />
-              <span className="text-xs text-zinc-500">Upload</span>
-            </button>
-
-            <button
-              onClick={handleAddImage}
-              className="aspect-video bg-zinc-900 border-2 border-dashed border-zinc-700 hover:border-sky-500/50 rounded-lg flex flex-col items-center justify-center gap-2 transition-colors group"
-            >
-              <Wand2 className="w-6 h-6 text-zinc-500 group-hover:text-sky-400" />
-              <span className="text-xs text-zinc-500 group-hover:text-sky-400">
-                Generate
-              </span>
+              <ImagePlus className="w-6 h-6" />
+              <span className="text-xs">Add Reference</span>
             </button>
           </div>
         </div>
@@ -494,6 +745,13 @@ export function MoodBoardStep() {
           </div>
         </div>
       </div>
+
+      {/* Reference Modal */}
+      <ReferenceModal
+        isOpen={showReferenceModal}
+        onClose={() => setShowReferenceModal(false)}
+        onSelect={handleAddImage}
+      />
     </div>
   )
 }

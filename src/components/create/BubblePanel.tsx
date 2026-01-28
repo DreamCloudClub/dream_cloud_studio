@@ -3,7 +3,9 @@ import { useLocation, useNavigate } from "react-router-dom"
 import { Mic, Send, Loader2, MessageSquare, ChevronLeft } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { useProjectWizardStore, WIZARD_STEPS } from "@/state/projectWizardStore"
-import { useWorkspaceStore } from "@/state/workspaceStore"
+import { useAssetWizardStore } from "@/state/assetWizardStore"
+import { useWorkspaceStore, type WorkspaceTab } from "@/state/workspaceStore"
+import { useFoundationWizardStore } from "@/state/foundationWizardStore"
 import { useAuth } from "@/contexts/AuthContext"
 import { sendMessage, getInitialGreeting, type BubbleContext, type Message, type ToolCall, type ToolResult } from "@/services/claude"
 import {
@@ -18,10 +20,10 @@ import {
   getStoryboard,
   createStoryboard,
   updateStoryboard as updateStoryboardDb,
+  getScenes,
   getScenesWithShots,
   createScene,
   updateScene,
-  deleteScene,
   createShot as createShotDb,
   updateShot as updateShotDb,
   deleteShot as deleteShotDb,
@@ -31,6 +33,14 @@ import { createAsset, incrementUsage } from "@/services/assets"
 import { generateImages } from "@/services/replicate"
 import { generateVoice, generateSoundEffect, DEFAULT_VOICES } from "@/services/elevenlabs"
 import { generateMusic } from "@/services/replicate"
+import {
+  getScriptCharacters,
+  getScriptSectionsWithCharacters,
+  createScriptCharacter,
+  createScriptSection,
+  updateScriptSection,
+} from "@/services/scripts"
+import type { ScriptCharacter, ScriptSectionWithCharacter } from "@/types/database"
 
 interface BubblePanelProps {
   className?: string
@@ -49,6 +59,10 @@ export function BubblePanel({ className, isCollapsed = false, onToggleCollapse }
   const collapsedRecognitionRef = useRef<SpeechRecognition | null>(null)
   const collapsedSilenceTimeoutRef = useRef<NodeJS.Timeout | null>(null)
 
+  // Script data for context
+  const [scriptCharacters, setScriptCharacters] = useState<ScriptCharacter[]>([])
+  const [scriptSections, setScriptSections] = useState<ScriptSectionWithCharacter[]>([])
+
   const location = useLocation()
   const navigate = useNavigate()
 
@@ -56,20 +70,40 @@ export function BubblePanel({ className, isCollapsed = false, onToggleCollapse }
   const {
     project: workspaceProject,
     activeTab,
+    setActiveTab: setWorkspaceTab,
+    selectedSceneId,
+    selectedShotId,
+    isPlaying,
+    setSelectedScene: setWorkspaceSelectedScene,
+    setSelectedShot: setWorkspaceSelectedShot,
+    setIsPlaying: setWorkspaceIsPlaying,
+    startAssetCreation: workspaceStartAssetCreation,
     updateBrief: updateWorkspaceBrief,
     updateMoodBoard: updateWorkspaceMoodBoard,
     updateScene: updateWorkspaceScene,
     updateShot: updateWorkspaceShot,
     addScene: addWorkspaceScene,
     addShot: addWorkspaceShot,
+    removeScene: removeWorkspaceScene,
+    removeShot: removeWorkspaceShot,
+    reorderScenes: reorderWorkspaceScenes,
+    reorderShots: reorderWorkspaceShots,
     updateComposition: updateWorkspaceComposition,
     updateExportSettings: updateWorkspaceExportSettings,
+    addStoryboardCard: addWorkspaceStoryboardCard,
+    updateStoryboardCard: updateWorkspaceStoryboardCard,
+    removeStoryboardCard: removeWorkspaceStoryboardCard,
   } = useWorkspaceStore()
 
   // Detect context based on route
   const isOnDashboard = location.pathname === "/"
   const isInWorkspace = location.pathname.startsWith("/project/")
-  const isInCreateWizard = location.pathname.startsWith("/create/")
+  const isInAssetCreator = location.pathname.startsWith("/create/asset")
+  const isInFoundationCreator = location.pathname.startsWith("/create/foundation")
+  const isInCreateWizard = location.pathname.startsWith("/create/") && !isInAssetCreator && !isInFoundationCreator
+  const isInLibraryAssets = location.pathname === "/library/assets"
+  const isInLibraryProjects = location.pathname === "/library/projects"
+  const isInLibrary = isInLibraryAssets || isInLibraryProjects
 
   // Auto-resize textarea based on content
   const adjustTextareaHeight = useCallback(() => {
@@ -139,10 +173,74 @@ export function BubblePanel({ className, isCollapsed = false, onToggleCollapse }
     addTextOverlay,
   } = useProjectWizardStore()
 
+  // Asset wizard store - for Create Asset flow
+  const {
+    currentStep: assetWizardStep,
+    assetType: wizardAssetType,
+    category: wizardCategory,
+    assetName: wizardAssetName,
+    userDescription: wizardUserDescription,
+    aiPrompt: wizardAiPrompt,
+    stylePreset: wizardStylePreset,
+    setAssetType: setWizardAssetType,
+    setCategory: setWizardCategory,
+    setAssetName: setWizardAssetName,
+    setUserDescription: setWizardUserDescription,
+    setAiPrompt: setWizardAiPrompt,
+    setStylePreset: setWizardStylePreset,
+    nextStep: nextAssetStep,
+  } = useAssetWizardStore()
+
+  // Foundation wizard store - for Create Foundation flow
+  const {
+    currentStep: foundationWizardStep,
+    editingId: foundationEditingId,
+    name: foundationName,
+    description: foundationDescription,
+    colorPalette: foundationColorPalette,
+    style: foundationStyle,
+    mood: foundationMood,
+    typography: foundationTypography,
+    tone: foundationTone,
+    moodImages: foundationMoodImages,
+    setName: setFoundationName,
+    setDescription: setFoundationDescription,
+    setColorPalette: setFoundationColorPalette,
+    addColor: addFoundationColor,
+    removeColor: removeFoundationColor,
+    setStyle: setFoundationStyle,
+    setMood: setFoundationMood,
+    setTypography: setFoundationTypography,
+    setTone: setFoundationTone,
+    nextStep: nextFoundationStep,
+    prevStep: prevFoundationStep,
+  } = useFoundationWizardStore()
+
+  // Load script data when on script step
+  useEffect(() => {
+    async function loadScriptData() {
+      if (currentStep === 'script' && projectId) {
+        try {
+          const [chars, sects] = await Promise.all([
+            getScriptCharacters(projectId),
+            getScriptSectionsWithCharacters(projectId),
+          ])
+          setScriptCharacters(chars)
+          setScriptSections(sects)
+        } catch (error) {
+          console.error('Error loading script data:', error)
+        }
+      }
+    }
+    loadScriptData()
+  }, [currentStep, projectId])
+
   // Determine current context step for greeting
   const getContextStep = (): string => {
     if (isOnDashboard) return 'home'
     if (isInWorkspace) return 'workspace'
+    if (isInAssetCreator) return `asset-${assetWizardStep}`
+    if (isInFoundationCreator) return `foundation-${foundationWizardStep}`
     if (isInCreateWizard) return currentStep
     return 'home'
   }
@@ -150,6 +248,7 @@ export function BubblePanel({ className, isCollapsed = false, onToggleCollapse }
   // Get prompt/name for greeting based on context
   const getContextPrompt = (): string | undefined => {
     if (isInWorkspace && workspaceProject) return workspaceProject.name
+    if (isInAssetCreator) return wizardAssetName || undefined
     if (isInCreateWizard) return initialPrompt || undefined
     return undefined
   }
@@ -158,6 +257,14 @@ export function BubblePanel({ className, isCollapsed = false, onToggleCollapse }
   const buildContext = (): BubbleContext => {
     // Workspace context (existing project)
     if (isInWorkspace && workspaceProject) {
+      // Count assets by type
+      const assetsByType: { image?: number; video?: number; audio?: number } = {}
+      workspaceProject.assets.forEach(a => {
+        if (a.type === 'image') assetsByType.image = (assetsByType.image || 0) + 1
+        else if (a.type === 'video') assetsByType.video = (assetsByType.video || 0) + 1
+        else if (a.type === 'audio') assetsByType.audio = (assetsByType.audio || 0) + 1
+      })
+
       return {
         currentStep: 'workspace',
         currentRoute: location.pathname,
@@ -177,6 +284,32 @@ export function BubblePanel({ className, isCollapsed = false, onToggleCollapse }
           })),
         } : undefined,
         shotCount: workspaceProject.scenes.reduce((acc, s) => acc + s.shots.length, 0) || undefined,
+        // Full workspace context
+        workspace: {
+          activeTab,
+          projectId: workspaceProject.id,
+          projectName: workspaceProject.name,
+          selectedSceneId,
+          selectedShotId,
+          isPlaying,
+          scenes: workspaceProject.scenes.map(scene => ({
+            id: scene.id,
+            name: scene.name,
+            description: scene.description,
+            shotCount: scene.shots.length,
+            shots: scene.shots.map(shot => ({
+              id: shot.id,
+              name: shot.name,
+              description: shot.description,
+              duration: shot.duration,
+              hasImage: !!shot.imageAssetId || !!shot.imageAsset,
+              hasVideo: !!shot.videoAssetId || !!shot.videoAsset,
+              hasAudio: !!shot.audioAssetId || !!shot.audioAsset,
+            })),
+          })),
+          assetCount: workspaceProject.assets.length,
+          assetsByType,
+        },
       }
     }
 
@@ -185,6 +318,54 @@ export function BubblePanel({ className, isCollapsed = false, onToggleCollapse }
       return {
         currentStep: 'home',
         currentRoute: location.pathname,
+      }
+    }
+
+    // Asset Creator context (single page)
+    if (isInAssetCreator) {
+      return {
+        currentStep: 'asset-creator',
+        currentRoute: location.pathname,
+        assetWizard: {
+          type: wizardAssetType || undefined,
+          category: wizardCategory || undefined,
+          name: wizardAssetName || undefined,
+          userDescription: wizardUserDescription || undefined,
+          aiPrompt: wizardAiPrompt || undefined,
+          style: wizardStylePreset || undefined,
+        },
+      }
+    }
+
+    // Library context
+    if (isInLibrary) {
+      return {
+        currentStep: isInLibraryAssets ? 'library-assets' : 'library-projects',
+        currentRoute: location.pathname,
+        library: {
+          // Note: Library data is passed from outside via callbacks
+          // The view_library_asset and update_library_asset tools are handled by callbacks
+        },
+      }
+    }
+
+    // Foundation creator context
+    if (isInFoundationCreator) {
+      return {
+        currentStep: `foundation-${foundationWizardStep}`,
+        currentRoute: location.pathname,
+        foundationWizard: {
+          step: foundationWizardStep,
+          editingId: foundationEditingId,
+          name: foundationName || undefined,
+          description: foundationDescription || undefined,
+          colorPalette: foundationColorPalette,
+          style: foundationStyle,
+          mood: foundationMood,
+          typography: foundationTypography,
+          tone: foundationTone,
+          moodImageCount: foundationMoodImages.length,
+        },
       }
     }
 
@@ -213,6 +394,20 @@ export function BubblePanel({ className, isCollapsed = false, onToggleCollapse }
         action: brief.videoContent.action,
         props: brief.videoContent.props,
         dialogue: brief.videoContent.dialogue,
+      } : undefined,
+      script: (scriptCharacters.length > 0 || scriptSections.length > 0) ? {
+        characters: scriptCharacters.map(c => ({
+          id: c.id,
+          name: c.name,
+          voiceDescription: c.voice_description || undefined,
+        })),
+        sections: scriptSections.map(s => ({
+          id: s.id,
+          type: s.type,
+          content: s.content,
+          characterName: s.character?.name,
+          isNewScene: s.is_new_scene,
+        })),
       } : undefined,
       moodBoard: moodBoard ? {
         keywords: moodBoard.keywords,
@@ -426,6 +621,152 @@ export function BubblePanel({ className, isCollapsed = false, onToggleCollapse }
               }
             } else {
               resultContent = `Updated mood board`
+            }
+            break
+          }
+          // ============================================
+          // SCRIPT TOOLS
+          // ============================================
+          case 'create_script_character': {
+            const name = tool.input.name as string
+            const description = tool.input.description as string | undefined
+            const voiceDescription = tool.input.voiceDescription as string | undefined
+
+            const pid = await ensureProjectId()
+            if (!pid) {
+              resultContent = 'Error: Could not create project'
+              break
+            }
+
+            try {
+              const character = await createScriptCharacter({
+                project_id: pid,
+                name,
+                description: description || null,
+                voice_description: voiceDescription || null,
+              })
+
+              // Update local state
+              setScriptCharacters(prev => [...prev, character])
+
+              resultContent = `Created character "${name}"${voiceDescription ? ` with voice: ${voiceDescription}` : ''}`
+            } catch (error) {
+              console.error('Failed to create character:', error)
+              resultContent = `Error creating character: ${error instanceof Error ? error.message : 'Unknown error'}`
+            }
+            break
+          }
+          case 'create_script_section': {
+            const type = tool.input.type as 'description' | 'dialogue'
+            const content = tool.input.content as string
+            const characterName = tool.input.characterName as string | undefined
+            const isNewScene = tool.input.isNewScene as boolean | undefined
+            const sceneContext = tool.input.sceneContext as string | undefined
+
+            const pid = await ensureProjectId()
+            if (!pid) {
+              resultContent = 'Error: Could not create project'
+              break
+            }
+
+            try {
+              // If it's dialogue, find the character ID
+              let characterId: string | null = null
+              if (type === 'dialogue' && characterName) {
+                const character = scriptCharacters.find(c => c.name.toLowerCase() === characterName.toLowerCase())
+                if (character) {
+                  characterId = character.id
+                } else {
+                  resultContent = `Error: Character "${characterName}" not found. Create the character first.`
+                  break
+                }
+              }
+
+              const section = await createScriptSection({
+                project_id: pid,
+                type,
+                content,
+                character_id: characterId,
+                is_new_scene: type === 'description' ? (isNewScene ?? false) : false,
+                scene_context: sceneContext || null,
+              })
+
+              // Fetch the section with character data for local state
+              const sectionWithChar: ScriptSectionWithCharacter = {
+                ...section,
+                character: characterId ? scriptCharacters.find(c => c.id === characterId) || null : null,
+              }
+
+              // Update local state
+              setScriptSections(prev => [...prev, sectionWithChar].sort((a, b) => a.sort_order - b.sort_order))
+
+              if (type === 'dialogue') {
+                resultContent = `Added dialogue for ${characterName}: "${content.slice(0, 40)}${content.length > 40 ? '...' : ''}"`
+              } else {
+                resultContent = `Added description${isNewScene ? ' (new scene)' : ''}: "${content.slice(0, 40)}${content.length > 40 ? '...' : ''}"`
+              }
+            } catch (error) {
+              console.error('Failed to create section:', error)
+              resultContent = `Error creating section: ${error instanceof Error ? error.message : 'Unknown error'}`
+            }
+            break
+          }
+          case 'update_script_section': {
+            const sectionIndex = tool.input.sectionIndex as number
+            const content = tool.input.content as string | undefined
+            const characterName = tool.input.characterName as string | undefined
+            const isNewScene = tool.input.isNewScene as boolean | undefined
+
+            if (sectionIndex < 0 || sectionIndex >= scriptSections.length) {
+              resultContent = `Error: Section index ${sectionIndex} is out of range`
+              break
+            }
+
+            const section = scriptSections[sectionIndex]
+
+            try {
+              const updates: Record<string, unknown> = {}
+
+              if (content !== undefined) {
+                updates.content = content
+              }
+
+              if (characterName !== undefined && section.type === 'dialogue') {
+                const character = scriptCharacters.find(c => c.name.toLowerCase() === characterName.toLowerCase())
+                if (character) {
+                  updates.character_id = character.id
+                } else {
+                  resultContent = `Error: Character "${characterName}" not found`
+                  break
+                }
+              }
+
+              if (isNewScene !== undefined && section.type === 'description') {
+                updates.is_new_scene = isNewScene
+              }
+
+              await updateScriptSection(section.id, updates)
+
+              // Update local state
+              setScriptSections(prev =>
+                prev.map((s, i) => {
+                  if (i === sectionIndex) {
+                    return {
+                      ...s,
+                      ...updates,
+                      character: characterName
+                        ? scriptCharacters.find(c => c.name.toLowerCase() === characterName.toLowerCase()) || null
+                        : s.character,
+                    } as ScriptSectionWithCharacter
+                  }
+                  return s
+                })
+              )
+
+              resultContent = `Updated section ${sectionIndex + 1}`
+            } catch (error) {
+              console.error('Failed to update section:', error)
+              resultContent = `Error updating section: ${error instanceof Error ? error.message : 'Unknown error'}`
             }
             break
           }
@@ -917,12 +1258,26 @@ export function BubblePanel({ className, isCollapsed = false, onToggleCollapse }
             break
           }
           case 'go_to_next_step': {
-            markStepComplete(currentStep as 'platform' | 'brief' | 'mood' | 'story' | 'shots' | 'filming' | 'audio' | 'review')
+            // Foundation wizard navigation
+            if (isInFoundationCreator) {
+              nextFoundationStep()
+              resultContent = `Moved to next foundation step`
+              break
+            }
+            // Project wizard navigation
+            markStepComplete(currentStep as 'platform' | 'brief' | 'script' | 'mood' | 'story' | 'review')
             goToNextStep()
             resultContent = `Moved to next step`
             break
           }
           case 'go_to_previous_step': {
+            // Foundation wizard navigation
+            if (isInFoundationCreator) {
+              prevFoundationStep()
+              resultContent = `Moved to previous foundation step`
+              break
+            }
+            // Project wizard navigation
             goToPreviousStep()
             resultContent = `Moved to previous step`
             break
@@ -1056,6 +1411,415 @@ export function BubblePanel({ className, isCollapsed = false, onToggleCollapse }
             break
           }
           // ============================================
+          // WORKSPACE TOOLS (for editing existing projects)
+          // ============================================
+          case 'switch_workspace_tab': {
+            const tab = tool.input.tab as WorkspaceTab
+            setWorkspaceTab(tab)
+            resultContent = `Switched to ${tab} tab`
+            break
+          }
+          case 'workspace_select_scene': {
+            if (!workspaceProject) {
+              resultContent = 'Error: No project loaded in workspace'
+              break
+            }
+            const sceneId = tool.input.scene_id as string | undefined
+            const sceneName = tool.input.scene_name as string | undefined
+
+            let targetScene = sceneId
+              ? workspaceProject.scenes.find(s => s.id === sceneId)
+              : workspaceProject.scenes.find(s => s.name === sceneName)
+
+            if (targetScene) {
+              setWorkspaceSelectedScene(targetScene.id)
+              resultContent = `Selected scene: ${targetScene.name}`
+            } else {
+              resultContent = `Scene not found: ${sceneId || sceneName}`
+            }
+            break
+          }
+          case 'workspace_select_shot': {
+            const shotId = tool.input.shot_id as string
+            setWorkspaceSelectedShot(shotId)
+            resultContent = `Selected shot: ${shotId}`
+            break
+          }
+          case 'workspace_add_scene': {
+            if (!workspaceProject) {
+              resultContent = 'Error: No project loaded in workspace'
+              break
+            }
+            const sceneName = tool.input.name as string
+            const sceneDescription = (tool.input.description as string) || ''
+            const order = workspaceProject.scenes.length
+
+            try {
+              await addWorkspaceScene({
+                name: sceneName,
+                description: sceneDescription,
+                order,
+                shots: [],
+              })
+              resultContent = `Added scene: ${sceneName}`
+            } catch (err) {
+              console.error('Failed to add scene:', err)
+              resultContent = `Error adding scene: ${err instanceof Error ? err.message : 'Unknown error'}`
+            }
+            break
+          }
+          case 'workspace_add_shot': {
+            if (!workspaceProject) {
+              resultContent = 'Error: No project loaded in workspace'
+              break
+            }
+            const sceneId = tool.input.scene_id as string | undefined
+            const sceneName = tool.input.scene_name as string | undefined
+            const shotName = (tool.input.name as string) || 'New Shot'
+            const shotDescription = tool.input.description as string
+            const duration = (tool.input.duration as number) || 3
+
+            let targetScene = sceneId
+              ? workspaceProject.scenes.find(s => s.id === sceneId)
+              : workspaceProject.scenes.find(s => s.name === sceneName)
+
+            if (!targetScene) {
+              resultContent = `Scene not found: ${sceneId || sceneName}`
+              break
+            }
+
+            try {
+              await addWorkspaceShot(targetScene.id, {
+                name: shotName,
+                description: shotDescription,
+                duration,
+                order: targetScene.shots.length,
+                assets: { characters: [], props: [], effects: [] },
+                notes: '',
+              })
+              resultContent = `Added shot "${shotName}" to ${targetScene.name}`
+            } catch (err) {
+              console.error('Failed to add shot:', err)
+              resultContent = `Error adding shot: ${err instanceof Error ? err.message : 'Unknown error'}`
+            }
+            break
+          }
+          case 'workspace_update_shot': {
+            if (!workspaceProject) {
+              resultContent = 'Error: No project loaded in workspace'
+              break
+            }
+            const sceneId = tool.input.scene_id as string
+            const shotId = tool.input.shot_id as string
+            const updates: Record<string, unknown> = {}
+            const updatedFields: string[] = []
+
+            if (tool.input.name) { updates.name = tool.input.name as string; updatedFields.push('name') }
+            if (tool.input.description) { updates.description = tool.input.description as string; updatedFields.push('description') }
+            if (tool.input.duration) { updates.duration = tool.input.duration as number; updatedFields.push('duration') }
+            if (tool.input.notes) { updates.notes = tool.input.notes as string; updatedFields.push('notes') }
+
+            try {
+              await updateWorkspaceShot(sceneId, shotId, updates)
+              resultContent = `Updated shot: ${updatedFields.join(', ')}`
+            } catch (err) {
+              console.error('Failed to update shot:', err)
+              resultContent = `Error updating shot: ${err instanceof Error ? err.message : 'Unknown error'}`
+            }
+            break
+          }
+          case 'workspace_delete_shot': {
+            if (!workspaceProject) {
+              resultContent = 'Error: No project loaded in workspace'
+              break
+            }
+            const sceneId = tool.input.scene_id as string
+            const shotId = tool.input.shot_id as string
+
+            try {
+              await removeWorkspaceShot(sceneId, shotId)
+              resultContent = `Deleted shot`
+            } catch (err) {
+              console.error('Failed to delete shot:', err)
+              resultContent = `Error deleting shot: ${err instanceof Error ? err.message : 'Unknown error'}`
+            }
+            break
+          }
+          case 'workspace_delete_scene': {
+            if (!workspaceProject) {
+              resultContent = 'Error: No project loaded in workspace'
+              break
+            }
+            const sceneId = tool.input.scene_id as string
+            const scene = workspaceProject.scenes.find(s => s.id === sceneId)
+
+            try {
+              await removeWorkspaceScene(sceneId)
+              resultContent = `Deleted scene: ${scene?.name || sceneId}`
+            } catch (err) {
+              console.error('Failed to delete scene:', err)
+              resultContent = `Error deleting scene: ${err instanceof Error ? err.message : 'Unknown error'}`
+            }
+            break
+          }
+          case 'workspace_play_preview': {
+            const action = tool.input.action as string
+            if (action === 'play') {
+              setWorkspaceIsPlaying(true)
+              resultContent = 'Started playback'
+            } else if (action === 'pause') {
+              setWorkspaceIsPlaying(false)
+              resultContent = 'Paused playback'
+            } else if (action === 'toggle') {
+              setWorkspaceIsPlaying(!isPlaying)
+              resultContent = isPlaying ? 'Paused playback' : 'Started playback'
+            }
+            break
+          }
+          case 'workspace_start_asset_creation': {
+            workspaceStartAssetCreation()
+            resultContent = 'Switched to Assets tab in creation mode'
+            break
+          }
+          case 'workspace_link_asset_to_shot': {
+            if (!workspaceProject) {
+              resultContent = 'Error: No project loaded in workspace'
+              break
+            }
+            const shotId = tool.input.shot_id as string
+            const sceneId = tool.input.scene_id as string
+            const assetId = tool.input.asset_id as string
+            const assetType = tool.input.asset_type as 'image' | 'video' | 'audio'
+
+            try {
+              const updates: Record<string, unknown> = {}
+              if (assetType === 'image') updates.imageAssetId = assetId
+              else if (assetType === 'video') updates.videoAssetId = assetId
+              else if (assetType === 'audio') updates.audioAssetId = assetId
+
+              await updateWorkspaceShot(sceneId, shotId, updates)
+              resultContent = `Linked ${assetType} asset to shot`
+            } catch (err) {
+              console.error('Failed to link asset:', err)
+              resultContent = `Error linking asset: ${err instanceof Error ? err.message : 'Unknown error'}`
+            }
+            break
+          }
+          case 'workspace_reorder_scenes': {
+            if (!workspaceProject) {
+              resultContent = 'Error: No project loaded in workspace'
+              break
+            }
+            const sceneIds = tool.input.scene_ids as string[]
+
+            try {
+              await reorderWorkspaceScenes(sceneIds)
+              resultContent = `Reordered ${sceneIds.length} scenes`
+            } catch (err) {
+              console.error('Failed to reorder scenes:', err)
+              resultContent = `Error reordering scenes: ${err instanceof Error ? err.message : 'Unknown error'}`
+            }
+            break
+          }
+          case 'workspace_reorder_shots': {
+            if (!workspaceProject) {
+              resultContent = 'Error: No project loaded in workspace'
+              break
+            }
+            const sceneId = tool.input.scene_id as string
+            const shotIds = tool.input.shot_ids as string[]
+
+            try {
+              await reorderWorkspaceShots(sceneId, shotIds)
+              resultContent = `Reordered ${shotIds.length} shots`
+            } catch (err) {
+              console.error('Failed to reorder shots:', err)
+              resultContent = `Error reordering shots: ${err instanceof Error ? err.message : 'Unknown error'}`
+            }
+            break
+          }
+          case 'workspace_update_scene': {
+            if (!workspaceProject) {
+              resultContent = 'Error: No project loaded in workspace'
+              break
+            }
+            const sceneId = tool.input.scene_id as string
+            const updates: Record<string, unknown> = {}
+            const updatedFields: string[] = []
+
+            if (tool.input.name) { updates.name = tool.input.name as string; updatedFields.push('name') }
+            if (tool.input.description) { updates.description = tool.input.description as string; updatedFields.push('description') }
+
+            try {
+              await updateWorkspaceScene(sceneId, updates)
+              resultContent = `Updated scene: ${updatedFields.join(', ')}`
+            } catch (err) {
+              console.error('Failed to update scene:', err)
+              resultContent = `Error updating scene: ${err instanceof Error ? err.message : 'Unknown error'}`
+            }
+            break
+          }
+          case 'workspace_unlink_asset_from_shot': {
+            if (!workspaceProject) {
+              resultContent = 'Error: No project loaded in workspace'
+              break
+            }
+            const shotId = tool.input.shot_id as string
+            const sceneId = tool.input.scene_id as string
+            const assetType = tool.input.asset_type as 'image' | 'video' | 'audio'
+
+            try {
+              const updates: Record<string, unknown> = {}
+              if (assetType === 'image') updates.imageAssetId = null
+              else if (assetType === 'video') updates.videoAssetId = null
+              else if (assetType === 'audio') updates.audioAssetId = null
+
+              await updateWorkspaceShot(sceneId, shotId, updates)
+              resultContent = `Unlinked ${assetType} asset from shot`
+            } catch (err) {
+              console.error('Failed to unlink asset:', err)
+              resultContent = `Error unlinking asset: ${err instanceof Error ? err.message : 'Unknown error'}`
+            }
+            break
+          }
+          case 'workspace_update_export_settings': {
+            if (!workspaceProject) {
+              resultContent = 'Error: No project loaded in workspace'
+              break
+            }
+            const updates: Record<string, unknown> = {}
+            const updatedFields: string[] = []
+
+            if (tool.input.resolution) { updates.resolution = tool.input.resolution as string; updatedFields.push('resolution') }
+            if (tool.input.format) { updates.format = tool.input.format as string; updatedFields.push('format') }
+            if (tool.input.frameRate) { updates.frameRate = tool.input.frameRate as number; updatedFields.push('frameRate') }
+            if (tool.input.quality) { updates.quality = tool.input.quality as string; updatedFields.push('quality') }
+
+            try {
+              await updateWorkspaceExportSettings(updates)
+              resultContent = `Updated export settings: ${updatedFields.join(', ')}`
+            } catch (err) {
+              console.error('Failed to update export settings:', err)
+              resultContent = `Error updating export settings: ${err instanceof Error ? err.message : 'Unknown error'}`
+            }
+            break
+          }
+          case 'workspace_add_storyboard_card': {
+            if (!workspaceProject) {
+              resultContent = 'Error: No project loaded in workspace'
+              break
+            }
+            const title = tool.input.title as string
+            const description = (tool.input.description as string) || ''
+            const content = (tool.input.content as string) || ''
+            const order = workspaceProject.storyboardCards.length
+
+            try {
+              await addWorkspaceStoryboardCard({
+                title,
+                description,
+                content,
+                order,
+              })
+              resultContent = `Added storyboard card: ${title}`
+            } catch (err) {
+              console.error('Failed to add storyboard card:', err)
+              resultContent = `Error adding storyboard card: ${err instanceof Error ? err.message : 'Unknown error'}`
+            }
+            break
+          }
+          case 'workspace_update_storyboard_card': {
+            if (!workspaceProject) {
+              resultContent = 'Error: No project loaded in workspace'
+              break
+            }
+            const cardId = tool.input.card_id as string
+            const updates: Record<string, unknown> = {}
+            const updatedFields: string[] = []
+
+            if (tool.input.title) { updates.title = tool.input.title as string; updatedFields.push('title') }
+            if (tool.input.description) { updates.description = tool.input.description as string; updatedFields.push('description') }
+            if (tool.input.content) { updates.content = tool.input.content as string; updatedFields.push('content') }
+
+            try {
+              await updateWorkspaceStoryboardCard(cardId, updates)
+              resultContent = `Updated storyboard card: ${updatedFields.join(', ')}`
+            } catch (err) {
+              console.error('Failed to update storyboard card:', err)
+              resultContent = `Error updating storyboard card: ${err instanceof Error ? err.message : 'Unknown error'}`
+            }
+            break
+          }
+          case 'workspace_delete_storyboard_card': {
+            if (!workspaceProject) {
+              resultContent = 'Error: No project loaded in workspace'
+              break
+            }
+            const cardId = tool.input.card_id as string
+            const card = workspaceProject.storyboardCards.find(c => c.id === cardId)
+
+            try {
+              await removeWorkspaceStoryboardCard(cardId)
+              resultContent = `Deleted storyboard card: ${card?.title || cardId}`
+            } catch (err) {
+              console.error('Failed to delete storyboard card:', err)
+              resultContent = `Error deleting storyboard card: ${err instanceof Error ? err.message : 'Unknown error'}`
+            }
+            break
+          }
+          // ============================================
+          // ASSET WIZARD TOOLS (for Create Asset flow)
+          // ============================================
+          case 'set_asset_type': {
+            const type = tool.input.type as 'image' | 'video' | 'audio'
+            setWizardAssetType(type)
+            resultContent = `Set asset type to ${type}`
+            break
+          }
+          case 'set_asset_category': {
+            const category = tool.input.category as string
+            setWizardCategory(category as any)
+            resultContent = `Set asset category to ${category}`
+            break
+          }
+          case 'update_asset_details': {
+            const updatedFields: string[] = []
+            if (tool.input.name) {
+              setWizardAssetName(tool.input.name as string)
+              updatedFields.push('name')
+            }
+            if (tool.input.user_description) {
+              setWizardUserDescription(tool.input.user_description as string)
+              updatedFields.push('description')
+            }
+            if (tool.input.ai_prompt) {
+              setWizardAiPrompt(tool.input.ai_prompt as string)
+              updatedFields.push('ai_prompt')
+            }
+            if (tool.input.style) {
+              setWizardStylePreset(tool.input.style as string)
+              updatedFields.push('style')
+            }
+            if (tool.input.refinement) {
+              // Emit custom event for the PromptAndGenerateStep to listen to
+              window.dispatchEvent(new CustomEvent('bubble-update-refinement', {
+                detail: { refinement: tool.input.refinement as string }
+              }))
+              updatedFields.push('refinement')
+            }
+            if (tool.input.category_option) {
+              // Emit custom event for the PromptAndGenerateStep to update category option
+              window.dispatchEvent(new CustomEvent('bubble-update-category-option', {
+                detail: { categoryOption: tool.input.category_option as string }
+              }))
+              updatedFields.push('category_option')
+            }
+            resultContent = updatedFields.length > 0
+              ? `Updated asset details: ${updatedFields.join(', ')}`
+              : 'No fields to update'
+            break
+          }
+          // ============================================
           // ASSET GENERATION TOOLS
           // ============================================
           case 'generate_image': {
@@ -1064,8 +1828,9 @@ export function BubblePanel({ className, isCollapsed = false, onToggleCollapse }
               break
             }
 
-            const prompt = tool.input.prompt as string
             const name = tool.input.name as string
+            const userDescription = tool.input.user_description as string
+            const aiPrompt = tool.input.ai_prompt as string
             const category = (tool.input.category as string) || 'scene'
             const style = tool.input.style as string | undefined
             const aspectRatioInput = tool.input.aspectRatio as string | undefined
@@ -1083,9 +1848,9 @@ export function BubblePanel({ className, isCollapsed = false, onToggleCollapse }
             }
 
             try {
-              // Generate image (returns array, we take first)
+              // Generate image using the AI prompt
               const imageUrls = await generateImages({
-                prompt,
+                prompt: aiPrompt,
                 style,
                 width,
                 height,
@@ -1101,7 +1866,7 @@ export function BubblePanel({ className, isCollapsed = false, onToggleCollapse }
               // Get project ID
               const pid = isInWorkspace ? workspaceProject?.id : await ensureProjectId()
 
-              // Save as asset in database
+              // Save as asset in database with both descriptions
               const asset = await createAsset({
                 user_id: user.id,
                 project_id: pid || undefined,
@@ -1109,13 +1874,13 @@ export function BubblePanel({ className, isCollapsed = false, onToggleCollapse }
                 type: 'image',
                 category: category as 'scene' | 'stage' | 'character' | 'weather' | 'prop' | 'effect',
                 url: imageUrl,
-                thumbnail_url: imageUrl,
-                metadata: {
-                  prompt,
+                user_description: userDescription,
+                ai_prompt: aiPrompt,
+                generation_model: 'replicate_flux',
+                generation_settings: {
                   style,
                   width,
                   height,
-                  generated_by: 'replicate',
                 },
               })
 
@@ -1135,8 +1900,9 @@ export function BubblePanel({ className, isCollapsed = false, onToggleCollapse }
               break
             }
 
-            const text = tool.input.text as string
             const name = tool.input.name as string
+            const userDescription = tool.input.user_description as string
+            const text = tool.input.text as string
             const voiceStyle = (tool.input.voiceStyle as string) || 'calm_female'
             const sceneId = tool.input.sceneId as string | undefined
 
@@ -1161,7 +1927,7 @@ export function BubblePanel({ className, isCollapsed = false, onToggleCollapse }
               // Get project ID
               const pid = isInWorkspace ? workspaceProject?.id : await ensureProjectId()
 
-              // Save as asset in database
+              // Save as asset in database with both descriptions
               const asset = await createAsset({
                 user_id: user.id,
                 project_id: pid || undefined,
@@ -1169,12 +1935,13 @@ export function BubblePanel({ className, isCollapsed = false, onToggleCollapse }
                 type: 'audio',
                 category: 'voice',
                 url: audioDataUrl,
-                metadata: {
-                  text,
+                user_description: userDescription,
+                ai_prompt: text,
+                generation_model: 'elevenlabs',
+                generation_settings: {
                   voiceStyle,
                   voiceId,
                   sceneId,
-                  generated_by: 'elevenlabs',
                 },
               })
 
@@ -1195,21 +1962,22 @@ export function BubblePanel({ className, isCollapsed = false, onToggleCollapse }
               break
             }
 
-            const prompt = tool.input.prompt as string
             const name = tool.input.name as string
+            const userDescription = tool.input.user_description as string
+            const aiPrompt = tool.input.ai_prompt as string
             const duration = Math.min(30, Math.max(5, (tool.input.duration as number) || 10))
 
             try {
-              // Generate music
+              // Generate music using AI prompt
               const audioUrl = await generateMusic({
-                prompt,
+                prompt: aiPrompt,
                 duration,
               })
 
               // Get project ID
               const pid = isInWorkspace ? workspaceProject?.id : await ensureProjectId()
 
-              // Save as asset in database
+              // Save as asset in database with both descriptions
               const asset = await createAsset({
                 user_id: user.id,
                 project_id: pid || undefined,
@@ -1218,10 +1986,11 @@ export function BubblePanel({ className, isCollapsed = false, onToggleCollapse }
                 category: 'music',
                 url: audioUrl,
                 duration,
-                metadata: {
-                  prompt,
+                user_description: userDescription,
+                ai_prompt: aiPrompt,
+                generation_model: 'replicate_musicgen',
+                generation_settings: {
                   duration,
-                  generated_by: 'replicate_musicgen',
                 },
               })
 
@@ -1242,21 +2011,22 @@ export function BubblePanel({ className, isCollapsed = false, onToggleCollapse }
               break
             }
 
-            const prompt = tool.input.prompt as string
             const name = tool.input.name as string
+            const userDescription = tool.input.user_description as string
+            const aiPrompt = tool.input.ai_prompt as string
             const duration = tool.input.duration as number | undefined
 
             try {
-              // Generate sound effect
+              // Generate sound effect using AI prompt
               const audioDataUrl = await generateSoundEffect({
-                text: prompt,
+                text: aiPrompt,
                 duration_seconds: duration,
               })
 
               // Get project ID
               const pid = isInWorkspace ? workspaceProject?.id : await ensureProjectId()
 
-              // Save as asset in database
+              // Save as asset in database with both descriptions
               const asset = await createAsset({
                 user_id: user.id,
                 project_id: pid || undefined,
@@ -1265,10 +2035,11 @@ export function BubblePanel({ className, isCollapsed = false, onToggleCollapse }
                 category: 'sound_effect',
                 url: audioDataUrl,
                 duration: duration || undefined,
-                metadata: {
-                  prompt,
+                user_description: userDescription,
+                ai_prompt: aiPrompt,
+                generation_model: 'elevenlabs_sfx',
+                generation_settings: {
                   duration,
-                  generated_by: 'elevenlabs_sfx',
                 },
               })
 
@@ -1280,6 +2051,121 @@ export function BubblePanel({ className, isCollapsed = false, onToggleCollapse }
               console.error('Failed to generate sound effect:', error)
               resultContent = `Error generating sound effect: ${error instanceof Error ? error.message : 'Unknown error'}`
             }
+            break
+          }
+          // ============================================
+          // LIBRARY ASSET TOOLS
+          // ============================================
+          case 'view_library_asset': {
+            const assetId = tool.input.asset_id as string
+            // Dispatch custom event for library page to handle
+            window.dispatchEvent(new CustomEvent('bubble-view-asset', {
+              detail: { assetId }
+            }))
+            resultContent = `Opening asset details for ID: ${assetId}`
+            break
+          }
+          case 'update_library_asset': {
+            const assetId = tool.input.asset_id as string
+            const updates: Record<string, unknown> = {}
+            const updatedFields: string[] = []
+
+            if (tool.input.name) {
+              updates.name = tool.input.name as string
+              updatedFields.push('name')
+            }
+            if (tool.input.category) {
+              updates.category = tool.input.category as string
+              updatedFields.push('category')
+            }
+            if (tool.input.user_description) {
+              updates.user_description = tool.input.user_description as string
+              updatedFields.push('description')
+            }
+            if (tool.input.ai_prompt) {
+              updates.ai_prompt = tool.input.ai_prompt as string
+              updatedFields.push('ai_prompt')
+            }
+
+            // Dispatch custom event for library page to handle
+            window.dispatchEvent(new CustomEvent('bubble-update-asset', {
+              detail: { assetId, updates }
+            }))
+            resultContent = updatedFields.length > 0
+              ? `Updating asset: ${updatedFields.join(', ')}`
+              : 'No fields to update'
+            break
+          }
+          case 'delete_library_asset': {
+            const assetId = tool.input.asset_id as string
+            // Dispatch custom event for library page to handle
+            window.dispatchEvent(new CustomEvent('bubble-delete-asset', {
+              detail: { assetId }
+            }))
+            resultContent = `Requested deletion of asset ID: ${assetId}`
+            break
+          }
+          // ============================================
+          // FOUNDATION WIZARD TOOLS
+          // ============================================
+          case 'update_foundation_basics': {
+            const updatedFields: string[] = []
+            if (tool.input.name) {
+              setFoundationName(tool.input.name as string)
+              updatedFields.push('name')
+            }
+            if (tool.input.description) {
+              setFoundationDescription(tool.input.description as string)
+              updatedFields.push('description')
+            }
+            resultContent = updatedFields.length > 0
+              ? `Updated foundation: ${updatedFields.join(', ')}`
+              : 'No fields to update'
+            break
+          }
+          case 'update_foundation_colors': {
+            if (tool.input.colors) {
+              setFoundationColorPalette(tool.input.colors as string[])
+              resultContent = `Set color palette to ${(tool.input.colors as string[]).length} colors`
+            } else if (tool.input.addColor) {
+              addFoundationColor(tool.input.addColor as string)
+              resultContent = `Added color ${tool.input.addColor}`
+            } else if (typeof tool.input.removeIndex === 'number') {
+              removeFoundationColor(tool.input.removeIndex as number)
+              resultContent = `Removed color at index ${tool.input.removeIndex}`
+            } else {
+              resultContent = 'No color changes specified'
+            }
+            break
+          }
+          case 'update_foundation_style': {
+            const updatedFields: string[] = []
+            if (tool.input.style) {
+              setFoundationStyle(tool.input.style as string)
+              updatedFields.push(`style: ${tool.input.style}`)
+            }
+            if (tool.input.typography) {
+              setFoundationTypography(tool.input.typography as string)
+              updatedFields.push(`typography: ${tool.input.typography}`)
+            }
+            resultContent = updatedFields.length > 0
+              ? `Updated ${updatedFields.join(', ')}`
+              : 'No style changes specified'
+            break
+          }
+          case 'update_foundation_mood': {
+            const updatedFields: string[] = []
+            if (tool.input.mood) {
+              setFoundationMood(tool.input.mood as string)
+              updatedFields.push(`mood: ${tool.input.mood}`)
+            }
+            if (tool.input.tone) {
+              setFoundationTone(tool.input.tone as string)
+              updatedFields.push(`tone: ${tool.input.tone}`)
+            }
+            resultContent = updatedFields.length > 0
+              ? `Updated ${updatedFields.join(', ')}`
+              : 'No mood changes specified'
             break
           }
           default:
@@ -1299,10 +2185,7 @@ export function BubblePanel({ className, isCollapsed = false, onToggleCollapse }
     return results
   }
 
-  // Track previous step to detect step changes
-  const previousStepRef = useRef<string | null>(null)
-
-  // Add initial message on mount
+  // Add initial message on mount only (no auto-prompts on step changes)
   useEffect(() => {
     // Only add if no messages exist and we haven't sent one yet
     if (bubbleMessages.length === 0 && !initialMessageSent.current) {
@@ -1313,33 +2196,7 @@ export function BubblePanel({ className, isCollapsed = false, onToggleCollapse }
         content: greeting,
       })
     }
-    // Initialize previous step
-    if (previousStepRef.current === null) {
-      previousStepRef.current = currentStep
-    }
   }, []) // Only on mount
-
-  // Add transition message when step changes in create wizard
-  useEffect(() => {
-    if (!isInCreateWizard) return
-
-    // Skip if this is the first render (previousStep not set yet)
-    if (previousStepRef.current === null) {
-      previousStepRef.current = currentStep
-      return
-    }
-
-    // Check if step actually changed
-    if (previousStepRef.current !== currentStep) {
-      previousStepRef.current = currentStep
-      // Add a greeting for the new step
-      const greeting = getInitialGreeting(currentStep, getContextPrompt())
-      addBubbleMessage({
-        role: "assistant",
-        content: greeting,
-      })
-    }
-  }, [currentStep, isInCreateWizard])
 
   // Scroll to bottom when messages change
   useEffect(() => {
@@ -1408,17 +2265,11 @@ export function BubblePanel({ className, isCollapsed = false, onToggleCollapse }
         )
       }
 
-      // Add the assistant's final text message
-      if (response.message) {
+      // Add the assistant's final text message (only if there is one)
+      if (response.message && response.message.trim()) {
         addBubbleMessage({
           role: "assistant",
           content: response.message,
-        })
-      } else {
-        // Fallback if no message
-        addBubbleMessage({
-          role: "assistant",
-          content: "Done! What would you like to do next?",
         })
       }
     } catch (error) {
@@ -1688,9 +2539,7 @@ export function BubblePanel({ className, isCollapsed = false, onToggleCollapse }
             </button>
             <div>
               <h3 className="text-sm font-semibold text-zinc-100">Bubble</h3>
-              <p className="text-xs text-zinc-500">
-                {currentStepMeta?.description || "Your production assistant"}
-              </p>
+              <p className="text-xs text-zinc-500">Production Assistant AI</p>
             </div>
           </div>
 

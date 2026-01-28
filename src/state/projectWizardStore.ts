@@ -3,17 +3,20 @@ import { getInitialGreeting } from "@/services/claude"
 import { getProjectWithRelations } from "@/services/projects"
 
 // Step types for the wizard
+// Pre-production focused: planning and organization, no AI generation
 export type WizardStep =
   | "platform"
   | "brief"
+  | "script"   // Script writing with AI assistance
   | "mood"
-  | "story"
-  | "shots"
-  | "filming"
-  | "audio"
+  | "story"    // Storyboard - add images to script scenes
   | "review"
 
+// Legacy step types for backwards compatibility
+export type LegacyWizardStep = WizardStep | "shots" | "filming" | "audio"
+
 // Step metadata with labels and descriptions
+// Pre-Production Flow: Plan first, generate in Workspace
 export const WIZARD_STEPS: {
   id: WizardStep
   label: string
@@ -30,29 +33,19 @@ export const WIZARD_STEPS: {
     description: "Define your project goals and audience",
   },
   {
+    id: "script",
+    label: "Script",
+    description: "Write your script with AI assistance",
+  },
+  {
     id: "mood",
     label: "Mood",
     description: "Set visual direction and references",
   },
   {
     id: "story",
-    label: "Scenes",
-    description: "Outline your scenes and shots",
-  },
-  {
-    id: "shots",
-    label: "Generate",
-    description: "Generate images for each shot",
-  },
-  {
-    id: "filming",
-    label: "Film",
-    description: "Create media for each shot",
-  },
-  {
-    id: "audio",
-    label: "Audio",
-    description: "Add voiceover, music, and SFX",
+    label: "Storyboard",
+    description: "Add visual references to your scenes",
   },
   {
     id: "review",
@@ -132,7 +125,6 @@ export interface Asset {
   id: string
   type: "image" | "video" | "audio"
   url: string
-  thumbnailUrl?: string
   name: string
 }
 
@@ -455,12 +447,9 @@ export const useProjectWizardStore = create<ProjectWizardState>((set, get) => ({
       completedSteps: [...get().completedSteps.filter((s) => s !== "story"), "story"],
     }),
 
-  // Shots
+  // Shots (legacy - shots step removed but data still stored)
   setShots: (shots) =>
-    set({
-      shots,
-      completedSteps: [...get().completedSteps.filter((s) => s !== "shots"), "shots"],
-    }),
+    set({ shots }),
 
   updateShot: (shotId, data) =>
     set({
@@ -618,6 +607,14 @@ export const useProjectWizardStore = create<ProjectWizardState>((set, get) => ({
       // Brief is complete if it has name and description
       if (project.brief?.name && project.brief?.description) {
         completedSteps.push("brief")
+        currentStep = "script"  // Go to script after brief
+      }
+
+      // Script step - always allow continuing (script is optional, can be built later)
+      // Note: Script data is in separate tables, checked by ScriptStep component
+      // For now, mark as complete if mood board exists (user passed through script)
+      if (project.mood_board) {
+        completedSteps.push("script")
         currentStep = "mood"
       }
 
@@ -627,16 +624,10 @@ export const useProjectWizardStore = create<ProjectWizardState>((set, get) => ({
         currentStep = "story"
       }
 
-      // Storyboard is complete if it has acts
+      // Storyboard is complete if it has acts or storyboard cards
       if (project.storyboard?.acts) {
         completedSteps.push("story")
-        currentStep = "shots"
-      }
-
-      // Shots are complete if there are scenes with shots
-      if (project.scenes?.some(s => s.shots?.length > 0)) {
-        completedSteps.push("shots")
-        currentStep = "filming"
+        currentStep = "review"
       }
 
       // Reconstruct shots from scenes
@@ -665,7 +656,6 @@ export const useProjectWizardStore = create<ProjectWizardState>((set, get) => ({
                   id: dbShot.id,
                   type: (dbShot.media_type as "image" | "video" | "audio") || "image",
                   url: dbShot.media_url,
-                  thumbnailUrl: dbShot.media_thumbnail_url || dbShot.media_url,
                   name: dbShot.name || `Shot ${shot.shotNumber}`,
                 }
               }

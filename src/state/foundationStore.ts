@@ -1,143 +1,154 @@
 import { create } from "zustand"
-import { persist } from "zustand/middleware"
+import {
+  getFoundations,
+  createFoundation as createFoundationDb,
+  updateFoundation as updateFoundationDb,
+  deleteFoundation as deleteFoundationDb,
+  duplicateFoundation as duplicateFoundationDb,
+  incrementFoundationProjectCount,
+  type Foundation,
+} from "@/services/foundations"
 
-export interface Foundation {
-  id: string
-  name: string
-  description?: string
-  colorPalette: string[]
-  style: string | null
-  mood: string | null
-  typography: string | null
-  tone: string | null
-  moodImages: { id: string; url: string; name: string }[]
-  projectCount: number
-  createdAt: string
-  updatedAt: string
-}
+// Re-export the Foundation type from the service
+export type { Foundation }
 
 interface FoundationState {
   foundations: Foundation[]
-  addFoundation: (foundation: Foundation) => void
-  updateFoundation: (id: string, data: Partial<Foundation>) => void
-  removeFoundation: (id: string) => void
-  duplicateFoundation: (id: string) => string | null
-  incrementProjectCount: (id: string) => void
+  isLoading: boolean
+  error: string | null
+
+  // Actions
+  loadFoundations: (userId: string) => Promise<void>
+  addFoundation: (userId: string, data: {
+    name: string
+    description?: string
+    colorPalette: string[]
+    style: string | null
+    mood: string | null
+    typography: string | null
+    tone: string | null
+    moodImages: { id: string; url: string; name: string }[]
+  }) => Promise<Foundation>
+  updateFoundation: (id: string, data: Partial<{
+    name: string
+    description?: string
+    colorPalette: string[]
+    style: string | null
+    mood: string | null
+    typography: string | null
+    tone: string | null
+    moodImages: { id: string; url: string; name: string }[]
+  }>) => Promise<void>
+  removeFoundation: (id: string) => Promise<void>
+  duplicateFoundation: (id: string, userId: string) => Promise<string | null>
+  incrementProjectCount: (id: string) => Promise<void>
 }
 
-// Initial mock foundations
-const initialFoundations: Foundation[] = [
-  {
-    id: "foundation-1",
-    name: "Corporate Clean",
-    description: "Professional and minimal aesthetic with blue accents",
-    colorPalette: ["#1e3a5f", "#3b82f6", "#f8fafc", "#64748b"],
-    style: "minimal",
-    mood: "professional",
-    typography: "modern",
-    tone: "professional",
-    moodImages: [],
-    projectCount: 5,
-    createdAt: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString(),
-    updatedAt: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString(),
-  },
-  {
-    id: "foundation-2",
-    name: "Playful Social",
-    description: "Vibrant colors and dynamic compositions for social media",
-    colorPalette: ["#ec4899", "#8b5cf6", "#f97316", "#22c55e"],
-    style: "bold",
-    mood: "energetic",
-    typography: "bold",
-    tone: "casual",
-    moodImages: [],
-    projectCount: 3,
-    createdAt: new Date(Date.now() - 14 * 24 * 60 * 60 * 1000).toISOString(),
-    updatedAt: new Date(Date.now() - 14 * 24 * 60 * 60 * 1000).toISOString(),
-  },
-  {
-    id: "foundation-3",
-    name: "Tech Minimal",
-    description: "Dark mode aesthetic with neon highlights",
-    colorPalette: ["#0f0f0f", "#18181b", "#22d3ee", "#a855f7"],
-    style: "minimal",
-    mood: "innovative",
-    typography: "modern",
-    tone: "professional",
-    moodImages: [],
-    projectCount: 2,
-    createdAt: new Date(Date.now() - 21 * 24 * 60 * 60 * 1000).toISOString(),
-    updatedAt: new Date(Date.now() - 21 * 24 * 60 * 60 * 1000).toISOString(),
-  },
-  {
-    id: "foundation-4",
-    name: "Warm Natural",
-    description: "Earth tones and organic textures",
-    colorPalette: ["#854d0e", "#a16207", "#fef3c7", "#365314"],
-    style: "organic",
-    mood: "calm",
-    typography: "classic",
-    tone: "friendly",
-    moodImages: [],
-    projectCount: 1,
-    createdAt: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString(),
-    updatedAt: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString(),
-  },
-]
+export const useFoundationStore = create<FoundationState>()((set, get) => ({
+  foundations: [],
+  isLoading: false,
+  error: null,
 
-export const useFoundationStore = create<FoundationState>()(
-  persist(
-    (set) => ({
-      foundations: initialFoundations,
-
-      addFoundation: (foundation) =>
-        set((state) => ({
-          foundations: [foundation, ...state.foundations],
-        })),
-
-      updateFoundation: (id, data) =>
-        set((state) => ({
-          foundations: state.foundations.map((f) =>
-            f.id === id ? { ...f, ...data, updatedAt: new Date().toISOString() } : f
-          ),
-        })),
-
-      removeFoundation: (id) =>
-        set((state) => ({
-          foundations: state.foundations.filter((f) => f.id !== id),
-        })),
-
-      duplicateFoundation: (id) => {
-        const state = useFoundationStore.getState()
-        const foundation = state.foundations.find((f) => f.id === id)
-        if (!foundation) return null
-
-        const newId = `foundation-${Date.now()}`
-        const duplicate: Foundation = {
-          ...foundation,
-          id: newId,
-          name: `${foundation.name} (Copy)`,
-          projectCount: 0,
-          createdAt: new Date().toISOString(),
-          updatedAt: new Date().toISOString(),
-        }
-
-        set((state) => ({
-          foundations: [duplicate, ...state.foundations],
-        }))
-
-        return newId
-      },
-
-      incrementProjectCount: (id) =>
-        set((state) => ({
-          foundations: state.foundations.map((f) =>
-            f.id === id ? { ...f, projectCount: f.projectCount + 1 } : f
-          ),
-        })),
-    }),
-    {
-      name: "dream-cloud-foundations",
+  loadFoundations: async (userId: string) => {
+    set({ isLoading: true, error: null })
+    try {
+      const foundations = await getFoundations(userId)
+      set({ foundations, isLoading: false })
+    } catch (error) {
+      console.error("Error loading foundations:", error)
+      set({ error: "Failed to load foundations", isLoading: false })
     }
-  )
-)
+  },
+
+  addFoundation: async (userId, data) => {
+    try {
+      const foundation = await createFoundationDb({
+        user_id: userId,
+        name: data.name,
+        description: data.description || null,
+        color_palette: data.colorPalette,
+        style: data.style,
+        mood: data.mood,
+        typography: data.typography,
+        tone: data.tone,
+        mood_images: data.moodImages,
+      })
+
+      set((state) => ({
+        foundations: [foundation, ...state.foundations],
+      }))
+
+      return foundation
+    } catch (error) {
+      console.error("Error creating foundation:", error)
+      throw error
+    }
+  },
+
+  updateFoundation: async (id, data) => {
+    try {
+      const updateData: Parameters<typeof updateFoundationDb>[1] = {}
+
+      if (data.name !== undefined) updateData.name = data.name
+      if (data.description !== undefined) updateData.description = data.description
+      if (data.colorPalette !== undefined) updateData.color_palette = data.colorPalette
+      if (data.style !== undefined) updateData.style = data.style
+      if (data.mood !== undefined) updateData.mood = data.mood
+      if (data.typography !== undefined) updateData.typography = data.typography
+      if (data.tone !== undefined) updateData.tone = data.tone
+      if (data.moodImages !== undefined) updateData.mood_images = data.moodImages
+
+      const updated = await updateFoundationDb(id, updateData)
+
+      set((state) => ({
+        foundations: state.foundations.map((f) =>
+          f.id === id ? updated : f
+        ),
+      }))
+    } catch (error) {
+      console.error("Error updating foundation:", error)
+      throw error
+    }
+  },
+
+  removeFoundation: async (id) => {
+    try {
+      await deleteFoundationDb(id)
+      set((state) => ({
+        foundations: state.foundations.filter((f) => f.id !== id),
+      }))
+    } catch (error) {
+      console.error("Error deleting foundation:", error)
+      throw error
+    }
+  },
+
+  duplicateFoundation: async (id, userId) => {
+    try {
+      const duplicate = await duplicateFoundationDb(id, userId)
+
+      set((state) => ({
+        foundations: [duplicate, ...state.foundations],
+      }))
+
+      return duplicate.id
+    } catch (error) {
+      console.error("Error duplicating foundation:", error)
+      return null
+    }
+  },
+
+  incrementProjectCount: async (id) => {
+    try {
+      await incrementFoundationProjectCount(id)
+
+      set((state) => ({
+        foundations: state.foundations.map((f) =>
+          f.id === id ? { ...f, project_count: f.project_count + 1 } : f
+        ),
+      }))
+    } catch (error) {
+      console.error("Error incrementing project count:", error)
+    }
+  },
+}))

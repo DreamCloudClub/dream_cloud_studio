@@ -5,14 +5,13 @@ export type AssetType = "image" | "video" | "audio"
 // Visual categories (for image/video) + Audio categories (for audio)
 export type AssetCategory = "scene" | "stage" | "character" | "weather" | "prop" | "effect" | "music" | "sound_effect" | "voice"
 
-export type AssetWizardStep = "type" | "category" | "prompt" | "generate" | "review"
+export type AssetWizardStep = "type" | "category" | "prompt" | "review"
 
 export const ASSET_WIZARD_STEPS: { id: AssetWizardStep; label: string }[] = [
   { id: "type", label: "Type" },
   { id: "category", label: "Category" },
-  { id: "prompt", label: "Describe" },
-  { id: "generate", label: "Generate" },
-  { id: "review", label: "Review" },
+  { id: "prompt", label: "Create" },
+  { id: "review", label: "Save" },
 ]
 
 interface AssetWizardState {
@@ -22,7 +21,9 @@ interface AssetWizardState {
   // Asset data
   assetType: AssetType | null
   category: AssetCategory | null
-  prompt: string
+  assetName: string
+  userDescription: string  // Human-readable description of what user wants
+  aiPrompt: string         // Enhanced technical prompt for generation engine
   negativePrompt: string
   stylePreset: string | null
 
@@ -33,7 +34,6 @@ interface AssetWizardState {
   generatedAssets: {
     id: string
     url: string
-    thumbnailUrl?: string
     selected: boolean
   }[]
 
@@ -43,7 +43,9 @@ interface AssetWizardState {
   prevStep: () => void
   setAssetType: (type: AssetType) => void
   setCategory: (category: AssetCategory) => void
-  setPrompt: (prompt: string) => void
+  setAssetName: (name: string) => void
+  setUserDescription: (desc: string) => void
+  setAiPrompt: (prompt: string) => void
   setNegativePrompt: (prompt: string) => void
   setStylePreset: (preset: string | null) => void
   addReferenceAsset: (asset: Asset) => void
@@ -51,13 +53,16 @@ interface AssetWizardState {
   setGeneratedAssets: (assets: AssetWizardState["generatedAssets"]) => void
   toggleAssetSelection: (id: string) => void
   resetWizard: () => void
+  initWithType: (type: AssetType) => void
 }
 
 const initialState = {
   currentStep: "type" as AssetWizardStep,
   assetType: null,
   category: null,
-  prompt: "",
+  assetName: "",
+  userDescription: "",
+  aiPrompt: "",
   negativePrompt: "",
   stylePreset: null,
   referenceAssets: [] as Asset[],
@@ -87,7 +92,9 @@ export const useAssetWizardStore = create<AssetWizardState>((set, get) => ({
 
   setAssetType: (type) => set({ assetType: type }),
   setCategory: (category) => set({ category }),
-  setPrompt: (prompt) => set({ prompt }),
+  setAssetName: (name) => set({ assetName: name }),
+  setUserDescription: (desc) => set({ userDescription: desc }),
+  setAiPrompt: (prompt) => set({ aiPrompt: prompt }),
   setNegativePrompt: (prompt) => set({ negativePrompt: prompt }),
   setStylePreset: (preset) => set({ stylePreset: preset }),
 
@@ -116,4 +123,11 @@ export const useAssetWizardStore = create<AssetWizardState>((set, get) => ({
   },
 
   resetWizard: () => set(initialState),
+
+  // Initialize wizard with a pre-selected type, starting at category step
+  initWithType: (type) => set({
+    ...initialState,
+    assetType: type,
+    currentStep: "category",
+  }),
 }))

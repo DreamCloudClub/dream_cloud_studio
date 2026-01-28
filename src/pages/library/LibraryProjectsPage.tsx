@@ -54,14 +54,14 @@ function ProjectCard({ project, onClick, onDelete }: ProjectCardProps) {
     <div
       onClick={onClick}
       className={cn(
-        "group text-left bg-zinc-900 rounded-xl overflow-hidden transition-colors focus:outline-none focus:ring-2 focus:ring-sky-500 flex flex-col cursor-pointer relative",
+        "group text-left bg-zinc-900 rounded-xl overflow-hidden transition-colors focus:outline-none flex flex-col cursor-pointer relative",
         isDraft
           ? "border-2 border-dashed border-orange-500/50 hover:border-orange-400/70"
           : "border border-zinc-800 hover:border-zinc-700"
       )}
     >
       {/* Thumbnail */}
-      <div className="aspect-video bg-zinc-800 relative flex-shrink-0">
+      <div className="aspect-square bg-zinc-800 relative flex-shrink-0">
         {project.thumbnail ? (
           <img
             src={project.thumbnail}
@@ -86,7 +86,7 @@ function ProjectCard({ project, onClick, onDelete }: ProjectCardProps) {
         {/* Delete button - shows on hover */}
         <button
           onClick={handleDelete}
-          className="absolute top-2 left-2 p-1.5 bg-zinc-900/80 hover:bg-red-500 text-zinc-400 hover:text-white rounded-lg opacity-0 group-hover:opacity-100 transition-all"
+          className="absolute top-2 left-2 p-1.5 bg-zinc-900/80 hover:bg-orange-500 text-zinc-400 hover:text-white rounded-lg opacity-0 group-hover:opacity-100 transition-all"
           title="Delete project"
         >
           <Trash2 className="w-4 h-4" />
@@ -94,21 +94,21 @@ function ProjectCard({ project, onClick, onDelete }: ProjectCardProps) {
       </div>
 
       {/* Info */}
-      <div className="p-4">
+      <div className="p-3">
         <h3 className={cn(
-          "font-medium truncate transition-colors",
+          "text-sm font-medium truncate transition-colors",
           isDraft
             ? "text-orange-200 group-hover:text-orange-300"
-            : "text-zinc-100 group-hover:text-sky-400"
+            : "text-zinc-200 group-hover:text-sky-400"
         )}>
           {project.name}
         </h3>
         {project.description && (
-          <p className="text-sm text-zinc-500 mt-1 line-clamp-2">
+          <p className="text-xs text-zinc-500 mt-1 line-clamp-2">
             {project.description}
           </p>
         )}
-        <div className="flex items-center gap-2 mt-3 text-xs text-zinc-500">
+        <div className="flex items-center gap-2 mt-2 text-xs text-zinc-500">
           <Clock className="w-3 h-3" />
           <span>{project.updatedAt}</span>
         </div>
@@ -446,9 +446,9 @@ export function LibraryProjectsPage() {
 
         {/* Empty State - only show if no projects match current filter */}
         {filteredProjects.length === 0 && (
-          <div className="text-center py-16">
-            <FolderOpen className="w-16 h-16 text-zinc-700 mx-auto mb-4" />
-            <p className="text-zinc-500">
+          <div className="flex flex-col items-center justify-center py-12 px-6 border border-dashed border-zinc-800 rounded-xl bg-zinc-900/30">
+            <FolderOpen className="w-12 h-12 text-zinc-600 mb-3" />
+            <p className="text-zinc-500 text-sm text-center">
               {searchQuery
                 ? `No projects matching "${searchQuery}"`
                 : `No ${statusFilter === "all" ? "" : statusLabels[statusFilter].toLowerCase() + " "}projects`}
@@ -469,8 +469,8 @@ export function LibraryProjectsPage() {
           {/* Modal */}
           <div className="relative bg-zinc-900 border border-zinc-700 rounded-2xl p-6 max-w-md w-full mx-4 shadow-2xl">
             <div className="flex items-start gap-4">
-              <div className="w-12 h-12 rounded-full bg-red-500/20 flex items-center justify-center flex-shrink-0">
-                <AlertTriangle className="w-6 h-6 text-red-400" />
+              <div className="w-12 h-12 rounded-full bg-orange-500/20 flex items-center justify-center flex-shrink-0">
+                <AlertTriangle className="w-6 h-6 text-orange-400" />
               </div>
               <div className="flex-1">
                 <h3 className="text-lg font-semibold text-zinc-100">
@@ -493,7 +493,7 @@ export function LibraryProjectsPage() {
               <button
                 onClick={handleDeleteConfirm}
                 disabled={isDeleting}
-                className="px-4 py-2 text-sm font-medium text-white bg-red-500 hover:bg-red-600 rounded-lg transition-colors disabled:opacity-50 inline-flex items-center gap-2"
+                className="px-4 py-2 text-sm font-medium text-white bg-orange-500 hover:bg-orange-600 rounded-lg transition-colors disabled:opacity-50 inline-flex items-center gap-2"
               >
                 {isDeleting ? (
                   <>

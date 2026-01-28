@@ -10,11 +10,9 @@ import {
   BubblePanel,
   PlatformStep,
   BriefStep,
+  ScriptStep,
   MoodBoardStep,
   StoryboardStep,
-  ShotsStep,
-  FilmingStep,
-  AudioStep,
   ReviewStep,
 } from "@/components/create"
 
@@ -55,16 +53,12 @@ export function CreateProjectWizard() {
         return <PlatformStep />
       case "brief":
         return <BriefStep />
+      case "script":
+        return <ScriptStep />
       case "mood":
         return <MoodBoardStep />
       case "story":
         return <StoryboardStep />
-      case "shots":
-        return <ShotsStep />
-      case "filming":
-        return <FilmingStep />
-      case "audio":
-        return <AudioStep />
       case "review":
         return <ReviewStep />
       default:

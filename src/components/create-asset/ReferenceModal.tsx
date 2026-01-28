@@ -12,6 +12,7 @@ import {
 import { cn } from "@/lib/utils"
 import { useAuth } from "@/contexts/AuthContext"
 import { getAssets, uploadAndCreateAsset } from "@/services/assets"
+import { getAssetDisplayUrl } from "@/services/localStorage"
 import type { Asset, AssetType, AssetCategory } from "@/types/database"
 
 interface ReferenceModalProps {
@@ -52,10 +53,8 @@ export function ReferenceModal({
       setIsLoadingAssets(true)
       try {
         const allAssets = await getAssets(user.id)
-        // References are always images, filtered by category
-        const filtered = allAssets.filter(
-          (a) => a.type === "image" && a.category === category
-        )
+        // References are always images - show ALL images so users can mix (e.g., add character to scene)
+        const filtered = allAssets.filter((a) => a.type === "image")
         setLibraryAssets(filtered)
       } catch (err) {
         console.error("Error fetching assets:", err)
@@ -207,7 +206,7 @@ export function ReferenceModal({
                 <div className="text-center py-12">
                   <Mountain className="w-10 h-10 text-zinc-600 mx-auto mb-3" />
                   <p className="text-zinc-400 text-sm">
-                    No {category} images in your library
+                    No images in your library
                   </p>
                   <button
                     onClick={() => setActiveTab("upload")}
@@ -229,9 +228,9 @@ export function ReferenceModal({
                           : "border-zinc-700 hover:border-zinc-600"
                       )}
                     >
-                      {asset.thumbnail_url || asset.url ? (
+                      {asset.url || asset.local_path ? (
                         <img
-                          src={asset.thumbnail_url || asset.url}
+                          src={getAssetDisplayUrl(asset)}
                           alt={asset.name}
                           className="w-full h-full object-cover"
                         />

@@ -1,11 +1,114 @@
-import { useState, useEffect } from "react"
+import { useState, useEffect, useRef } from "react"
 import { useNavigate } from "react-router-dom"
-import { Loader2, Save, User, MapPin, Cloud, Clapperboard, Package } from "lucide-react"
+import { Loader2, Save, User, MapPin, Cloud, Clapperboard, Package, ChevronDown, Check } from "lucide-react"
 import { useProjectWizardStore, ASPECT_RATIOS } from "@/state/projectWizardStore"
 import { useAuth } from "@/contexts/AuthContext"
 import { updateProject, createProjectBrief, updateProjectBrief, getProjectBrief, createDraftProject } from "@/services/projects"
 import { Button } from "@/components/ui/button"
 import { cn } from "@/lib/utils"
+
+// Custom Dropdown Component
+interface DropdownOption {
+  value: string
+  label: string
+  description?: string
+}
+
+interface CustomDropdownProps {
+  value: string
+  onChange: (value: string) => void
+  options: DropdownOption[]
+  placeholder?: string
+  className?: string
+}
+
+function CustomDropdown({ value, onChange, options, placeholder = "Select...", className }: CustomDropdownProps) {
+  const [isOpen, setIsOpen] = useState(false)
+  const dropdownRef = useRef<HTMLDivElement>(null)
+
+  const selectedOption = options.find(opt => opt.value === value)
+
+  // Close on click outside
+  useEffect(() => {
+    function handleClickOutside(event: MouseEvent) {
+      if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
+        setIsOpen(false)
+      }
+    }
+    document.addEventListener("mousedown", handleClickOutside)
+    return () => document.removeEventListener("mousedown", handleClickOutside)
+  }, [])
+
+  // Close on escape
+  useEffect(() => {
+    function handleEscape(event: KeyboardEvent) {
+      if (event.key === "Escape") setIsOpen(false)
+    }
+    document.addEventListener("keydown", handleEscape)
+    return () => document.removeEventListener("keydown", handleEscape)
+  }, [])
+
+  return (
+    <div ref={dropdownRef} className={cn("relative", className)}>
+      {/* Trigger Button */}
+      <button
+        type="button"
+        onClick={() => setIsOpen(!isOpen)}
+        className={cn(
+          "w-full h-12 px-4 bg-zinc-900 border rounded-lg text-left transition-all",
+          "flex items-center justify-between gap-2",
+          "hover:bg-zinc-800",
+          isOpen
+            ? "border-sky-500 ring-2 ring-sky-500/20"
+            : "border-zinc-700 hover:border-zinc-600"
+        )}
+      >
+        <span className={selectedOption ? "text-white" : "text-zinc-500"}>
+          {selectedOption?.label || placeholder}
+        </span>
+        <ChevronDown
+          className={cn(
+            "w-4 h-4 text-zinc-400 transition-transform",
+            isOpen && "rotate-180"
+          )}
+        />
+      </button>
+
+      {/* Dropdown Menu */}
+      {isOpen && (
+        <div className="absolute z-50 w-full mt-2 py-1 bg-zinc-900 border border-zinc-700 rounded-lg shadow-xl shadow-black/30 overflow-hidden">
+          {options.map((option) => (
+            <button
+              key={option.value}
+              type="button"
+              onClick={() => {
+                onChange(option.value)
+                setIsOpen(false)
+              }}
+              className={cn(
+                "w-full px-4 py-2.5 text-left transition-all",
+                "flex items-center justify-between",
+                option.value === value
+                  ? "bg-sky-500/10 text-sky-400"
+                  : "text-zinc-300 hover:bg-zinc-800"
+              )}
+            >
+              <div className="flex flex-col">
+                <span className="font-medium">{option.label}</span>
+                {option.description && (
+                  <span className="text-xs text-zinc-500">{option.description}</span>
+                )}
+              </div>
+              {option.value === value && (
+                <Check className="w-4 h-4 text-sky-400" />
+              )}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
 
 // Structured content categories that Bubble will fill in
 export interface VideoContent {
@@ -42,8 +145,6 @@ export function BriefStep() {
     goToPreviousStep,
     markStepComplete,
     resetWizard,
-    addBubbleMessage,
-    bubbleMessages,
   } = useProjectWizardStore()
 
   const [projectName, setProjectName] = useState(brief?.name || "")
@@ -60,7 +161,6 @@ export function BriefStep() {
   const [isSavingDraft, setIsSavingDraft] = useState(false)
   // Initialize briefExists from store - if brief has name, it was likely loaded from DB
   const [briefExists, setBriefExists] = useState(!!brief?.name)
-  const [hasStartedConversation, setHasStartedConversation] = useState(false)
 
   // Check if brief exists in DB (for cases where we have projectId but store brief wasn't set)
   useEffect(() => {
@@ -72,18 +172,6 @@ export function BriefStep() {
     }
     checkBrief()
   }, [projectId])
-
-  // Start the conversation when user enters a project name
-  useEffect(() => {
-    if (projectName.trim() && !hasStartedConversation) {
-      setHasStartedConversation(true)
-      // Bubble will start asking questions
-      addBubbleMessage({
-        role: "assistant",
-        content: `Great! "${projectName}" - let's build out your video concept.\n\nTell me about your video. What's the main scene or action? Who's in it?`,
-      })
-    }
-  }, [projectName, hasStartedConversation, addBubbleMessage])
 
   // Listen for Bubble updates to video content (from chat parsing)
   useEffect(() => {
@@ -234,8 +322,7 @@ export function BriefStep() {
     const storeProjectId = useProjectWizardStore.getState().projectId
 
     if (!projectName && !storeProjectId) {
-      resetWizard()
-      navigate("/library/projects")
+      // Nothing to save
       return
     }
 
@@ -279,8 +366,7 @@ export function BriefStep() {
         })
       }
 
-      resetWizard()
-      navigate("/library/projects")
+      // Stay on page - user can use back button to exit
     } catch (error) {
       console.error("Error saving draft:", error)
     } finally {
@@ -326,24 +412,36 @@ export function BriefStep() {
   // Only require project name - video content can be filled in later via Bubble or in workspace
   const isValid = !!projectName.trim()
 
-  const toneOptions = [
-    "Professional",
-    "Casual",
-    "Energetic",
-    "Inspiring",
-    "Educational",
-    "Humorous",
-    "Dramatic",
-    "Calm",
+  const toneOptions: DropdownOption[] = [
+    { value: "professional", label: "Professional" },
+    { value: "casual", label: "Casual" },
+    { value: "energetic", label: "Energetic" },
+    { value: "inspiring", label: "Inspiring" },
+    { value: "educational", label: "Educational" },
+    { value: "humorous", label: "Humorous" },
+    { value: "dramatic", label: "Dramatic" },
+    { value: "calm", label: "Calm" },
   ]
 
-  const durationOptions = [
-    "15 seconds",
-    "30 seconds",
-    "1 minute",
-    "2-3 minutes",
-    "5+ minutes",
+  const durationOptions: DropdownOption[] = [
+    { value: "15 seconds", label: "15 seconds" },
+    { value: "30 seconds", label: "30 seconds" },
+    { value: "1 minute", label: "1 minute" },
+    { value: "2-3 minutes", label: "2-3 minutes" },
+    { value: "5+ minutes", label: "5+ minutes" },
   ]
+
+  const aspectRatioOptions: DropdownOption[] = ASPECT_RATIOS.map(ratio => ({
+    value: ratio.id,
+    label: ratio.label,
+    description: ratio.description,
+  }))
+
+  // Handle dropdown changes
+  const handleDropdownChange = (name: string, value: string) => {
+    setFormData((prev) => ({ ...prev, [name]: value }))
+    updateBrief({ [name]: value })
+  }
 
   // Handle video content field changes
   const handleContentChange = (field: keyof VideoContent, value: string | string[]) => {
@@ -537,77 +635,41 @@ export function BriefStep() {
           <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
             {/* Aspect Ratio */}
             <div>
-              <label
-                htmlFor="aspectRatio"
-                className="block text-sm font-medium text-zinc-300 mb-2"
-              >
+              <label className="block text-sm font-medium text-zinc-300 mb-2">
                 Aspect Ratio
               </label>
-              <select
-                id="aspectRatio"
-                name="aspectRatio"
+              <CustomDropdown
                 value={formData.aspectRatio}
-                onChange={handleChange}
-                className="w-full h-12 px-4 bg-zinc-900 border border-zinc-700 focus:border-sky-500 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-sky-500/20 transition-all appearance-none cursor-pointer"
-              >
-                {ASPECT_RATIOS.map((ratio) => (
-                  <option key={ratio.id} value={ratio.id}>
-                    {ratio.label} - {ratio.description}
-                  </option>
-                ))}
-              </select>
+                onChange={(value) => handleDropdownChange("aspectRatio", value)}
+                options={aspectRatioOptions}
+                placeholder="Select ratio..."
+              />
             </div>
 
             {/* Tone */}
             <div>
-              <label
-                htmlFor="tone"
-                className="block text-sm font-medium text-zinc-300 mb-2"
-              >
+              <label className="block text-sm font-medium text-zinc-300 mb-2">
                 Tone / Mood
               </label>
-              <select
-                id="tone"
-                name="tone"
+              <CustomDropdown
                 value={formData.tone}
-                onChange={handleChange}
-                className="w-full h-12 px-4 bg-zinc-900 border border-zinc-700 focus:border-sky-500 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-sky-500/20 transition-all appearance-none cursor-pointer"
-              >
-                <option value="" className="text-zinc-500">
-                  Select a tone...
-                </option>
-                {toneOptions.map((tone) => (
-                  <option key={tone} value={tone.toLowerCase()}>
-                    {tone}
-                  </option>
-                ))}
-              </select>
+                onChange={(value) => handleDropdownChange("tone", value)}
+                options={toneOptions}
+                placeholder="Select a tone..."
+              />
             </div>
 
             {/* Duration */}
             <div>
-              <label
-                htmlFor="duration"
-                className="block text-sm font-medium text-zinc-300 mb-2"
-              >
+              <label className="block text-sm font-medium text-zinc-300 mb-2">
                 Target Duration
               </label>
-              <select
-                id="duration"
-                name="duration"
+              <CustomDropdown
                 value={formData.duration}
-                onChange={handleChange}
-                className="w-full h-12 px-4 bg-zinc-900 border border-zinc-700 focus:border-sky-500 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-sky-500/20 transition-all appearance-none cursor-pointer"
-              >
-                <option value="" className="text-zinc-500">
-                  Select duration...
-                </option>
-                {durationOptions.map((duration) => (
-                  <option key={duration} value={duration}>
-                    {duration}
-                  </option>
-                ))}
-              </select>
+                onChange={(value) => handleDropdownChange("duration", value)}
+                options={durationOptions}
+                placeholder="Select duration..."
+              />
             </div>
           </div>
         </div>

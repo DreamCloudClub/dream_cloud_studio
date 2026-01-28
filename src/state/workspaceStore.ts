@@ -8,9 +8,6 @@ import {
   updateMoodBoard,
   createMoodBoard,
   getMoodBoard,
-  updateStoryboard,
-  createStoryboard,
-  getStoryboard,
   createScene,
   updateScene as updateSceneDb,
   deleteScene,
@@ -25,13 +22,15 @@ import {
   upsertProjectComposition,
 } from "@/services/projects"
 import { createAsset, updateAsset as updateAssetDb, deleteAsset } from "@/services/assets"
-import type { ProjectWithRelations, Json } from "@/types/database"
+import type { Json } from "@/types/database"
 
 // Workspace tab types
 export type WorkspaceTab =
   | "brief"
+  | "script"
   | "moodboard"
   | "storyboard"
+  | "platform"
   | "editor"
   | "scenes"
   | "assets"
@@ -43,7 +42,9 @@ export const WORKSPACE_TABS: {
   label: string
   icon: string
 }[] = [
+  { id: "platform", label: "Platform", icon: "FolderOpen" },
   { id: "brief", label: "Brief", icon: "FileText" },
+  { id: "script", label: "Script", icon: "ScrollText" },
   { id: "moodboard", label: "Mood", icon: "Palette" },
   { id: "storyboard", label: "Story", icon: "BookOpen" },
   { id: "editor", label: "Editor", icon: "Film" },
@@ -78,9 +79,13 @@ export interface ProjectAsset {
   name: string
   type: "image" | "video" | "audio"
   category: AssetCategory
-  url: string
-  thumbnailUrl?: string
+  url: string | null  // nullable for local-only assets
+  localPath?: string | null  // local file path (Tauri)
+  storageType: "local" | "cloud"
   duration?: number // for video/audio
+  userDescription?: string | null  // what the user asked for
+  aiPrompt?: string | null  // actual prompt sent to AI
+  generationModel?: string | null  // model used
   createdAt: string
 }
 
@@ -91,6 +96,7 @@ export interface Shot {
   description: string
   duration: number // seconds
   order: number
+  shotType?: string // Wide, Medium, Close-up, etc.
   // Assets used in this shot
   assets: {
     scene?: ProjectAsset
@@ -100,7 +106,15 @@ export interface Shot {
     props: ProjectAsset[]
     effects: ProjectAsset[]
   }
-  // Generated/selected media for this shot
+  // Linked asset IDs (new approach - assets as first-class citizens)
+  imageAssetId?: string | null
+  videoAssetId?: string | null
+  audioAssetId?: string | null
+  // Full asset objects when loaded (expanded from asset IDs)
+  imageAsset?: ProjectAsset | null
+  videoAsset?: ProjectAsset | null
+  audioAsset?: ProjectAsset | null
+  // Legacy media fields (deprecated - use linked assets instead)
   media?: {
     type: "image" | "video"
     url: string
@@ -132,6 +146,18 @@ export interface StoryboardCard {
   description: string
   content: string // Full LLM-generated content
   thumbnailUrl?: string
+  order: number
+}
+
+// Script section (from pre-production)
+export interface ScriptSection {
+  id: string
+  type: "description" | "dialogue" | "action" | "transition"
+  content: string
+  sceneContext?: string
+  isNewScene: boolean
+  characterId?: string
+  characterName?: string
   order: number
 }
 
@@ -176,6 +202,7 @@ export interface MoodBoardData {
   images: { id: string; url: string; name: string }[]
   colors: string[]
   keywords: string[]
+  foundationId?: string
 }
 
 // Composition data
@@ -210,11 +237,13 @@ export interface Project {
   id: string
   userId: string
   name: string
+  platform_id: string | null
   brief: ProjectBrief
   moodBoard: MoodBoardData
   assets: ProjectAsset[]
   scenes: Scene[]
   storyboardCards: StoryboardCard[]
+  scriptSections: ScriptSection[]
   exportSettings: ExportSettings
   composition: CompositionData
   createdAt: string
@@ -227,9 +256,20 @@ interface WorkspaceState {
   project: Project | null
   isLoading: boolean
 
+  // Save state
+  isSaving: boolean
+  saveStatus: "idle" | "saving" | "saved"
+  handleSave: () => Promise<void>
+
   // Navigation
   activeTab: WorkspaceTab
   setActiveTab: (tab: WorkspaceTab) => void
+
+  // Asset Creation Mode (for launching generator from other pages)
+  assetCreationMode: boolean
+  assetCreationType: "image" | "video" | "audio" | null
+  startAssetCreation: (type?: "image" | "video" | "audio") => void
+  clearAssetCreationMode: () => void
 
   // Storyboard
   selectedStoryboardCardId: string | null
@@ -248,6 +288,12 @@ interface WorkspaceState {
   // Scene Manager
   expandedSceneIds: string[]
   toggleSceneExpanded: (id: string) => void
+
+  // Generation Panel
+  generatingForShotId: string | null
+  generatingForSceneId: string | null
+  openGenerationPanel: (sceneId: string, shotId: string) => void
+  closeGenerationPanel: () => void
 
   // Project actions - ALL PERSIST TO DATABASE
   loadProject: (projectId: string) => Promise<void>
@@ -276,16 +322,49 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
   // Initial state
   project: null,
   isLoading: false,
+  isSaving: false,
+  saveStatus: "idle",
   activeTab: "editor",
+  assetCreationMode: false,
+  assetCreationType: null,
   selectedStoryboardCardId: null,
   selectedSceneId: null,
   selectedShotId: null,
   isPlaying: false,
   currentTime: 0,
   expandedSceneIds: [],
+  generatingForShotId: null,
+  generatingForSceneId: null,
 
   // Navigation
   setActiveTab: (tab) => set({ activeTab: tab }),
+
+  // Asset Creation Mode
+  startAssetCreation: (type) => set({
+    assetCreationMode: true,
+    assetCreationType: type || null,
+    activeTab: "assets"
+  }),
+  clearAssetCreationMode: () => set({ assetCreationMode: false, assetCreationType: null }),
+
+  // Save with status tracking
+  handleSave: async () => {
+    const { project, saveAll } = get()
+    if (!project) return
+
+    set({ isSaving: true, saveStatus: "saving" })
+    try {
+      await saveAll()
+      set({ saveStatus: "saved" })
+      // Reset to idle after 2 seconds
+      setTimeout(() => set({ saveStatus: "idle" }), 2000)
+    } catch (error) {
+      console.error("Failed to save:", error)
+      set({ saveStatus: "idle" })
+    } finally {
+      set({ isSaving: false })
+    }
+  },
 
   // Storyboard
   setSelectedStoryboardCard: (id) => set({ selectedStoryboardCardId: id }),
@@ -306,6 +385,16 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
     }
   },
 
+  // Generation Panel
+  openGenerationPanel: (sceneId, shotId) => set({
+    generatingForSceneId: sceneId,
+    generatingForShotId: shotId,
+  }),
+  closeGenerationPanel: () => set({
+    generatingForSceneId: null,
+    generatingForShotId: null,
+  }),
+
   // Project actions - ALL PERSIST TO DATABASE
   loadProject: async (projectId) => {
     set({ isLoading: true })
@@ -324,6 +413,7 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
         id: dbProject.id,
         userId: dbProject.user_id,
         name: dbProject.name,
+        platform_id: dbProject.platform_id,
         brief: {
           name: dbProject.brief?.name || dbProject.name,
           description: dbProject.brief?.description || "",
@@ -343,6 +433,7 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
           images: (dbProject.mood_board?.images as MoodBoardData["images"]) || [],
           colors: (dbProject.mood_board?.colors as string[]) || [],
           keywords: (dbProject.mood_board?.keywords as string[]) || [],
+          foundationId: (dbProject.mood_board as any)?.foundation_id || undefined,
         },
         assets: (dbProject.assets || []).map((a) => ({
           id: a.id,
@@ -350,8 +441,12 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
           type: a.type as "image" | "video" | "audio",
           category: (a.category || "scene") as AssetCategory,
           url: a.url,
-          thumbnailUrl: a.thumbnail_url || undefined,
+          localPath: a.local_path || undefined,
+          storageType: (a.storage_type || "cloud") as "local" | "cloud",
           duration: a.duration || undefined,
+          userDescription: a.user_description || undefined,
+          aiPrompt: a.ai_prompt || undefined,
+          generationModel: a.generation_model || undefined,
           createdAt: a.created_at,
         })),
         scenes: (dbProject.scenes || []).map((s) => ({
@@ -359,26 +454,87 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
           name: s.name,
           description: s.description || "",
           order: s.sort_order,
-          shots: (s.shots || []).map((shot) => ({
-            id: shot.id,
-            name: shot.name,
-            description: shot.description || "",
-            duration: shot.duration,
-            order: shot.sort_order,
-            assets: {
-              characters: [],
-              props: [],
-              effects: [],
-            },
-            media: shot.media_url
-              ? {
-                  type: (shot.media_type || "image") as "image" | "video",
-                  url: shot.media_url,
-                  thumbnailUrl: shot.media_thumbnail_url || undefined,
-                }
-              : undefined,
-            notes: shot.notes || "",
-          })),
+          shots: (s.shots || []).map((shot) => {
+            // Find linked assets from the project assets
+            const imageAsset = shot.image_asset_id
+              ? (dbProject.assets || []).find(a => a.id === shot.image_asset_id)
+              : null
+            const videoAsset = shot.video_asset_id
+              ? (dbProject.assets || []).find(a => a.id === shot.video_asset_id)
+              : null
+            const audioAsset = shot.audio_asset_id
+              ? (dbProject.assets || []).find(a => a.id === shot.audio_asset_id)
+              : null
+
+            return {
+              id: shot.id,
+              name: shot.name,
+              description: shot.description || "",
+              duration: shot.duration,
+              order: shot.sort_order,
+              shotType: shot.shot_type || undefined,
+              assets: {
+                characters: [],
+                props: [],
+                effects: [],
+              },
+              // New asset linking approach
+              imageAssetId: shot.image_asset_id || null,
+              videoAssetId: shot.video_asset_id || null,
+              audioAssetId: shot.audio_asset_id || null,
+              imageAsset: imageAsset ? {
+                id: imageAsset.id,
+                name: imageAsset.name,
+                type: imageAsset.type as "image" | "video" | "audio",
+                category: (imageAsset.category || "scene") as AssetCategory,
+                url: imageAsset.url,
+                localPath: imageAsset.local_path || undefined,
+                storageType: (imageAsset.storage_type || "cloud") as "local" | "cloud",
+                duration: imageAsset.duration || undefined,
+                userDescription: imageAsset.user_description || undefined,
+                aiPrompt: imageAsset.ai_prompt || undefined,
+                generationModel: imageAsset.generation_model || undefined,
+                createdAt: imageAsset.created_at,
+              } : null,
+              videoAsset: videoAsset ? {
+                id: videoAsset.id,
+                name: videoAsset.name,
+                type: videoAsset.type as "image" | "video" | "audio",
+                category: (videoAsset.category || "scene") as AssetCategory,
+                url: videoAsset.url,
+                localPath: videoAsset.local_path || undefined,
+                storageType: (videoAsset.storage_type || "cloud") as "local" | "cloud",
+                duration: videoAsset.duration || undefined,
+                userDescription: videoAsset.user_description || undefined,
+                aiPrompt: videoAsset.ai_prompt || undefined,
+                generationModel: videoAsset.generation_model || undefined,
+                createdAt: videoAsset.created_at,
+              } : null,
+              audioAsset: audioAsset ? {
+                id: audioAsset.id,
+                name: audioAsset.name,
+                type: audioAsset.type as "image" | "video" | "audio",
+                category: (audioAsset.category || "audio") as AssetCategory,
+                url: audioAsset.url,
+                localPath: audioAsset.local_path || undefined,
+                storageType: (audioAsset.storage_type || "cloud") as "local" | "cloud",
+                duration: audioAsset.duration || undefined,
+                userDescription: audioAsset.user_description || undefined,
+                aiPrompt: audioAsset.ai_prompt || undefined,
+                generationModel: audioAsset.generation_model || undefined,
+                createdAt: audioAsset.created_at,
+              } : null,
+              // Legacy media fields (fallback if no linked assets)
+              media: shot.media_url
+                ? {
+                    type: (shot.media_type || "image") as "image" | "video",
+                    url: shot.media_url,
+                    thumbnailUrl: shot.media_thumbnail_url || undefined,
+                  }
+                : undefined,
+              notes: shot.notes || "",
+            }
+          }),
           voiceover: s.voiceover_script
             ? {
                 id: `vo-${s.id}`,
@@ -395,6 +551,16 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
           content: c.content || "",
           thumbnailUrl: c.thumbnail_url || undefined,
           order: c.sort_order,
+        })),
+        scriptSections: (dbProject.script_sections || []).map((s: any) => ({
+          id: s.id,
+          type: s.type || "description",
+          content: s.content || "",
+          sceneContext: s.scene_context || undefined,
+          isNewScene: s.is_new_scene || false,
+          characterId: s.character_id || undefined,
+          characterName: s.character?.name || undefined,
+          order: s.sort_order,
         })),
         exportSettings: {
           resolution: (dbProject.export_settings?.resolution || "1080p") as "720p" | "1080p" | "4k",
@@ -509,6 +675,7 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
         images: updatedMoodBoard.images as Json,
         colors: updatedMoodBoard.colors as Json,
         keywords: updatedMoodBoard.keywords as Json,
+        foundation_id: updatedMoodBoard.foundationId || null,
       }
 
       const existing = await getMoodBoard(project.id)
@@ -528,15 +695,21 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
 
     try {
       // Create in database first to get ID
+      // Import type for proper casting
+      type DbAssetCategory = "scene" | "stage" | "character" | "weather" | "prop" | "effect" | "music" | "sound_effect" | "voice"
       const dbAsset = await createAsset({
         user_id: userId,
         project_id: project.id,
         name: asset.name,
         type: asset.type,
-        category: asset.category,
-        url: asset.url,
-        thumbnail_url: asset.thumbnailUrl,
+        category: asset.category as DbAssetCategory,
+        url: asset.url || null,
         duration: asset.duration,
+        storage_type: asset.storageType,
+        local_path: asset.localPath,
+        user_description: asset.userDescription,
+        ai_prompt: asset.aiPrompt,
+        generation_model: asset.generationModel,
       })
 
       // Then update local state
@@ -546,8 +719,12 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
         type: dbAsset.type as "image" | "video" | "audio",
         category: (dbAsset.category || "scene") as AssetCategory,
         url: dbAsset.url,
-        thumbnailUrl: dbAsset.thumbnail_url || undefined,
+        localPath: dbAsset.local_path || undefined,
+        storageType: (dbAsset.storage_type || "cloud") as "local" | "cloud",
         duration: dbAsset.duration || undefined,
+        userDescription: dbAsset.user_description || undefined,
+        aiPrompt: dbAsset.ai_prompt || undefined,
+        generationModel: dbAsset.generation_model || undefined,
         createdAt: dbAsset.created_at,
       }
 
@@ -603,7 +780,6 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
       if (data.name !== undefined) dbData.name = data.name
       if (data.category !== undefined) dbData.category = data.category
       if (data.url !== undefined) dbData.url = data.url
-      if (data.thumbnailUrl !== undefined) dbData.thumbnail_url = data.thumbnailUrl
       if (data.duration !== undefined) dbData.duration = data.duration
 
       await updateAssetDb(assetId, dbData)
@@ -818,6 +994,12 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
       if (data.duration !== undefined) dbData.duration = data.duration
       if (data.order !== undefined) dbData.sort_order = data.order
       if (data.notes !== undefined) dbData.notes = data.notes
+      if (data.shotType !== undefined) dbData.shot_type = data.shotType
+      // Asset linking (new approach)
+      if (data.imageAssetId !== undefined) dbData.image_asset_id = data.imageAssetId
+      if (data.videoAssetId !== undefined) dbData.video_asset_id = data.videoAssetId
+      if (data.audioAssetId !== undefined) dbData.audio_asset_id = data.audioAssetId
+      // Legacy media fields
       if (data.media !== undefined) {
         dbData.media_type = data.media?.type
         dbData.media_url = data.media?.url
@@ -1044,10 +1226,9 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
     if (!project) return
 
     try {
-      // Save project name/status
+      // Save project name
       await updateProject(project.id, {
         name: project.name,
-        status: project.status,
       })
 
       // Save brief
@@ -1074,6 +1255,7 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
         images: project.moodBoard.images as unknown as Json,
         colors: project.moodBoard.colors as unknown as Json,
         keywords: project.moodBoard.keywords as unknown as Json,
+        foundation_id: project.moodBoard.foundationId || null,
       }
       const existingMoodBoard = await getMoodBoard(project.id)
       if (existingMoodBoard) {
@@ -1082,16 +1264,8 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
         await createMoodBoard({ project_id: project.id, ...moodBoardData })
       }
 
-      // Save storyboard
-      const storyboardData = {
-        acts: project.storyboard.acts as unknown as Json,
-      }
-      const existingStoryboard = await getStoryboard(project.id)
-      if (existingStoryboard) {
-        await updateStoryboard(project.id, storyboardData)
-      } else {
-        await createStoryboard({ project_id: project.id, ...storyboardData })
-      }
+      // Note: Storyboard cards are saved individually via updateStoryboardCard
+      // The legacy storyboard save has been removed since Project uses storyboardCards
 
       // Save composition
       await upsertProjectComposition(project.id, {

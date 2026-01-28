@@ -1,10 +1,6 @@
-import { useState, useMemo } from "react"
+import { useState } from "react"
 import {
   Check,
-  Image,
-  Music,
-  Volume2,
-  Mic,
   Loader2,
   Sparkles,
   AlertCircle,
@@ -12,69 +8,56 @@ import {
   FileText,
   Palette,
   BookOpen,
-  Clapperboard,
-  Video,
-  Play,
-  Film,
+  ScrollText,
   Save,
 } from "lucide-react"
 import { useProjectWizardStore } from "@/state/projectWizardStore"
 import { useFoundationStore } from "@/state/foundationStore"
+import { updateProject } from "@/services/projects"
+import { useAuth } from "@/contexts/AuthContext"
 import { Button } from "@/components/ui/button"
 import { cn } from "@/lib/utils"
 import { useNavigate } from "react-router-dom"
-import { VideoPreview } from "@/remotion/VideoPreview"
-import type { Shot } from "@/remotion/Root"
 
 export function ReviewStep() {
   const navigate = useNavigate()
+  const { user } = useAuth()
   const {
+    projectId,
     platform,
     brief,
     moodBoard,
     storyboard,
-    shots,
-    shotMedia,
-    audio,
-    filmingProgress,
-    composition,
+    completedSteps,
     goToPreviousStep,
     resetWizard,
   } = useProjectWizardStore()
   const { incrementProjectCount } = useFoundationStore()
 
   const [isCreating, setIsCreating] = useState(false)
-  const [showPreview, setShowPreview] = useState(false)
+  const [error, setError] = useState<string | null>(null)
 
-  // Build Remotion shots from shot media
-  const remotionShots: Shot[] = useMemo(() => {
-    return shots
-      .filter((shot) => shotMedia[shot.id])
-      .map((shot) => {
-        const media = shotMedia[shot.id]
-        return {
-          id: shot.id,
-          type: media.type === "video" ? "video" : "image",
-          src: media.url,
-          duration: shot.duration,
-          transition: composition.defaultTransition || "fade",
-          transitionDuration: composition.transitionDuration || 0.5,
-        } as Shot
-      })
-  }, [shots, shotMedia, composition])
+  const handleCreateProject = async () => {
+    if (!projectId) {
+      setError("No project found. Please start over.")
+      return
+    }
 
-  const handleCreateProject = () => {
+    if (!user) {
+      setError("You must be logged in to create a project.")
+      return
+    }
+
     setIsCreating(true)
+    setError(null)
 
-    // Simulate project creation and assembly
-    setTimeout(() => {
-      // In a real app, this would:
-      // 1. Save the project to Supabase
-      // 2. Upload all assets
-      // 3. Create initial timeline
-      // 4. Navigate to workspace
-
-      const newProjectId = crypto.randomUUID()
+    try {
+      // Update project status from 'draft' to 'in_progress' (active)
+      // Scenes and shots are created manually in the Workspace
+      await updateProject(projectId, {
+        status: "in_progress",
+        name: brief?.name || "Untitled Project",
+      })
 
       // Increment foundation project count if one was used
       if (moodBoard?.foundationId) {
@@ -85,15 +68,18 @@ export function ReviewStep() {
       resetWizard()
 
       // Navigate to project workspace
-      navigate(`/project/${newProjectId}`)
-    }, 3000)
+      navigate(`/project/${projectId}`)
+    } catch (err) {
+      console.error("Error creating project:", err)
+      setError("Failed to create project. Please try again.")
+      setIsCreating(false)
+    }
   }
 
-  const totalDuration = shots.reduce((sum, shot) => sum + shot.duration, 0)
-  const completedShots = filmingProgress.completedShots.length
-  const hasAllMedia = completedShots === shots.length
+  // Check completed steps for script (script data is in DB, not in store)
+  const scriptCompleted = completedSteps.includes("script")
 
-  // Summary sections
+  // Summary sections matching the simplified wizard flow
   const sections = [
     {
       title: "Platform",
@@ -111,6 +97,14 @@ export function ReviewStep() {
       details: brief?.description,
     },
     {
+      title: "Script",
+      icon: ScrollText,
+      status: scriptCompleted ? "complete" : "optional",
+      content: scriptCompleted
+        ? "Script created"
+        : "No script (optional)",
+    },
+    {
       title: "Mood Board",
       icon: Palette,
       status: moodBoard && (moodBoard.images.length > 0 || moodBoard.colors.length > 0) ? "complete" : "optional",
@@ -120,53 +114,19 @@ export function ReviewStep() {
       extras: moodBoard?.keywords.length ? moodBoard.keywords.slice(0, 3).join(", ") : null,
     },
     {
-      title: "Story",
+      title: "Storyboard",
       icon: BookOpen,
-      status: storyboard?.acts.length ? "complete" : "incomplete",
+      status: completedSteps.includes("story") ? "complete" : "optional",
       content: storyboard?.acts.length
         ? `${storyboard.acts.length} acts, ${storyboard.acts.reduce((sum, a) => sum + a.beats.length, 0)} beats`
-        : "No story structure",
-    },
-    {
-      title: "Shots",
-      icon: Clapperboard,
-      status: shots.length > 0 ? "complete" : "incomplete",
-      content: shots.length > 0
-        ? `${shots.length} shots (${totalDuration}s total)`
-        : "No shots defined",
-    },
-    {
-      title: "Media",
-      icon: Video,
-      status: hasAllMedia ? "complete" : completedShots > 0 ? "partial" : "incomplete",
-      content: hasAllMedia
-        ? `All ${shots.length} shots have media`
-        : `${completedShots}/${shots.length} shots have media`,
-    },
-    {
-      title: "Audio",
-      icon: Volume2,
-      status: audio.voiceovers.length > 0 || audio.soundtrack ? "complete" : "optional",
-      content: [
-        audio.voiceovers.length > 0 && `${audio.voiceovers.length} voiceover(s)`,
-        audio.soundtrack && "Soundtrack",
-        audio.sfx.length > 0 && `${audio.sfx.length} SFX`,
-      ].filter(Boolean).join(", ") || "No audio added",
-    },
-    {
-      title: "Composition",
-      icon: Film,
-      status: composition.title || composition.outro ? "complete" : "optional",
-      content: [
-        composition.title && `Title: "${composition.title.text}"`,
-        composition.outro && `Outro: "${composition.outro.text}"`,
-        composition.textOverlays.length > 0 && `${composition.textOverlays.length} overlay(s)`,
-      ].filter(Boolean).join(" • ") || "No title/outro set",
-      extras: composition.defaultTransition ? `${composition.defaultTransition} transitions` : null,
+        : "Visual planning (optional)",
     },
   ]
 
-  const hasIncomplete = sections.some((s) => s.status === "incomplete")
+  // Only Platform and Brief are required
+  const requiredIncomplete = sections.some(
+    (s) => s.status === "incomplete" && (s.title === "Platform" || s.title === "Brief")
+  )
 
   return (
     <div className="flex-1 flex flex-col p-6 lg:p-8 overflow-y-auto">
@@ -180,7 +140,7 @@ export function ReviewStep() {
             Review & Create
           </h1>
           <p className="text-zinc-400">
-            Review your project setup before we assemble your raw edit.
+            Review your pre-production setup before creating the project.
           </p>
         </div>
 
@@ -189,73 +149,10 @@ export function ReviewStep() {
           <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-6 mb-6 text-center">
             <p className="text-sm text-zinc-500 mb-1">Project Name</p>
             <h2 className="text-2xl font-bold text-zinc-100">{brief.name}</h2>
-          </div>
-        )}
-
-        {/* Video Preview */}
-        {remotionShots.length > 0 && (
-          <div className="mb-8">
-            <div className="flex items-center justify-between mb-3">
-              <h3 className="text-sm font-medium text-zinc-400 flex items-center gap-2">
-                <Film className="w-4 h-4" />
-                Composition Preview
-              </h3>
-              <button
-                onClick={() => setShowPreview(!showPreview)}
-                className="text-sm text-sky-400 hover:text-sky-300 flex items-center gap-1"
-              >
-                <Play className="w-3 h-3" />
-                {showPreview ? "Hide Preview" : "Show Preview"}
-              </button>
-            </div>
-
-            {showPreview && (
-              <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-4">
-                <div className="flex justify-center">
-                  <VideoPreview
-                    shots={remotionShots}
-                    title={composition.title}
-                    outro={composition.outro}
-                    backgroundColor={composition.backgroundColor || "#000000"}
-                    width={640}
-                    height={360}
-                    controls
-                  />
-                </div>
-
-                {/* Composition Info */}
-                <div className="mt-4 flex flex-wrap gap-2 justify-center">
-                  {composition.title && (
-                    <span className="px-2 py-1 bg-zinc-800 rounded text-xs text-zinc-400">
-                      Title: "{composition.title.text}"
-                    </span>
-                  )}
-                  {composition.outro && (
-                    <span className="px-2 py-1 bg-zinc-800 rounded text-xs text-zinc-400">
-                      Outro: "{composition.outro.text}"
-                    </span>
-                  )}
-                  <span className="px-2 py-1 bg-zinc-800 rounded text-xs text-zinc-400">
-                    Transition: {composition.defaultTransition || "fade"}
-                  </span>
-                  {composition.textOverlays.length > 0 && (
-                    <span className="px-2 py-1 bg-zinc-800 rounded text-xs text-zinc-400">
-                      {composition.textOverlays.length} text overlay(s)
-                    </span>
-                  )}
-                </div>
-              </div>
-            )}
-
-            {!showPreview && (
-              <div className="bg-zinc-900/50 border border-zinc-800 border-dashed rounded-xl p-8 text-center">
-                <Play className="w-8 h-8 text-zinc-600 mx-auto mb-2" />
-                <p className="text-sm text-zinc-500">
-                  {remotionShots.length} shots ready to preview
-                  {composition.title && ` • Title card`}
-                  {composition.outro && ` • Outro`}
-                </p>
-              </div>
+            {brief.duration && (
+              <p className="text-sm text-zinc-400 mt-2">
+                Target duration: {brief.duration}s • {brief.aspectRatio || "16:9"}
+              </p>
             )}
           </div>
         )}
@@ -271,8 +168,6 @@ export function ReviewStep() {
                   ? "bg-zinc-900/50 border-zinc-800"
                   : section.status === "optional"
                   ? "bg-zinc-900/30 border-zinc-800/50"
-                  : section.status === "partial"
-                  ? "bg-amber-500/5 border-amber-500/20"
                   : "bg-red-500/5 border-red-500/20"
               )}
             >
@@ -290,9 +185,6 @@ export function ReviewStep() {
                   )}
                   {section.status === "optional" && (
                     <span className="text-xs text-zinc-500">(optional)</span>
-                  )}
-                  {section.status === "partial" && (
-                    <span className="text-xs text-amber-400">Partial</span>
                   )}
                   {section.status === "incomplete" && (
                     <AlertCircle className="w-4 h-4 text-red-400" />
@@ -314,93 +206,28 @@ export function ReviewStep() {
           ))}
         </div>
 
-        {/* Shot Thumbnails Preview */}
-        {Object.keys(shotMedia).length > 0 && (
-          <div className="mb-8">
-            <h3 className="text-sm font-medium text-zinc-400 mb-3">
-              Shot Preview
-            </h3>
-            <div className="grid grid-cols-4 md:grid-cols-6 lg:grid-cols-8 gap-2">
-              {shots.slice(0, 8).map((shot, index) => {
-                const media = shotMedia[shot.id]
-                return (
-                  <div
-                    key={shot.id}
-                    className="relative aspect-video bg-zinc-800 rounded-lg overflow-hidden"
-                  >
-                    {media ? (
-                      <img
-                        src={media.url}
-                        alt={`Shot ${index + 1}`}
-                        className="w-full h-full object-cover"
-                      />
-                    ) : (
-                      <div className="w-full h-full flex items-center justify-center">
-                        <Image className="w-4 h-4 text-zinc-600" />
-                      </div>
-                    )}
-                    <span className="absolute bottom-1 left-1 text-[10px] bg-black/60 text-white px-1 rounded">
-                      {index + 1}
-                    </span>
-                  </div>
-                )
-              })}
-              {shots.length > 8 && (
-                <div className="aspect-video bg-zinc-800 rounded-lg flex items-center justify-center">
-                  <span className="text-xs text-zinc-500">
-                    +{shots.length - 8}
-                  </span>
-                </div>
-              )}
-            </div>
-          </div>
-        )}
-
-        {/* Audio Summary */}
-        {(audio.voiceovers.length > 0 || audio.soundtrack || audio.sfx.length > 0) && (
-          <div className="mb-8">
-            <h3 className="text-sm font-medium text-zinc-400 mb-3">
-              Audio Tracks
-            </h3>
-            <div className="flex flex-wrap gap-2">
-              {audio.voiceovers.map((vo) => (
-                <div
-                  key={vo.id}
-                  className="flex items-center gap-2 px-3 py-1.5 bg-zinc-800 rounded-full text-sm"
-                >
-                  <Mic className="w-3 h-3 text-sky-400" />
-                  <span className="text-zinc-300">{vo.name}</span>
-                </div>
-              ))}
-              {audio.soundtrack && (
-                <div className="flex items-center gap-2 px-3 py-1.5 bg-zinc-800 rounded-full text-sm">
-                  <Music className="w-3 h-3 text-purple-400" />
-                  <span className="text-zinc-300">{audio.soundtrack.name}</span>
-                </div>
-              )}
-              {audio.sfx.map((sfx) => (
-                <div
-                  key={sfx.id}
-                  className="flex items-center gap-2 px-3 py-1.5 bg-zinc-800 rounded-full text-sm"
-                >
-                  <Volume2 className="w-3 h-3 text-orange-400" />
-                  <span className="text-zinc-300">{sfx.name}</span>
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
-
-        {/* Warning for incomplete */}
-        {hasIncomplete && (
+        {/* Warning for incomplete required fields */}
+        {requiredIncomplete && (
           <div className="p-4 bg-amber-500/10 border border-amber-500/30 rounded-xl mb-6">
             <div className="flex items-start gap-3">
               <AlertCircle className="w-5 h-5 text-amber-400 flex-shrink-0 mt-0.5" />
               <div>
                 <p className="text-sm text-amber-200">
-                  Some sections are incomplete. You can still create the project,
-                  but you may want to go back and fill in the missing information.
+                  Some required sections are incomplete. Please go back and fill in the
+                  missing information before creating the project.
                 </p>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Error message */}
+        {error && (
+          <div className="p-4 bg-red-500/10 border border-red-500/30 rounded-xl mb-6">
+            <div className="flex items-start gap-3">
+              <AlertCircle className="w-5 h-5 text-red-400 flex-shrink-0 mt-0.5" />
+              <div>
+                <p className="text-sm text-red-200">{error}</p>
               </div>
             </div>
           </div>
@@ -410,12 +237,12 @@ export function ReviewStep() {
         <div className="text-center mb-8">
           <Button
             onClick={handleCreateProject}
-            disabled={isCreating || !hasAllMedia}
+            disabled={isCreating || requiredIncomplete || !projectId}
             className={cn(
               "px-12 py-6 text-lg font-semibold rounded-xl shadow-lg transition-all",
               isCreating
                 ? "bg-zinc-800 text-zinc-400"
-                : hasAllMedia
+                : !requiredIncomplete && projectId
                 ? "bg-gradient-to-r from-sky-400 via-sky-500 to-blue-600 hover:from-sky-300 hover:via-sky-400 hover:to-blue-500 text-white shadow-sky-500/30 hover:shadow-sky-500/40 hover:scale-105"
                 : "bg-zinc-800 text-zinc-500 cursor-not-allowed"
             )}
@@ -432,12 +259,6 @@ export function ReviewStep() {
               </>
             )}
           </Button>
-
-          {!hasAllMedia && (
-            <p className="text-sm text-zinc-500 mt-3">
-              Complete all shot media before creating the project
-            </p>
-          )}
         </div>
 
         {/* What happens next */}
@@ -446,15 +267,15 @@ export function ReviewStep() {
           <ol className="inline-flex flex-col items-start text-left">
             <li className="flex items-center gap-2">
               <span className="w-5 h-5 rounded-full bg-zinc-800 flex items-center justify-center text-xs">1</span>
-              We'll assemble your raw edit in the timeline
+              Your project will be created in the Workspace
             </li>
             <li className="flex items-center gap-2 mt-1">
               <span className="w-5 h-5 rounded-full bg-zinc-800 flex items-center justify-center text-xs">2</span>
-              You can refine and polish in the workspace
+              Generate images and videos for your shots
             </li>
             <li className="flex items-center gap-2 mt-1">
               <span className="w-5 h-5 rounded-full bg-zinc-800 flex items-center justify-center text-xs">3</span>
-              Export your finished video when ready
+              Assemble and export your finished video
             </li>
           </ol>
         </div>

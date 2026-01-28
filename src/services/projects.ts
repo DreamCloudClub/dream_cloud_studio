@@ -140,24 +140,27 @@ export async function getProjectWithRelations(projectId: string): Promise<Projec
   }
 
   // Fetch related data in parallel
+  // Use maybeSingle() for optional records to avoid 406 errors when they don't exist
   const [
     briefResult,
     moodBoardResult,
     storyboardResult,
     cardsResult,
+    scriptSectionsResult,
     scenesResult,
     assetsResult,
     exportResult,
     compositionResult,
   ] = await Promise.all([
-    supabase.from('project_briefs').select('*').eq('project_id', projectId).single(),
-    supabase.from('mood_boards').select('*').eq('project_id', projectId).single(),
-    supabase.from('storyboards').select('*').eq('project_id', projectId).single(),
+    supabase.from('project_briefs').select('*').eq('project_id', projectId).maybeSingle(),
+    supabase.from('mood_boards').select('*').eq('project_id', projectId).maybeSingle(),
+    supabase.from('storyboards').select('*').eq('project_id', projectId).maybeSingle(),
     supabase.from('storyboard_cards').select('*').eq('project_id', projectId).order('sort_order'),
+    supabase.from('script_sections').select('*').eq('project_id', projectId).order('sort_order'),
     supabase.from('scenes').select('*').eq('project_id', projectId).order('sort_order'),
     supabase.from('assets').select('*').eq('project_id', projectId).order('created_at', { ascending: false }),
-    supabase.from('export_settings').select('*').eq('project_id', projectId).single(),
-    supabase.from('project_compositions').select('*').eq('project_id', projectId).single(),
+    supabase.from('export_settings').select('*').eq('project_id', projectId).maybeSingle(),
+    supabase.from('project_compositions').select('*').eq('project_id', projectId).maybeSingle(),
   ])
 
   // Fetch shots for each scene
@@ -184,6 +187,7 @@ export async function getProjectWithRelations(projectId: string): Promise<Projec
     mood_board: moodBoardResult.data as MoodBoard | undefined,
     storyboard: storyboardResult.data as Storyboard | undefined,
     storyboard_cards: (cardsResult.data || []) as StoryboardCard[],
+    script_sections: (scriptSectionsResult.data || []) as any[],
     scenes,
     assets: (assetsResult.data || []) as any[],
     export_settings: exportResult.data as ExportSettings | undefined,
@@ -543,7 +547,6 @@ export async function reorderShots(sceneId: string, shotIds: string[]): Promise<
     if (error) throw error
   }
 }
-
 // ============================================
 // EXPORT SETTINGS
 // ============================================
@@ -728,4 +731,30 @@ export async function upsertProjectComposition(projectId: string, updates: Proje
       ...updates,
     })
   }
+}
+
+// ============================================
+// PLATFORM-RELATED QUERIES
+// ============================================
+
+export async function getProjectsByPlatform(platformId: string): Promise<Project[]> {
+  const { data, error } = await supabase
+    .from('projects')
+    .select('*')
+    .eq('platform_id', platformId)
+    .order('updated_at', { ascending: false })
+
+  if (error) throw error
+  return data as Project[]
+}
+
+export async function getAllProjects(userId: string): Promise<Project[]> {
+  const { data, error } = await supabase
+    .from('projects')
+    .select('*')
+    .eq('user_id', userId)
+    .order('updated_at', { ascending: false })
+
+  if (error) throw error
+  return data as Project[]
 }

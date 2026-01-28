@@ -10,8 +10,33 @@ export * from './projects'
 // Assets and file management
 export * from './assets'
 
+// Local storage (Tauri file system operations)
+export * from './localStorage'
+
 // Platforms
 export * from './platforms'
+
+// Scripts (characters and sections)
+export {
+  getScriptCharacters,
+  getScriptCharactersWithAssets,
+  getScriptCharacter,
+  createScriptCharacter,
+  updateScriptCharacter,
+  deleteScriptCharacter,
+  linkCharacterToAsset,
+  getScriptSections,
+  getScriptSectionsWithCharacters,
+  getScriptSection,
+  createScriptSection,
+  createScriptSections,
+  updateScriptSection,
+  deleteScriptSection,
+  reorderScriptSections,
+  clearScriptSections,
+  subscribeToScriptSections,
+  subscribeToScriptCharacters,
+} from './scripts'
 
 // Seed data (dev tools)
 export * from './seedData'
@@ -45,12 +70,24 @@ export {
   generateVideo,
   generateMusic,
   generateVoice as generateVoiceReplicate,
+  // Asset-aware generation functions
+  generateImageAssets,
+  generateVideoAsset,
+  generateMusicAsset,
+  generateVoiceAsset,
 } from './replicate'
 export type {
   GenerateImageOptions,
   GenerateVideoOptions,
   GenerateMusicOptions,
   GenerateVoiceOptions as ReplicateVoiceOptions,
+  // Asset-aware generation option types
+  GenerateImageAssetOptions,
+  GenerateImageAssetResult,
+  GenerateVideoAssetOptions,
+  GenerateVideoAssetResult,
+  GenerateMusicAssetOptions,
+  GenerateVoiceAssetOptions,
 } from './replicate'
 
 // Claude AI Assistant
@@ -76,11 +113,22 @@ export type {
   UsageTracking,
   ProjectWithRelations,
   SceneWithShots,
+  ShotWithAssets,
+  // Script types
+  ScriptCharacter,
+  ScriptCharacterWithAsset,
+  ScriptSection,
+  ScriptSectionType,
+  ScriptSectionWithCharacter,
+  ScriptCharacterInsert,
+  ScriptSectionInsert,
+  // Enums and base types
   AspectRatio,
   SubscriptionTier,
   ProjectStatus,
   AssetType,
   AssetCategory,
+  AssetStorageType,
   ExportResolution,
   ExportFormat,
   ExportQuality,

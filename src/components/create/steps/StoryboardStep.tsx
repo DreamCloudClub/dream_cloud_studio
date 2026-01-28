@@ -1,355 +1,272 @@
-import { useState, useEffect, useRef } from "react"
+import { useState, useEffect, useCallback } from "react"
 import { useNavigate } from "react-router-dom"
-import { Plus, Trash2, GripVertical, ChevronDown, ChevronRight, Loader2, Save } from "lucide-react"
-import { useProjectWizardStore, type Act } from "@/state/projectWizardStore"
-import { Button } from "@/components/ui/button"
 import {
-  getScenesWithShots,
-  createScene,
-  updateScene,
-  deleteScene,
-  createShot,
-  updateShot,
-  deleteShot,
-} from "@/services/projects"
+  Loader2,
+  Save,
+  Plus,
+  Upload,
+  Layers,
+  X,
+  Sparkles,
+  Check,
+  Trash2,
+} from "lucide-react"
+import { useProjectWizardStore } from "@/state/projectWizardStore"
+import { useAuth } from "@/contexts/AuthContext"
+import { Button } from "@/components/ui/button"
+import { getScriptSections } from "@/services/scripts"
+import { getAssets, uploadAndCreateAsset } from "@/services/assets"
+import {
+  getStoryboardCards,
+  createStoryboardCard,
+  updateStoryboardCard,
+} from "@/services/storyboard"
+import { getAssetDisplayUrl } from "@/services/localStorage"
+import type { Asset, StoryboardCard } from "@/types/database"
 
-// Default scene structure - start with 1 empty scene and 3 placeholder shots
-const defaultActs: Act[] = [
-  {
-    id: "new-scene-1",
-    name: "Scene 1",
-    description: "",
-    beats: [
-      { id: "new-shot-1-1", title: "", description: "" },
-      { id: "new-shot-1-2", title: "", description: "" },
-      { id: "new-shot-1-3", title: "", description: "" },
-    ],
-  },
-]
-
-// Check if an ID is a valid UUID (from database) vs a local placeholder
-const isValidUUID = (id: string): boolean => {
-  const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
-  return uuidRegex.test(id)
-}
-
-// Check if this is a new item (not yet in database)
-const isNewItem = (id: string): boolean => {
-  return id.startsWith("new-") || !isValidUUID(id)
+interface StoryboardItem {
+  id: string
+  scriptSectionId: string | null
+  title: string
+  description: string
+  imageAssetId: string | null
+  imageUrl: string | null
+  sortOrder: number
 }
 
 export function StoryboardStep() {
   const navigate = useNavigate()
-  const { storyboard, setStoryboard, goToNextStep, goToPreviousStep, markStepComplete, projectId } =
-    useProjectWizardStore()
+  const { user } = useAuth()
+  const {
+    projectId,
+    goToNextStep,
+    goToPreviousStep,
+    markStepComplete,
+  } = useProjectWizardStore()
 
-  const [acts, setActs] = useState<Act[]>(storyboard?.acts || defaultActs)
-  const [expandedActs, setExpandedActs] = useState<Set<string>>(
-    new Set(acts.map((a) => a.id))
-  )
+  // State
+  const [items, setItems] = useState<StoryboardItem[]>([])
+  const [assets, setAssets] = useState<Asset[]>([])
+  const [isLoading, setIsLoading] = useState(true)
   const [isSaving, setIsSaving] = useState(false)
   const [isSavingDraft, setIsSavingDraft] = useState(false)
-  const [isLoading, setIsLoading] = useState(true)
-  const [deletedSceneIds, setDeletedSceneIds] = useState<string[]>([])
-  const [deletedShotIds, setDeletedShotIds] = useState<string[]>([])
-  const containerRef = useRef<HTMLDivElement>(null)
 
-  // Auto-resize all description textareas when data changes
-  useEffect(() => {
-    if (isLoading) return
-    // Small delay to ensure DOM is updated
-    const timer = setTimeout(() => {
-      const textareas = containerRef.current?.querySelectorAll('textarea')
-      textareas?.forEach((textarea) => {
-        textarea.style.height = 'auto'
-        textarea.style.height = textarea.scrollHeight + 'px'
-      })
-    }, 50)
-    return () => clearTimeout(timer)
-  }, [acts, isLoading, expandedActs])
+  // Modal state for adding images
+  const [activeItemId, setActiveItemId] = useState<string | null>(null)
+  const [showAddModal, setShowAddModal] = useState(false)
+  const [showAssetPicker, setShowAssetPicker] = useState(false)
+  const [isUploading, setIsUploading] = useState(false)
 
-  // Load existing scenes and shots from database
+  // Load script sections and existing storyboard cards
   useEffect(() => {
-    async function loadScenesAndShots() {
-      if (!projectId) {
+    async function loadData() {
+      if (!projectId || !user) {
         setIsLoading(false)
         return
       }
 
       try {
-        const scenesWithShots = await getScenesWithShots(projectId)
+        // Load script sections, assets, and existing storyboard cards in parallel
+        const [sections, allAssets, existingCards] = await Promise.all([
+          getScriptSections(projectId),
+          getAssets(user.id), // Load ALL user assets, not just project-specific
+          getStoryboardCards(projectId),
+        ])
 
-        if (scenesWithShots.length > 0) {
-          // Convert DB format to our local state format
-          const loadedActs: Act[] = scenesWithShots.map((scene) => ({
-            id: scene.id, // Use actual DB ID
-            name: scene.name,
-            description: scene.description || "",
-            beats: scene.shots.map((shot) => ({
-              id: shot.id, // Use actual DB ID
-              title: shot.name,
-              description: shot.description || "",
-            })),
+        // Filter to only image assets for the picker
+        setAssets(allAssets.filter((a) => a.type === "image"))
+
+        // Build storyboard items from script sections that are descriptions
+        const sceneSections = sections.filter(
+          (s) => s.type === "description"
+        )
+
+        // Map existing cards by their script section ID or title for matching
+        const cardMap = new Map<string, StoryboardCard>()
+        existingCards.forEach((card) => {
+          // Try to match by content or create a unique key
+          const key = card.description || card.title
+          cardMap.set(key, card)
+        })
+
+        // Build items from scene sections, matching with existing cards
+        const storyboardItems: StoryboardItem[] = sceneSections.map((section, index) => {
+          // Try to find an existing card that matches this section
+          const existingCard = cardMap.get(section.content) || cardMap.get(section.scene_context || "")
+
+          return {
+            id: existingCard?.id || `temp-${section.id}`,
+            scriptSectionId: section.id,
+            title: section.scene_context || `Scene ${index + 1}`,
+            description: section.content,
+            imageAssetId: null, // We'll store asset reference in metadata
+            imageUrl: existingCard?.thumbnail_url || null,
+            sortOrder: index,
+          }
+        })
+
+        // If no scene sections exist, show empty state or allow manual addition
+        if (storyboardItems.length === 0) {
+          // Check if there are any storyboard cards without linked sections
+          const orphanedCards = existingCards.map((card, index) => ({
+            id: card.id,
+            scriptSectionId: null,
+            title: card.title,
+            description: card.description || "",
+            imageAssetId: null,
+            imageUrl: card.thumbnail_url,
+            sortOrder: card.sort_order ?? index,
           }))
-          setActs(loadedActs)
-          setStoryboard({ acts: loadedActs })
-          setExpandedActs(new Set(loadedActs.map((a) => a.id)))
+          setItems(orphanedCards)
+        } else {
+          setItems(storyboardItems)
         }
       } catch (error) {
-        console.error("Error loading scenes:", error)
+        console.error("Error loading storyboard data:", error)
       } finally {
         setIsLoading(false)
       }
     }
 
-    loadScenesAndShots()
-  }, [projectId])
+    loadData()
+  }, [projectId, user])
 
-  // Sync local state when store's storyboard changes (e.g., from Bubble AI)
-  useEffect(() => {
-    if (storyboard?.acts && storyboard.acts.length > 0) {
-      // Build a fingerprint that includes scenes AND shots
-      const getFingerprint = (actList: typeof acts) =>
-        actList.map(a => `${a.id}:${a.beats.map(b => b.id).join(',')}`).join('|')
-
-      const storeFingerprint = getFingerprint(storyboard.acts)
-      const localFingerprint = getFingerprint(acts)
-
-      if (storeFingerprint !== localFingerprint) {
-        setActs(storyboard.acts)
-        setExpandedActs(new Set(storyboard.acts.map((a) => a.id)))
-      }
-    }
-  }, [storyboard])
-
-  const toggleActExpanded = (actId: string) => {
-    const newExpanded = new Set(expandedActs)
-    if (newExpanded.has(actId)) {
-      newExpanded.delete(actId)
-    } else {
-      newExpanded.add(actId)
-    }
-    setExpandedActs(newExpanded)
+  // Handle opening the add image modal
+  const handleAddImage = (itemId: string) => {
+    setActiveItemId(itemId)
+    setShowAddModal(true)
   }
 
-  const updateActName = (actId: string, name: string) => {
-    setActs(acts.map((act) => (act.id === actId ? { ...act, name } : act)))
+  // Navigate to asset creator for generating a new image
+  const handleGenerateNew = () => {
+    setShowAddModal(false)
+    // Store return path and context in session storage
+    sessionStorage.setItem("returnToStoryboard", "true")
+    sessionStorage.setItem("storyboardProjectId", projectId || "")
+    sessionStorage.setItem("storyboardItemId", activeItemId || "")
+    navigate("/create/asset")
   }
 
-  const updateActDescription = (actId: string, description: string) => {
-    setActs(
-      acts.map((act) => (act.id === actId ? { ...act, description } : act))
+  // Open asset picker to select existing asset
+  const handleSelectExisting = () => {
+    setShowAddModal(false)
+    setShowAssetPicker(true)
+  }
+
+  // Handle selecting an existing asset
+  const handleAssetSelect = async (asset: Asset) => {
+    if (!activeItemId) return
+
+    // Use getAssetDisplayUrl to properly handle local assets
+    const displayUrl = getAssetDisplayUrl(asset)
+
+    setItems((prev) =>
+      prev.map((item) =>
+        item.id === activeItemId
+          ? { ...item, imageAssetId: asset.id, imageUrl: displayUrl }
+          : item
+      )
     )
+
+    setShowAssetPicker(false)
+    setActiveItemId(null)
   }
 
-  const updateShotTitle = (actId: string, beatId: string, title: string) => {
-    setActs(
-      acts.map((act) =>
-        act.id === actId
-          ? {
-              ...act,
-              beats: act.beats.map((beat) =>
-                beat.id === beatId ? { ...beat, title } : beat
-              ),
-            }
-          : act
+  // Handle file upload
+  const handleUpload = useCallback(async (file: File) => {
+    if (!user || !activeItemId) return
+
+    setIsUploading(true)
+    try {
+      const asset = await uploadAndCreateAsset(user.id, file, {
+        category: "scene",
+        bucket: "project-assets",
+        projectId: projectId || undefined,
+      })
+
+      // Use getAssetDisplayUrl to properly handle local assets
+      const displayUrl = getAssetDisplayUrl(asset)
+
+      setItems((prev) =>
+        prev.map((item) =>
+          item.id === activeItemId
+            ? { ...item, imageAssetId: asset.id, imageUrl: displayUrl }
+            : item
+        )
+      )
+
+      // Add to local assets list
+      setAssets((prev) => [asset, ...prev])
+      setShowAddModal(false)
+      setActiveItemId(null)
+    } catch (error) {
+      console.error("Error uploading file:", error)
+    } finally {
+      setIsUploading(false)
+    }
+  }, [user, activeItemId, projectId])
+
+  // Handle file input change
+  const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (file) {
+      handleUpload(file)
+    }
+  }
+
+  // Remove image from item
+  const handleRemoveImage = (itemId: string) => {
+    setItems((prev) =>
+      prev.map((item) =>
+        item.id === itemId
+          ? { ...item, imageAssetId: null, imageUrl: null }
+          : item
       )
     )
   }
 
-  const updateShotDescription = (actId: string, beatId: string, description: string) => {
-    setActs(
-      acts.map((act) =>
-        act.id === actId
-          ? {
-              ...act,
-              beats: act.beats.map((beat) =>
-                beat.id === beatId ? { ...beat, description } : beat
-              ),
-            }
-          : act
-      )
-    )
-  }
-
-  const addShot = (actId: string) => {
-    setActs(
-      acts.map((a) =>
-        a.id === actId
-          ? {
-              ...a,
-              beats: [
-                ...a.beats,
-                { id: `new-shot-${crypto.randomUUID()}`, title: "", description: "" },
-              ],
-            }
-          : a
-      )
-    )
-  }
-
-  const removeBeat = (actId: string, beatId: string) => {
-    // Track deleted shots that exist in DB (have valid UUID)
-    if (!isNewItem(beatId)) {
-      setDeletedShotIds([...deletedShotIds, beatId])
-    }
-    setActs(
-      acts.map((act) =>
-        act.id === actId
-          ? { ...act, beats: act.beats.filter((b) => b.id !== beatId) }
-          : act
-      )
-    )
-  }
-
-  const addScene = () => {
-    const sceneNum = acts.length + 1
-    const newAct: Act = {
-      id: `new-scene-${crypto.randomUUID()}`,
-      name: `Scene ${sceneNum}`,
-      description: "",
-      beats: [
-        { id: `new-shot-${crypto.randomUUID()}`, title: "", description: "" },
-      ],
-    }
-    setActs([...acts, newAct])
-    setExpandedActs(new Set([...expandedActs, newAct.id]))
-  }
-
-  const removeAct = (actId: string) => {
-    if (acts.length > 1) {
-      // Track deleted scenes that exist in DB (have valid UUID)
-      if (!isNewItem(actId)) {
-        setDeletedSceneIds([...deletedSceneIds, actId])
-        // Also track all shots in this scene for deletion
-        const act = acts.find(a => a.id === actId)
-        if (act) {
-          const shotIdsToDelete = act.beats
-            .filter(b => !isNewItem(b.id))
-            .map(b => b.id)
-          setDeletedShotIds([...deletedShotIds, ...shotIdsToDelete])
-        }
-      }
-      setActs(acts.filter((a) => a.id !== actId))
-    }
-  }
-
-  // Save scenes and shots to database
+  // Save to database
   const saveToDatabase = async () => {
-    // Read from store directly to avoid stale closure
-    const currentProjectId = useProjectWizardStore.getState().projectId
-    console.log("Saving to database, projectId:", currentProjectId)
-    console.log("Acts to save:", acts)
+    if (!projectId) throw new Error("No project ID")
 
-    if (!currentProjectId) {
-      throw new Error("No project ID found")
-    }
-
-    // Delete removed shots first
-    for (const shotId of deletedShotIds) {
-      try {
-        await deleteShot(shotId)
-      } catch (error) {
-        console.error("Error deleting shot:", error)
-      }
-    }
-
-    // Delete removed scenes
-    for (const sceneId of deletedSceneIds) {
-      try {
-        await deleteScene(sceneId)
-      } catch (error) {
-        console.error("Error deleting scene:", error)
-      }
-    }
-
-    // Create/update scenes and shots
-    for (let sceneIndex = 0; sceneIndex < acts.length; sceneIndex++) {
-      const act = acts[sceneIndex]
-      let sceneId = act.id
-
-      // Check if this is a new scene or existing (valid UUID = exists in DB)
-      if (isNewItem(act.id)) {
-        // Create new scene
-        const newScene = await createScene({
-          project_id: currentProjectId,
-          name: act.name || `Scene ${sceneIndex + 1}`,
-          description: act.description || null,
-          sort_order: sceneIndex,
+    // Save each storyboard item as a card
+    for (const item of items) {
+      if (item.id.startsWith("temp-")) {
+        // Create new card
+        await createStoryboardCard({
+          project_id: projectId,
+          title: item.title,
+          description: item.description,
+          thumbnail_url: item.imageUrl,
+          sort_order: item.sortOrder,
         })
-        sceneId = newScene.id
-        // Update local ID to the real DB ID
-        act.id = sceneId
       } else {
-        // Update existing scene
-        await updateScene(act.id, {
-          name: act.name,
-          description: act.description || null,
-          sort_order: sceneIndex,
+        // Update existing card
+        await updateStoryboardCard(item.id, {
+          title: item.title,
+          description: item.description,
+          thumbnail_url: item.imageUrl,
+          sort_order: item.sortOrder,
         })
       }
-
-      // Create/update shots for this scene
-      for (let shotIndex = 0; shotIndex < act.beats.length; shotIndex++) {
-        const shot = act.beats[shotIndex]
-
-        if (isNewItem(shot.id)) {
-          // Create new shot
-          const newShot = await createShot({
-            scene_id: sceneId,
-            name: shot.title || `Shot ${shotIndex + 1}`,
-            description: shot.description || null,
-            sort_order: shotIndex,
-            duration: 3, // default duration
-          })
-          // Update local ID to the real DB ID
-          shot.id = newShot.id
-        } else {
-          // Update existing shot
-          await updateShot(shot.id, {
-            name: shot.title || `Shot ${shotIndex + 1}`,
-            description: shot.description || null,
-            sort_order: shotIndex,
-          })
-        }
-      }
     }
-
-    // Clear deleted tracking
-    setDeletedSceneIds([])
-    setDeletedShotIds([])
-
-    // Update local store with the updated IDs
-    setStoryboard({ acts })
   }
 
   const handleSaveDraft = async () => {
-    // Read from store directly to avoid stale closure
-    const currentProjectId = useProjectWizardStore.getState().projectId
-    if (!currentProjectId) {
-      alert("No project found. Please go back and complete the Brief step first.")
-      return
-    }
+    if (!projectId) return
 
     setIsSavingDraft(true)
     try {
       await saveToDatabase()
-      navigate("/library/projects")
     } catch (error) {
       console.error("Error saving draft:", error)
-      alert("Error saving draft: " + (error instanceof Error ? error.message : "Unknown error"))
     } finally {
       setIsSavingDraft(false)
     }
   }
 
   const handleContinue = async () => {
-    // Read from store directly to avoid stale closure
-    const currentProjectId = useProjectWizardStore.getState().projectId
-    if (!currentProjectId) {
-      alert("No project found. Please go back and complete the Brief step first.")
-      return
-    }
+    if (!projectId) return
 
     setIsSaving(true)
     try {
@@ -357,25 +274,19 @@ export function StoryboardStep() {
       markStepComplete("story")
       goToNextStep()
     } catch (error) {
-      console.error("Error saving scenes:", error)
-      alert("Error saving: " + (error instanceof Error ? error.message : "Unknown error"))
+      console.error("Error saving:", error)
     } finally {
       setIsSaving(false)
     }
   }
 
-  // Save and go back
   const handleBack = async () => {
-    const currentProjectId = useProjectWizardStore.getState().projectId
-    if (!currentProjectId) {
-      goToPreviousStep()
-      return
-    }
-
-    try {
-      await saveToDatabase()
-    } catch (error) {
-      console.error("Error saving on back:", error)
+    if (projectId) {
+      try {
+        await saveToDatabase()
+      } catch (error) {
+        console.error("Error saving on back:", error)
+      }
     }
     goToPreviousStep()
   }
@@ -394,144 +305,82 @@ export function StoryboardStep() {
         {/* Header */}
         <div className="mb-8">
           <h1 className="text-2xl lg:text-3xl font-bold text-zinc-100 mb-2">
-            Scenes & Shots
+            Storyboard
           </h1>
           <p className="text-zinc-400">
-            Outline your video's scenes and the shots within each scene.
+            Add visual references for each scene from your script.
           </p>
         </div>
 
-        {/* Scenes */}
-        <div ref={containerRef} className="space-y-4">
-          {acts.map((act, actIndex) => (
-            <div
-              key={act.id}
-              className="bg-zinc-900 border border-zinc-800 rounded-xl overflow-hidden"
-            >
-              {/* Scene Header */}
-              <div className="flex items-center gap-3 p-4 bg-zinc-900/50">
-                <button
-                  onClick={() => toggleActExpanded(act.id)}
-                  className="text-zinc-500 hover:text-zinc-300 transition-colors"
-                >
-                  {expandedActs.has(act.id) ? (
-                    <ChevronDown className="w-5 h-5" />
-                  ) : (
-                    <ChevronRight className="w-5 h-5" />
-                  )}
-                </button>
-
-                <GripVertical className="w-4 h-4 text-zinc-600 cursor-grab" />
-
-                <div className="flex-1">
-                  <input
-                    type="text"
-                    value={act.name}
-                    onChange={(e) => updateActName(act.id, e.target.value)}
-                    className="bg-transparent text-lg font-semibold text-zinc-100 focus:outline-none w-full"
-                    placeholder="Scene name..."
-                  />
-                </div>
-
-                <span className="text-xs text-zinc-600 bg-zinc-800 px-2 py-1 rounded">
-                  {act.beats.length} shot{act.beats.length !== 1 ? 's' : ''}
-                </span>
-
-                {acts.length > 1 && (
-                  <button
-                    onClick={() => removeAct(act.id)}
-                    className="p-1 text-zinc-600 hover:text-red-400 transition-colors"
-                  >
-                    <Trash2 className="w-4 h-4" />
-                  </button>
-                )}
-              </div>
-
-              {/* Scene Content (Collapsible) */}
-              {expandedActs.has(act.id) && (
-                <div className="p-4 pt-0 space-y-4">
-                  {/* Scene Description */}
-                  <input
-                    type="text"
-                    value={act.description}
-                    onChange={(e) => updateActDescription(act.id, e.target.value)}
-                    placeholder="Describe this scene (optional)..."
-                    className="w-full px-3 py-2 bg-zinc-800/50 border border-zinc-700 rounded-lg text-sm text-zinc-300 placeholder:text-zinc-600 focus:outline-none focus:border-zinc-600"
-                  />
-
-                  {/* Shots */}
-                  <div className="space-y-4 pl-4 border-l-2 border-zinc-800">
-                    {act.beats.map((shot, shotIndex) => (
-                      <div key={shot.id} className="flex gap-3">
-                        {/* Shot label */}
-                        <span className="text-xs text-zinc-500 font-medium w-14 pt-2.5 flex-shrink-0">
-                          Shot {shotIndex + 1}
-                        </span>
-
-                        {/* Title and Description fields */}
-                        <div className="flex-1 space-y-2">
-                          <input
-                            type="text"
-                            value={shot.title || ""}
-                            onChange={(e) =>
-                              updateShotTitle(act.id, shot.id, e.target.value)
-                            }
-                            placeholder={`Shot ${shotIndex + 1} title...`}
-                            className="w-full px-3 py-2 bg-zinc-800/50 border border-zinc-700 rounded-lg text-sm text-zinc-200 placeholder:text-zinc-600 focus:outline-none focus:border-zinc-600"
-                          />
-                          <textarea
-                            value={shot.description}
-                            onChange={(e) => {
-                              updateShotDescription(act.id, shot.id, e.target.value)
-                              // Auto-resize
-                              e.target.style.height = 'auto'
-                              e.target.style.height = e.target.scrollHeight + 'px'
-                            }}
-                            onFocus={(e) => {
-                              // Auto-resize on focus in case content was set programmatically
-                              e.target.style.height = 'auto'
-                              e.target.style.height = e.target.scrollHeight + 'px'
-                            }}
-                            placeholder={`Describe shot ${shotIndex + 1}... (This will be used as the image generation prompt)`}
-                            className="w-full px-3 py-2 bg-zinc-800/30 border border-zinc-800 rounded-lg text-sm text-zinc-300 placeholder:text-zinc-600 focus:outline-none focus:border-zinc-700 resize-none min-h-[80px] overflow-hidden"
-                          />
-                        </div>
-
-                        {/* Delete button */}
-                        {act.beats.length > 1 && (
-                          <button
-                            onClick={() => removeBeat(act.id, shot.id)}
-                            className="p-1 text-zinc-600 hover:text-red-400 transition-colors flex-shrink-0 mt-2"
-                          >
-                            <Trash2 className="w-4 h-4" />
-                          </button>
-                        )}
-                      </div>
-                    ))}
+        {/* Storyboard Items */}
+        {items.length === 0 ? (
+          <div className="flex flex-col items-center justify-center py-12 px-6 border border-dashed border-zinc-800 rounded-xl bg-zinc-900/30">
+            <Layers className="w-12 h-12 text-zinc-600 mb-3" />
+            <p className="text-zinc-500 text-sm text-center mb-2">
+              No scenes found
+            </p>
+            <p className="text-zinc-600 text-xs text-center">
+              Go back to the Script step and add description sections
+            </p>
+          </div>
+        ) : (
+          <div className="space-y-4">
+            {items.map((item, index) => (
+              <div
+                key={item.id}
+                className="bg-zinc-900 border border-zinc-800 rounded-xl p-6 flex gap-10"
+              >
+                {/* Left side - Title and Description */}
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-2 mb-3">
+                    <span className="text-xs text-zinc-500 font-medium bg-zinc-800 px-2 py-0.5 rounded">
+                      Scene {index + 1}
+                    </span>
                   </div>
-
-                  {/* Add Shot Button */}
-                  <button
-                    onClick={() => addShot(act.id)}
-                    className="flex items-center gap-2 text-sm text-zinc-500 hover:text-sky-400 transition-colors ml-4"
-                  >
-                    <Plus className="w-4 h-4" />
-                    Add Shot
-                  </button>
+                  <h3 className="text-lg font-semibold text-zinc-100 mb-3">
+                    {item.title}
+                  </h3>
+                  <p className="text-sm text-zinc-400">
+                    {item.description || "No description"}
+                  </p>
                 </div>
-              )}
-            </div>
-          ))}
-        </div>
 
-        {/* Add Scene Button */}
-        <button
-          onClick={addScene}
-          className="w-full mt-4 p-4 border-2 border-dashed border-zinc-800 hover:border-zinc-700 rounded-xl flex items-center justify-center gap-2 text-zinc-500 hover:text-zinc-400 transition-colors"
-        >
-          <Plus className="w-5 h-5" />
-          Add Scene
-        </button>
+                {/* Right side - Image (square) */}
+                <div className="flex-shrink-0">
+                  {item.imageUrl ? (
+                    <div className="relative group">
+                      <img
+                        src={item.imageUrl}
+                        alt={item.title}
+                        className="w-56 h-56 object-cover rounded-lg border border-zinc-700"
+                      />
+                      <button
+                        onClick={() => handleRemoveImage(item.id)}
+                        className="absolute top-2 right-2 z-10 p-1.5 rounded-lg bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity text-zinc-300 hover:text-orange-400"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                      <button
+                        onClick={() => handleAddImage(item.id)}
+                        className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity rounded-lg flex items-center justify-center"
+                      >
+                        <span className="text-xs text-white font-medium">Change</span>
+                      </button>
+                    </div>
+                  ) : (
+                    <button
+                      onClick={() => handleAddImage(item.id)}
+                      className="w-56 h-56 border-2 border-dashed border-zinc-700 hover:border-zinc-600 rounded-lg flex flex-col items-center justify-center gap-2 transition-colors bg-zinc-800/30 hover:bg-zinc-800/50"
+                    >
+                      <Plus className="w-6 h-6 text-zinc-500" />
+                      <span className="text-xs text-zinc-500">Add Image</span>
+                    </button>
+                  )}
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
 
         {/* Navigation Buttons */}
         <div className="mt-8 flex justify-between">
@@ -573,6 +422,148 @@ export function StoryboardStep() {
           </div>
         </div>
       </div>
+
+      {/* Add Image Modal */}
+      {showAddModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center">
+          <div
+            className="absolute inset-0 bg-black/70 backdrop-blur-sm"
+            onClick={() => {
+              setShowAddModal(false)
+              setActiveItemId(null)
+            }}
+          />
+          <div className="relative bg-zinc-900 border border-zinc-700 rounded-2xl w-full max-w-sm mx-4 p-6">
+            <h3 className="text-lg font-semibold text-zinc-100 mb-4">
+              Add Image
+            </h3>
+
+            <div className="space-y-3">
+              {/* Generate New */}
+              <button
+                onClick={handleGenerateNew}
+                className="w-full p-4 bg-zinc-800 hover:bg-zinc-700 border border-zinc-700 rounded-xl flex items-center gap-3 transition-colors"
+              >
+                <div className="w-10 h-10 rounded-lg bg-sky-500/20 flex items-center justify-center">
+                  <Sparkles className="w-5 h-5 text-sky-400" />
+                </div>
+                <div className="text-left">
+                  <p className="font-medium text-zinc-200">Generate New</p>
+                  <p className="text-xs text-zinc-500">Create with AI</p>
+                </div>
+              </button>
+
+              {/* Select Existing */}
+              <button
+                onClick={handleSelectExisting}
+                className="w-full p-4 bg-zinc-800 hover:bg-zinc-700 border border-zinc-700 rounded-xl flex items-center gap-3 transition-colors"
+              >
+                <div className="w-10 h-10 rounded-lg bg-orange-500/20 flex items-center justify-center">
+                  <Layers className="w-5 h-5 text-orange-400" />
+                </div>
+                <div className="text-left">
+                  <p className="font-medium text-zinc-200">Select Existing</p>
+                  <p className="text-xs text-zinc-500">From your assets</p>
+                </div>
+              </button>
+
+              {/* Upload */}
+              <label className="w-full p-4 bg-zinc-800 hover:bg-zinc-700 border border-zinc-700 rounded-xl flex items-center gap-3 transition-colors cursor-pointer">
+                <input
+                  type="file"
+                  accept="image/*"
+                  className="hidden"
+                  onChange={handleFileSelect}
+                  disabled={isUploading}
+                />
+                <div className="w-10 h-10 rounded-lg bg-emerald-500/20 flex items-center justify-center">
+                  {isUploading ? (
+                    <Loader2 className="w-5 h-5 text-emerald-400 animate-spin" />
+                  ) : (
+                    <Upload className="w-5 h-5 text-emerald-400" />
+                  )}
+                </div>
+                <div className="text-left">
+                  <p className="font-medium text-zinc-200">
+                    {isUploading ? "Uploading..." : "Upload"}
+                  </p>
+                  <p className="text-xs text-zinc-500">From your device</p>
+                </div>
+              </label>
+            </div>
+
+            <button
+              onClick={() => {
+                setShowAddModal(false)
+                setActiveItemId(null)
+              }}
+              className="mt-4 w-full py-2 text-sm text-zinc-500 hover:text-zinc-400 transition-colors"
+            >
+              Cancel
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Asset Picker Modal */}
+      {showAssetPicker && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center">
+          <div
+            className="absolute inset-0 bg-black/70 backdrop-blur-sm"
+            onClick={() => {
+              setShowAssetPicker(false)
+              setActiveItemId(null)
+            }}
+          />
+          <div className="relative bg-zinc-900 border border-zinc-700 rounded-2xl w-full max-w-lg mx-4 max-h-[80vh] flex flex-col">
+            <div className="flex items-center justify-between p-4 border-b border-zinc-800">
+              <h3 className="text-lg font-semibold text-zinc-100">
+                Select Image
+              </h3>
+              <button
+                onClick={() => {
+                  setShowAssetPicker(false)
+                  setActiveItemId(null)
+                }}
+                className="p-1 text-zinc-400 hover:text-zinc-200 transition-colors"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="p-4 overflow-y-auto flex-1">
+              {assets.length === 0 ? (
+                <div className="flex flex-col items-center justify-center py-8">
+                  <Layers className="w-10 h-10 text-zinc-600 mb-2" />
+                  <p className="text-zinc-500 text-sm">No image assets found</p>
+                  <p className="text-zinc-600 text-xs mt-1">
+                    Generate or upload images first
+                  </p>
+                </div>
+              ) : (
+                <div className="grid grid-cols-3 gap-3">
+                  {assets.map((asset) => (
+                    <button
+                      key={asset.id}
+                      onClick={() => handleAssetSelect(asset)}
+                      className="relative aspect-square rounded-lg overflow-hidden border-2 border-zinc-700 hover:border-sky-500 transition-colors group"
+                    >
+                      <img
+                        src={getAssetDisplayUrl(asset)}
+                        alt={asset.name}
+                        className="w-full h-full object-cover"
+                      />
+                      <div className="absolute inset-0 bg-black/0 group-hover:bg-black/30 transition-colors flex items-center justify-center">
+                        <Check className="w-6 h-6 text-white opacity-0 group-hover:opacity-100 transition-opacity" />
+                      </div>
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

@@ -1,9 +1,9 @@
 import { useState, useEffect } from "react"
 import { useNavigate } from "react-router-dom"
-import { Search, Plus, Palette, ChevronRight, Sparkles } from "lucide-react"
+import { Search, Plus, Palette, ChevronRight, FolderOpen, Loader2 } from "lucide-react"
 import { LibraryLayout } from "@/components/library"
 import { useAuth } from "@/contexts/AuthContext"
-import { getPlatformsWithStats, PlatformWithStats } from "@/services/platforms"
+import { useFoundationStore, Foundation } from "@/state/foundationStore"
 
 function formatRelativeTime(dateString: string): string {
   const date = new Date(dateString)
@@ -22,12 +22,12 @@ function formatRelativeTime(dateString: string): string {
 }
 
 interface FoundationCardProps {
-  foundation: PlatformWithStats
+  foundation: Foundation
   onClick: () => void
 }
 
 function FoundationCard({ foundation, onClick }: FoundationCardProps) {
-  const colorPalette = (foundation.color_palette as string[]) || []
+  const colorPalette = foundation.color_palette || []
 
   return (
     <button
@@ -59,7 +59,7 @@ function FoundationCard({ foundation, onClick }: FoundationCardProps) {
             </p>
           )}
           <div className="flex items-center gap-4 mt-2 text-xs text-zinc-500">
-            <span>{foundation.projects_count} project{foundation.projects_count !== 1 ? "s" : ""}</span>
+            <span>{foundation.project_count} project{foundation.project_count !== 1 ? "s" : ""}</span>
             <span>Updated {formatRelativeTime(foundation.updated_at)}</span>
           </div>
         </div>
@@ -74,26 +74,15 @@ function FoundationCard({ foundation, onClick }: FoundationCardProps) {
 export function LibraryFoundationsPage() {
   const navigate = useNavigate()
   const { user } = useAuth()
-  const [foundations, setFoundations] = useState<PlatformWithStats[]>([])
-  const [isLoading, setIsLoading] = useState(true)
+  const { foundations, isLoading, loadFoundations } = useFoundationStore()
   const [searchQuery, setSearchQuery] = useState("")
 
-  // Fetch foundations (platforms) from Supabase
+  // Fetch foundations from database
   useEffect(() => {
-    async function fetchFoundations() {
-      if (!user) return
-      setIsLoading(true)
-      try {
-        const data = await getPlatformsWithStats(user.id)
-        setFoundations(data)
-      } catch (error) {
-        console.error("Error fetching foundations:", error)
-      } finally {
-        setIsLoading(false)
-      }
+    if (user) {
+      loadFoundations(user.id)
     }
-    fetchFoundations()
-  }, [user])
+  }, [user, loadFoundations])
 
   // Filter foundations
   let filteredFoundations = foundations
@@ -145,7 +134,11 @@ export function LibraryFoundationsPage() {
         </div>
 
         {/* Foundation List */}
-        {filteredFoundations.length > 0 ? (
+        {isLoading ? (
+          <div className="flex items-center justify-center py-16">
+            <Loader2 className="w-8 h-8 text-sky-400 animate-spin" />
+          </div>
+        ) : filteredFoundations.length > 0 ? (
           <div className="space-y-3">
             {filteredFoundations.map((foundation) => (
               <FoundationCard
@@ -156,27 +149,13 @@ export function LibraryFoundationsPage() {
             ))}
           </div>
         ) : (
-          <div className="text-center py-16">
-            <div className="w-20 h-20 rounded-full bg-zinc-800 flex items-center justify-center mx-auto mb-4">
-              <Sparkles className="w-10 h-10 text-zinc-600" />
-            </div>
-            <h3 className="text-lg font-medium text-zinc-200 mb-2">
-              {searchQuery ? "No foundations found" : "No foundations yet"}
-            </h3>
-            <p className="text-zinc-500 text-sm mb-4">
+          <div className="flex flex-col items-center justify-center py-12 px-6 border border-dashed border-zinc-800 rounded-xl bg-zinc-900/30">
+            <FolderOpen className="w-12 h-12 text-zinc-600 mb-3" />
+            <p className="text-zinc-500 text-sm text-center">
               {searchQuery
                 ? `No foundations matching "${searchQuery}"`
-                : "Foundations help you maintain a consistent visual style across all your video projects."}
+                : "No foundations yet"}
             </p>
-            {!searchQuery && (
-              <button
-                onClick={handleCreateFoundation}
-                className="text-sky-400 hover:text-sky-300 inline-flex items-center gap-1"
-              >
-                <Plus className="w-4 h-4" />
-                Create your first foundation
-              </button>
-            )}
           </div>
         )}
 

@@ -3,10 +3,12 @@ import { useNavigate } from "react-router-dom"
 import { ArrowLeft, Save, Palette } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { useFoundationWizardStore, STYLE_OPTIONS, MOOD_OPTIONS, TYPOGRAPHY_OPTIONS, TONE_OPTIONS } from "@/state/foundationWizardStore"
-import { useFoundationStore, Foundation } from "@/state/foundationStore"
+import { useFoundationStore } from "@/state/foundationStore"
+import { useAuth } from "@/contexts/AuthContext"
 
 export function ReviewStep() {
   const navigate = useNavigate()
+  const { user } = useAuth()
   const {
     editingId,
     name,
@@ -23,51 +25,55 @@ export function ReviewStep() {
   const { addFoundation, updateFoundation } = useFoundationStore()
 
   const [isSaving, setIsSaving] = useState(false)
+  const [error, setError] = useState<string | null>(null)
 
   const getLabel = (options: { id: string; label: string }[], id: string | null) => {
     return options.find((o) => o.id === id)?.label || "Not set"
   }
 
   const handleSave = async () => {
-    setIsSaving(true)
-
-    if (editingId) {
-      // Update existing foundation
-      updateFoundation(editingId, {
-        name,
-        description: description || undefined,
-        colorPalette,
-        style,
-        mood,
-        typography,
-        tone,
-        moodImages,
-      })
-    } else {
-      // Create new foundation
-      const newFoundation: Foundation = {
-        id: `foundation-${Date.now()}`,
-        name,
-        description: description || undefined,
-        colorPalette,
-        style,
-        mood,
-        typography,
-        tone,
-        moodImages,
-        projectCount: 0,
-        createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString(),
-      }
-
-      addFoundation(newFoundation)
+    if (!user) {
+      setError("You must be logged in to save a foundation")
+      return
     }
 
-    // Brief delay for UX
-    await new Promise((resolve) => setTimeout(resolve, 500))
+    setIsSaving(true)
+    setError(null)
 
-    resetWizard()
-    navigate("/library/foundations")
+    try {
+      if (editingId) {
+        // Update existing foundation
+        await updateFoundation(editingId, {
+          name,
+          description: description || undefined,
+          colorPalette,
+          style,
+          mood,
+          typography,
+          tone,
+          moodImages,
+        })
+      } else {
+        // Create new foundation
+        await addFoundation(user.id, {
+          name,
+          description: description || undefined,
+          colorPalette,
+          style,
+          mood,
+          typography,
+          tone,
+          moodImages,
+        })
+      }
+
+      resetWizard()
+      navigate("/library/foundations")
+    } catch (err) {
+      console.error("Error saving foundation:", err)
+      setError("Failed to save foundation. Please try again.")
+      setIsSaving(false)
+    }
   }
 
   return (

@@ -1,24 +1,32 @@
 import { useState } from "react"
-import { ArrowLeft, Save, FolderPlus, Check, AlertCircle } from "lucide-react"
+import { ArrowLeft, Save, FolderPlus, Check, AlertCircle, Loader2 } from "lucide-react"
 import { useNavigate } from "react-router-dom"
 import { cn } from "@/lib/utils"
 import { useAssetWizardStore } from "@/state/assetWizardStore"
 import { useAuth } from "@/contexts/AuthContext"
-import { createAsset } from "@/services/assets"
+import { createGeneratedAsset } from "@/services/assets"
 import type { AssetCategory } from "@/types/database"
 
-export function ReviewStep() {
+interface ReviewStepProps {
+  onComplete?: () => void
+}
+
+export function ReviewStep({ onComplete }: ReviewStepProps) {
   const navigate = useNavigate()
   const { user } = useAuth()
-  const { assetType, category, generatedAssets, resetWizard, prevStep } =
+  const { assetType, category, assetName, userDescription, aiPrompt, stylePreset, generatedAssets, resetWizard, prevStep } =
     useAssetWizardStore()
 
+  // Use the asset name from the store, with index suffix if multiple selected
   const [assetNames, setAssetNames] = useState<Record<string, string>>(() => {
     const selected = generatedAssets.filter((a) => a.selected)
+    if (selected.length === 1) {
+      return { [selected[0].id]: assetName }
+    }
     return selected.reduce(
       (acc, asset, i) => ({
         ...acc,
-        [asset.id]: `${category} ${i + 1}`,
+        [asset.id]: `${assetName} ${i + 1}`,
       }),
       {}
     )
@@ -33,6 +41,8 @@ export function ReviewStep() {
     setAssetNames((prev) => ({ ...prev, [id]: name }))
   }
 
+  const [saveProgress, setSaveProgress] = useState({ current: 0, total: 0 })
+
   const handleSaveToLibrary = async () => {
     if (!user) {
       setError("You must be logged in to save assets")
@@ -41,22 +51,37 @@ export function ReviewStep() {
 
     setIsSaving(true)
     setError(null)
+    setSaveProgress({ current: 0, total: selectedAssets.length })
 
     try {
-      // Save each selected asset to Supabase
-      for (const asset of selectedAssets) {
-        await createAsset({
-          user_id: user.id,
-          name: assetNames[asset.id] || `${category} asset`,
+      // Save each selected asset - downloads to local storage and creates record
+      for (let i = 0; i < selectedAssets.length; i++) {
+        const asset = selectedAssets[i]
+        setSaveProgress({ current: i + 1, total: selectedAssets.length })
+
+        await createGeneratedAsset({
+          userId: user.id,
+          name: assetNames[asset.id] || assetName || `${category} asset`,
           type: assetType!,
           category: category as AssetCategory,
-          url: asset.url,
-          thumbnail_url: asset.thumbnailUrl,
+          sourceUrl: asset.url,  // This will be downloaded to local storage
+          userDescription: userDescription,
+          aiPrompt: aiPrompt || userDescription,
+          generationModel: assetType === 'audio'
+            ? (category === 'music' ? 'replicate_musicgen' : 'elevenlabs')
+            : 'replicate_flux',
+          generationSettings: {
+            style: stylePreset,
+          },
         })
       }
 
       resetWizard()
-      navigate("/library/assets")
+      if (onComplete) {
+        onComplete()
+      } else {
+        navigate("/library/assets")
+      }
     } catch (err) {
       console.error("Error saving assets:", err)
       setError("Failed to save assets. Please try again.")
@@ -163,13 +188,14 @@ export function ReviewStep() {
             disabled={isSaving}
             className={cn(
               "px-8 py-3 rounded-xl font-medium transition-all inline-flex items-center justify-center gap-2",
-              "bg-gradient-to-br from-sky-400 via-sky-500 to-blue-600 text-white hover:opacity-90"
+              "bg-gradient-to-br from-sky-400 via-sky-500 to-blue-600 text-white hover:opacity-90",
+              isSaving && "opacity-80"
             )}
           >
             {isSaving ? (
               <>
-                <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-                Saving...
+                <Loader2 className="w-4 h-4 animate-spin" />
+                Downloading {saveProgress.current}/{saveProgress.total}...
               </>
             ) : (
               <>

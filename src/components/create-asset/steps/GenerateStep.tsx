@@ -16,7 +16,8 @@ export function GenerateStep() {
   const {
     assetType,
     category,
-    prompt,
+    userDescription,
+    aiPrompt,
     negativePrompt,
     stylePreset,
     referenceAssets,
@@ -26,6 +27,9 @@ export function GenerateStep() {
     nextStep,
     prevStep,
   } = useAssetWizardStore()
+
+  // Use AI prompt if available, otherwise fall back to user description
+  const effectivePrompt = aiPrompt.trim() || userDescription
 
   const [isGenerating, setIsGenerating] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -46,13 +50,13 @@ export function GenerateStep() {
     try {
       if (assetType === "image") {
         // Get first reference image URL if available
-        const referenceUrl = referenceAssets[0]?.url || referenceAssets[0]?.thumbnail_url
+        const referenceUrl = referenceAssets[0]?.url
 
         const urls = await generateImages({
-          prompt,
+          prompt: effectivePrompt,
           negativePrompt,
           style: stylePreset || undefined,
-          referenceImageUrl: referenceUrl,
+          referenceImageUrl: referenceUrl || undefined,
           numOutputs: 4,
         })
 
@@ -60,13 +64,12 @@ export function GenerateStep() {
           urls.map((url, i) => ({
             id: `generated-${Date.now()}-${i}`,
             url,
-            thumbnailUrl: url,
             selected: i === 0,
           }))
         )
       } else if (assetType === "video") {
         // Video requires a reference image
-        const referenceUrl = referenceAssets[0]?.url || referenceAssets[0]?.thumbnail_url
+        const referenceUrl = referenceAssets[0]?.url
 
         if (!referenceUrl) {
           throw new Error("Video generation requires a reference image")
@@ -80,7 +83,6 @@ export function GenerateStep() {
           {
             id: `generated-${Date.now()}`,
             url: videoUrl,
-            thumbnailUrl: referenceUrl, // Use reference as thumbnail
             selected: true,
           },
         ])
@@ -90,19 +92,19 @@ export function GenerateStep() {
         if (category === "music") {
           // Use Replicate's MusicGen for music
           audioUrl = await generateMusic({
-            prompt,
+            prompt: effectivePrompt,
             duration: 10,
           })
         } else if (category === "sound_effect") {
           // Use ElevenLabs for sound effects
           audioUrl = await generateSoundEffect({
-            text: prompt,
+            text: effectivePrompt,
             duration_seconds: 5,
           })
         } else {
           // Voice - use ElevenLabs for high-quality TTS
           audioUrl = await generateVoiceElevenLabs({
-            text: prompt,
+            text: effectivePrompt,
           })
         }
 
@@ -149,9 +151,17 @@ export function GenerateStep() {
         </div>
 
         {/* Prompt Preview */}
-        <div className="mb-6 p-4 bg-zinc-900/50 rounded-xl border border-zinc-800">
-          <p className="text-sm text-zinc-400 mb-1">Prompt:</p>
-          <p className="text-zinc-200">{prompt}</p>
+        <div className="mb-6 p-4 bg-zinc-900/50 rounded-xl border border-zinc-800 space-y-3">
+          <div>
+            <p className="text-xs text-zinc-500 mb-1">Your description:</p>
+            <p className="text-sm text-zinc-300">{userDescription}</p>
+          </div>
+          {aiPrompt && aiPrompt !== userDescription && (
+            <div>
+              <p className="text-xs text-zinc-500 mb-1">AI prompt:</p>
+              <p className="text-sm text-zinc-200">{aiPrompt}</p>
+            </div>
+          )}
         </div>
 
         {/* Error Message */}
@@ -215,7 +225,6 @@ export function GenerateStep() {
                     // Video player
                     <video
                       src={asset.url}
-                      poster={asset.thumbnailUrl}
                       controls
                       className="w-full h-full object-cover"
                       onClick={(e) => e.stopPropagation()}

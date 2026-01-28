@@ -17,11 +17,15 @@ import {
   Filter,
   Upload,
   Wand2,
+  Trash2,
+  AlertTriangle,
+  FolderOpen,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
-import { LibraryLayout, UploadAssetModal } from "@/components/library"
+import { LibraryLayout, UploadAssetModal, AssetDetailsModal } from "@/components/library"
 import { useAuth } from "@/contexts/AuthContext"
-import { getAssets } from "@/services/assets"
+import { getAssets, deleteAsset, updateAsset } from "@/services/assets"
+import { getAssetDisplayUrl } from "@/services/localStorage"
 import type { Asset, AssetType, AssetCategory, VisualAssetCategory, AudioAssetCategory } from "@/types/database"
 
 // Visual categories for Image and Video assets
@@ -62,9 +66,11 @@ const iconMap: Record<string, React.ElementType> = {
 interface CategorySectionProps {
   category: { id: AssetCategory; label: string; icon: string }
   assets: Asset[]
+  onDeleteAsset: (asset: Asset) => void
+  onViewAsset: (asset: Asset) => void
 }
 
-function CategorySection({ category, assets }: CategorySectionProps) {
+function CategorySection({ category, assets, onDeleteAsset, onViewAsset }: CategorySectionProps) {
   const [isExpanded, setIsExpanded] = useState(true)
   const Icon = iconMap[category.icon]
 
@@ -115,7 +121,12 @@ function CategorySection({ category, assets }: CategorySectionProps) {
       {isExpanded && (
         <div className="ml-6 grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
           {assets.map((asset) => (
-            <AssetCard key={asset.id} asset={asset} />
+            <AssetCard
+              key={asset.id}
+              asset={asset}
+              onDelete={() => onDeleteAsset(asset)}
+              onViewDetails={() => onViewAsset(asset)}
+            />
           ))}
         </div>
       )}
@@ -125,67 +136,95 @@ function CategorySection({ category, assets }: CategorySectionProps) {
 
 interface AssetCardProps {
   asset: Asset
+  onDelete: () => void
+  onViewDetails: () => void
 }
 
-function AssetCard({ asset }: AssetCardProps) {
+function AssetCard({ asset, onDelete, onViewDetails }: AssetCardProps) {
   const isVideo = asset.type === "video"
   const isAudio = asset.type === "audio"
+
+  // Get the display URL for this asset (handles local vs cloud storage)
+  const displayUrl = getAssetDisplayUrl(asset)
 
   // Get the appropriate icon for audio assets based on category
   const getAudioIcon = () => {
     switch (asset.category) {
       case "music":
-        return <Music className="w-8 h-8 text-sky-400" />
+        return <Music className="w-8 h-8 text-zinc-600" />
       case "sound_effect":
-        return <Waves className="w-8 h-8 text-sky-400" />
+        return <Waves className="w-8 h-8 text-zinc-600" />
       case "voice":
-        return <Mic className="w-8 h-8 text-sky-400" />
+        return <Mic className="w-8 h-8 text-zinc-600" />
       default:
-        return <Music className="w-8 h-8 text-sky-400" />
+        return <Music className="w-8 h-8 text-zinc-600" />
     }
   }
 
+  const handleDelete = (e: React.MouseEvent) => {
+    e.stopPropagation()
+    onDelete()
+  }
+
   return (
-    <div className="group relative aspect-square rounded-xl overflow-hidden bg-zinc-800 border border-zinc-700 hover:border-sky-500/50 transition-colors cursor-pointer">
+    <div
+      onClick={onViewDetails}
+      className="group bg-zinc-900 rounded-xl overflow-hidden border border-zinc-800 hover:border-zinc-700 transition-colors cursor-pointer"
+    >
       {/* Thumbnail */}
-      {isAudio ? (
-        <div className="absolute inset-0 flex items-center justify-center bg-gradient-to-br from-sky-500/20 to-blue-600/20">
-          {getAudioIcon()}
-        </div>
-      ) : (
-        <div className="absolute inset-0 bg-gradient-to-br from-zinc-700 to-zinc-800">
-          <div className="absolute inset-0 flex items-center justify-center text-zinc-600">
-            <Mountain className="w-8 h-8" />
-          </div>
-        </div>
-      )}
-
-      {/* Video indicator */}
-      {isVideo && (
-        <div className="absolute top-2 right-2 w-6 h-6 rounded-full bg-black/60 flex items-center justify-center">
-          <Play className="w-3 h-3 text-white fill-white" />
-        </div>
-      )}
-
-      {/* Duration badge */}
-      {asset.duration && (
-        <div className="absolute bottom-2 right-2 px-1.5 py-0.5 rounded bg-black/60 text-xs text-white">
-          {asset.duration >= 60
-            ? `${Math.floor(asset.duration / 60)}:${String(asset.duration % 60).padStart(2, "0")}`
-            : `${asset.duration}s`}
-        </div>
-      )}
-
-      {/* Hover overlay */}
-      <div className="absolute inset-0 bg-black/0 group-hover:bg-black/40 transition-colors flex items-center justify-center opacity-0 group-hover:opacity-100 gap-2">
-        <button className="px-3 py-1.5 rounded-lg bg-sky-500 text-white text-xs font-medium hover:bg-sky-400 transition-colors">
-          View Details
+      <div className="aspect-square bg-zinc-800 relative">
+        {/* Delete button - shows on hover */}
+        <button
+          onClick={handleDelete}
+          className="absolute top-2 left-2 z-10 p-1.5 bg-zinc-900/80 hover:bg-orange-500 text-zinc-400 hover:text-white rounded-lg opacity-0 group-hover:opacity-100 transition-all"
+          title="Delete asset"
+        >
+          <Trash2 className="w-4 h-4" />
         </button>
+
+        {isAudio ? (
+          <div className="absolute inset-0 flex items-center justify-center">
+            {getAudioIcon()}
+          </div>
+        ) : displayUrl ? (
+          <img
+            src={displayUrl}
+            alt={asset.name}
+            className="absolute inset-0 w-full h-full object-cover"
+          />
+        ) : (
+          <div className="absolute inset-0 flex items-center justify-center">
+            <Mountain className="w-8 h-8 text-zinc-700" />
+          </div>
+        )}
+
+        {/* Video indicator */}
+        {isVideo && (
+          <div className="absolute top-2 right-2 w-6 h-6 rounded-full bg-black/60 flex items-center justify-center">
+            <Play className="w-3 h-3 text-white fill-white" />
+          </div>
+        )}
+
+        {/* Duration badge */}
+        {asset.duration && (
+          <div className="absolute bottom-2 right-2 px-1.5 py-0.5 rounded bg-black/60 text-xs text-white">
+            {asset.duration >= 60
+              ? `${Math.floor(asset.duration / 60)}:${String(asset.duration % 60).padStart(2, "0")}`
+              : `${asset.duration}s`}
+          </div>
+        )}
+
+        {/* Hover overlay */}
+        <div className="absolute inset-0 bg-black/0 group-hover:bg-black/20 transition-colors" />
       </div>
 
-      {/* Name overlay */}
-      <div className="absolute bottom-0 inset-x-0 p-2 bg-gradient-to-t from-black/80 to-transparent">
-        <p className="text-xs text-white truncate">{asset.name}</p>
+      {/* Info */}
+      <div className="p-3">
+        <p className="text-sm font-medium text-zinc-200 group-hover:text-sky-400 transition-colors truncate">{asset.name}</p>
+        <p className="text-xs text-zinc-500 mt-0.5">
+          <span className="capitalize">{asset.type}</span>
+          {asset.category && <> · <span className="capitalize">{asset.category.replace('_', ' ')}</span></>}
+        </p>
       </div>
     </div>
   )
@@ -200,6 +239,15 @@ export function LibraryAssetsPage() {
   const [allUserAssets, setAllUserAssets] = useState<Asset[]>([])
   const [isLoading, setIsLoading] = useState(true)
   const [isUploadModalOpen, setIsUploadModalOpen] = useState(false)
+  const [deleteModal, setDeleteModal] = useState<{ isOpen: boolean; asset: Asset | null }>({
+    isOpen: false,
+    asset: null,
+  })
+  const [isDeleting, setIsDeleting] = useState(false)
+  const [detailsModal, setDetailsModal] = useState<{ isOpen: boolean; asset: Asset | null }>({
+    isOpen: false,
+    asset: null,
+  })
 
   // Fetch assets from Supabase
   const fetchAssets = async () => {
@@ -218,6 +266,92 @@ export function LibraryAssetsPage() {
   useEffect(() => {
     fetchAssets()
   }, [user])
+
+  // Listen for Bubble AI events
+  useEffect(() => {
+    const handleBubbleViewAsset = (e: CustomEvent<{ assetId: string }>) => {
+      const asset = allUserAssets.find(a => a.id === e.detail.assetId)
+      if (asset) {
+        setDetailsModal({ isOpen: true, asset })
+      }
+    }
+
+    const handleBubbleUpdateAsset = async (e: CustomEvent<{ assetId: string; updates: Record<string, unknown> }>) => {
+      const { assetId, updates } = e.detail
+      try {
+        const updatedAsset = await updateAsset(assetId, updates as any)
+        setAllUserAssets(prev =>
+          prev.map(a => a.id === assetId ? updatedAsset : a)
+        )
+        // If details modal is open for this asset, update it
+        setDetailsModal(prev => {
+          if (prev.asset?.id === assetId) {
+            return { ...prev, asset: updatedAsset }
+          }
+          return prev
+        })
+      } catch (error) {
+        console.error("Error updating asset from Bubble:", error)
+      }
+    }
+
+    const handleBubbleDeleteAsset = async (e: CustomEvent<{ assetId: string }>) => {
+      const asset = allUserAssets.find(a => a.id === e.detail.assetId)
+      if (asset) {
+        setDeleteModal({ isOpen: true, asset })
+      }
+    }
+
+    window.addEventListener('bubble-view-asset', handleBubbleViewAsset as EventListener)
+    window.addEventListener('bubble-update-asset', handleBubbleUpdateAsset as EventListener)
+    window.addEventListener('bubble-delete-asset', handleBubbleDeleteAsset as EventListener)
+
+    return () => {
+      window.removeEventListener('bubble-view-asset', handleBubbleViewAsset as EventListener)
+      window.removeEventListener('bubble-update-asset', handleBubbleUpdateAsset as EventListener)
+      window.removeEventListener('bubble-delete-asset', handleBubbleDeleteAsset as EventListener)
+    }
+  }, [allUserAssets])
+
+  const handleDeleteClick = (asset: Asset) => {
+    setDeleteModal({ isOpen: true, asset })
+  }
+
+  const handleDeleteConfirm = async () => {
+    if (!deleteModal.asset) return
+
+    setIsDeleting(true)
+    try {
+      await deleteAsset(deleteModal.asset.id)
+      // Remove from local state
+      setAllUserAssets(prev => prev.filter(a => a.id !== deleteModal.asset!.id))
+      setDeleteModal({ isOpen: false, asset: null })
+    } catch (error) {
+      console.error("Error deleting asset:", error)
+    } finally {
+      setIsDeleting(false)
+    }
+  }
+
+  const handleDeleteCancel = () => {
+    setDeleteModal({ isOpen: false, asset: null })
+  }
+
+  const handleViewDetails = (asset: Asset) => {
+    setDetailsModal({ isOpen: true, asset })
+  }
+
+  const handleAssetUpdate = (updatedAsset: Asset) => {
+    setAllUserAssets(prev =>
+      prev.map(a => a.id === updatedAsset.id ? updatedAsset : a)
+    )
+    // Update the details modal with the new asset data
+    setDetailsModal(prev => ({ ...prev, asset: updatedAsset }))
+  }
+
+  const handleAssetDeleteFromDetails = (assetId: string) => {
+    setAllUserAssets(prev => prev.filter(a => a.id !== assetId))
+  }
 
   // Read URL params on mount
   useEffect(() => {
@@ -331,13 +465,16 @@ export function LibraryAssetsPage() {
               key={category.id}
               category={category}
               assets={assets}
+              onDeleteAsset={handleDeleteClick}
+              onViewAsset={handleViewDetails}
             />
           ))}
         </div>
 
         {filteredAssets.length === 0 && (
-          <div className="text-center py-16">
-            <p className="text-zinc-500">
+          <div className="flex flex-col items-center justify-center py-12 px-6 border border-dashed border-zinc-800 rounded-xl bg-zinc-900/30">
+            <FolderOpen className="w-12 h-12 text-zinc-600 mb-3" />
+            <p className="text-zinc-500 text-sm text-center">
               {searchQuery
                 ? `No assets matching "${searchQuery}"`
                 : "No assets in your library yet"}
@@ -352,6 +489,70 @@ export function LibraryAssetsPage() {
         onClose={() => setIsUploadModalOpen(false)}
         onSuccess={fetchAssets}
       />
+
+      {/* Asset Details Modal */}
+      <AssetDetailsModal
+        isOpen={detailsModal.isOpen}
+        asset={detailsModal.asset}
+        onClose={() => setDetailsModal({ isOpen: false, asset: null })}
+        onUpdate={handleAssetUpdate}
+        onDelete={handleAssetDeleteFromDetails}
+      />
+
+      {/* Delete Confirmation Modal */}
+      {deleteModal.isOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center">
+          {/* Backdrop */}
+          <div
+            className="absolute inset-0 bg-black/70 backdrop-blur-sm"
+            onClick={handleDeleteCancel}
+          />
+
+          {/* Modal */}
+          <div className="relative bg-zinc-900 border border-zinc-700 rounded-2xl p-6 max-w-md w-full mx-4 shadow-2xl">
+            <div className="flex items-start gap-4">
+              <div className="w-12 h-12 rounded-full bg-orange-500/20 flex items-center justify-center flex-shrink-0">
+                <AlertTriangle className="w-6 h-6 text-orange-400" />
+              </div>
+              <div className="flex-1">
+                <h3 className="text-lg font-semibold text-zinc-100">
+                  Delete Asset
+                </h3>
+                <p className="text-sm text-zinc-400 mt-1">
+                  Are you sure you want to delete <span className="text-zinc-200 font-medium">"{deleteModal.asset?.name}"</span>? This action cannot be undone.
+                </p>
+              </div>
+            </div>
+
+            <div className="flex gap-3 mt-6 justify-end">
+              <button
+                onClick={handleDeleteCancel}
+                disabled={isDeleting}
+                className="px-4 py-2 text-sm font-medium text-zinc-300 hover:text-white bg-zinc-800 hover:bg-zinc-700 rounded-lg transition-colors disabled:opacity-50"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleDeleteConfirm}
+                disabled={isDeleting}
+                className="px-4 py-2 text-sm font-medium text-white bg-orange-500 hover:bg-orange-600 rounded-lg transition-colors disabled:opacity-50 inline-flex items-center gap-2"
+              >
+                {isDeleting ? (
+                  <>
+                    <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                    Deleting...
+                  </>
+                ) : (
+                  <>
+                    <Trash2 className="w-4 h-4" />
+                    Delete
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </LibraryLayout>
   )
 }

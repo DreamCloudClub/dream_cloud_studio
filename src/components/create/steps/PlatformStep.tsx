@@ -1,35 +1,14 @@
 import { useState, useEffect } from "react"
-import { Box, FolderOpen, Check } from "lucide-react"
+import { Box, FolderOpen, Check, Loader2 } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { useProjectWizardStore } from "@/state/projectWizardStore"
 import { Button } from "@/components/ui/button"
-
-// Mock platforms for demonstration
-const mockPlatforms = [
-  {
-    id: "1",
-    name: "Brand Videos",
-    description: "Clean, professional style with blue accents",
-    uses: 5,
-    thumbnail: null,
-  },
-  {
-    id: "2",
-    name: "Social Stories",
-    description: "Vibrant, fast-paced for Instagram/TikTok",
-    uses: 12,
-    thumbnail: null,
-  },
-  {
-    id: "3",
-    name: "Product Demos",
-    description: "Minimal, product-focused visuals",
-    uses: 8,
-    thumbnail: null,
-  },
-]
+import { useAuth } from "@/contexts/AuthContext"
+import { getPlatforms } from "@/services/platforms"
+import type { Platform } from "@/types/database"
 
 export function PlatformStep() {
+  const { user } = useAuth()
   const { platform, setPlatform, goToNextStep, markStepComplete } =
     useProjectWizardStore()
 
@@ -39,6 +18,25 @@ export function PlatformStep() {
   const [selectedPlatformId, setSelectedPlatformId] = useState<string | null>(
     platform?.platformId || null
   )
+  const [platforms, setPlatforms] = useState<Platform[]>([])
+  const [isLoading, setIsLoading] = useState(false)
+
+  // Load platforms from database
+  useEffect(() => {
+    async function loadPlatforms() {
+      if (!user) return
+      setIsLoading(true)
+      try {
+        const data = await getPlatforms(user.id)
+        setPlatforms(data)
+      } catch (err) {
+        console.error("Failed to load platforms:", err)
+      } finally {
+        setIsLoading(false)
+      }
+    }
+    loadPlatforms()
+  }, [user])
 
   // Sync store changes back to local state (when Bubble updates via chat)
   useEffect(() => {
@@ -63,7 +61,7 @@ export function PlatformStep() {
       markStepComplete("platform")
       goToNextStep()
     } else if (selectedType === "existing" && selectedPlatformId) {
-      const selected = mockPlatforms.find((p) => p.id === selectedPlatformId)
+      const selected = platforms.find((p) => p.id === selectedPlatformId)
       setPlatform({
         type: "existing",
         platformId: selectedPlatformId,
@@ -206,9 +204,13 @@ export function PlatformStep() {
               Select a platform:
             </h2>
 
-            {mockPlatforms.length > 0 ? (
+            {isLoading ? (
+              <div className="flex items-center justify-center py-12">
+                <Loader2 className="w-8 h-8 text-zinc-500 animate-spin" />
+              </div>
+            ) : platforms.length > 0 ? (
               <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-                {mockPlatforms.map((plat) => (
+                {platforms.map((plat) => (
                   <button
                     key={plat.id}
                     onClick={() => handlePlatformSelect(plat.id)}
@@ -219,16 +221,28 @@ export function PlatformStep() {
                         : "border-zinc-800 hover:border-zinc-700"
                     )}
                   >
-                    {/* Thumbnail placeholder */}
-                    <div className="w-full aspect-video bg-zinc-800 rounded-lg mb-4 flex items-center justify-center">
-                      <FolderOpen className="w-8 h-8 text-zinc-600" />
+                    {/* Thumbnail/Logo */}
+                    <div className="w-full aspect-video bg-zinc-800 rounded-lg mb-4 flex items-center justify-center overflow-hidden">
+                      {plat.logo_url ? (
+                        <img
+                          src={plat.logo_url}
+                          alt={plat.name}
+                          className="w-full h-full object-cover"
+                        />
+                      ) : (
+                        <FolderOpen className="w-8 h-8 text-zinc-600" />
+                      )}
                     </div>
 
                     <h3 className="font-semibold text-zinc-100 mb-1">
                       {plat.name}
                     </h3>
-                    <p className="text-xs text-zinc-500 mb-2">{plat.description}</p>
-                    <p className="text-xs text-zinc-600">{plat.uses} uses</p>
+                    <p className="text-xs text-zinc-500 mb-2 line-clamp-2">
+                      {plat.description || "No description"}
+                    </p>
+                    <p className="text-xs text-zinc-600">
+                      Created {new Date(plat.created_at).toLocaleDateString()}
+                    </p>
 
                     {/* Selection indicator */}
                     {selectedPlatformId === plat.id && (

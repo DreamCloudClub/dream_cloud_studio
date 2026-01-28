@@ -1,16 +1,17 @@
 import { useEffect, useState } from "react"
 import { useParams, useNavigate } from "react-router-dom"
-import { ArrowLeft, Loader2, Save, Check } from "lucide-react"
+import { ArrowLeft, Loader2 } from "lucide-react"
 import { useWorkspaceStore } from "@/state/workspaceStore"
 import { useAuth } from "@/contexts/AuthContext"
 import { BubblePanel } from "@/components/create"
 import { HeaderActions } from "@/components/shared"
-import { Button } from "@/components/ui/button"
 import {
   WorkspaceNav,
   BriefPage,
+  ScriptPage,
   MoodBoardPage,
   StoryboardPage,
+  PlatformPage,
   EditorPage,
   SceneManagerPage,
   AssetsPage,
@@ -21,28 +22,8 @@ export function Workspace() {
   const { projectId } = useParams<{ projectId: string }>()
   const navigate = useNavigate()
   const { user, profile, signOut } = useAuth()
-  const { project, isLoading, activeTab, loadProject, saveAll } = useWorkspaceStore()
+  const { project, isLoading, activeTab, loadProject } = useWorkspaceStore()
   const [isBubbleCollapsed, setIsBubbleCollapsed] = useState(false)
-  const [isSaving, setIsSaving] = useState(false)
-  const [saveStatus, setSaveStatus] = useState<"idle" | "saving" | "saved">("idle")
-
-  const handleSave = async () => {
-    if (!project) return
-
-    setIsSaving(true)
-    setSaveStatus("saving")
-    try {
-      await saveAll()
-      setSaveStatus("saved")
-      // Reset to idle after 2 seconds
-      setTimeout(() => setSaveStatus("idle"), 2000)
-    } catch (error) {
-      console.error("Failed to save:", error)
-      setSaveStatus("idle")
-    } finally {
-      setIsSaving(false)
-    }
-  }
 
   // Load project on mount
   useEffect(() => {
@@ -60,10 +41,14 @@ export function Workspace() {
     switch (activeTab) {
       case "brief":
         return <BriefPage />
+      case "script":
+        return <ScriptPage />
       case "moodboard":
         return <MoodBoardPage />
       case "storyboard":
         return <StoryboardPage />
+      case "platform":
+        return <PlatformPage />
       case "editor":
         return <EditorPage />
       case "scenes":
@@ -126,30 +111,6 @@ export function Workspace() {
         </div>
 
         <div className="flex items-center gap-3">
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={handleSave}
-            disabled={isSaving}
-            className="border-zinc-700 text-zinc-300 hover:bg-zinc-800 hover:text-white disabled:opacity-50"
-          >
-            {saveStatus === "saving" ? (
-              <>
-                <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                Saving...
-              </>
-            ) : saveStatus === "saved" ? (
-              <>
-                <Check className="w-4 h-4 mr-2 text-green-400" />
-                Saved
-              </>
-            ) : (
-              <>
-                <Save className="w-4 h-4 mr-2" />
-                Save
-              </>
-            )}
-          </Button>
           <HeaderActions
             userName={profile?.full_name || user?.email?.split("@")[0] || "User"}
             userEmail={user?.email || ""}

@@ -1,9 +1,9 @@
 import { useState } from "react"
-import { ArrowLeft, Sparkles, ChevronDown, ChevronUp, Plus, X, Image } from "lucide-react"
+import { ArrowLeft, Sparkles, ChevronDown, ChevronUp, Plus, X, Image, Wand2, Loader2 } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { useAssetWizardStore } from "@/state/assetWizardStore"
 import { ReferenceModal } from "../ReferenceModal"
-import type { Asset, AssetCategory as DBAssetCategory } from "@/types/database"
+import type { AssetCategory as DBAssetCategory } from "@/types/database"
 
 const STYLE_PRESETS = [
   { id: "cinematic", label: "Cinematic" },
@@ -14,15 +14,83 @@ const STYLE_PRESETS = [
   { id: "abstract", label: "Abstract" },
 ]
 
+// Enhance user description into a detailed AI prompt
+async function enhancePrompt(
+  userDescription: string,
+  assetType: string,
+  category: string,
+  style?: string | null
+): Promise<string> {
+  const ANTHROPIC_API_KEY = import.meta.env.VITE_ANTHROPIC_API_KEY
+  if (!ANTHROPIC_API_KEY) {
+    // Fallback: just return the user description with style appended
+    return style ? `${userDescription}, ${style} style` : userDescription
+  }
+
+  const systemPrompt = `You are an expert at writing prompts for AI image/video/audio generation.
+Your task is to enhance a user's simple description into a detailed, technical prompt that will produce high-quality results.
+
+Rules:
+- Keep the core intent of the user's description
+- Add technical details: lighting, composition, mood, texture, quality descriptors
+- For images: add details about framing, depth of field, color palette
+- For audio: add details about tempo, instruments, mood, genre
+- Keep it concise (1-3 sentences max)
+- Don't add anything the user didn't imply
+- Output ONLY the enhanced prompt, no explanation`
+
+  const userPrompt = `Asset type: ${assetType}
+Category: ${category}
+${style ? `Style: ${style}` : ''}
+
+User description: "${userDescription}"
+
+Enhanced prompt:`
+
+  try {
+    const response = await fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-api-key': ANTHROPIC_API_KEY,
+        'anthropic-version': '2023-06-01',
+        'anthropic-dangerous-direct-browser-access': 'true',
+      },
+      body: JSON.stringify({
+        model: 'claude-sonnet-4-20250514',
+        max_tokens: 256,
+        system: systemPrompt,
+        messages: [{ role: 'user', content: userPrompt }],
+      }),
+    })
+
+    if (!response.ok) {
+      throw new Error('Failed to enhance prompt')
+    }
+
+    const data = await response.json()
+    const enhanced = data.content?.[0]?.text?.trim()
+    return enhanced || userDescription
+  } catch (error) {
+    console.error('Error enhancing prompt:', error)
+    // Fallback
+    return style ? `${userDescription}, ${style} style` : userDescription
+  }
+}
+
 export function PromptStep() {
   const {
     assetType,
     category,
-    prompt,
+    assetName,
+    userDescription,
+    aiPrompt,
     negativePrompt,
     stylePreset,
     referenceAssets,
-    setPrompt,
+    setAssetName,
+    setUserDescription,
+    setAiPrompt,
     setNegativePrompt,
     setStylePreset,
     addReferenceAsset,
@@ -33,44 +101,93 @@ export function PromptStep() {
 
   const [showAdvanced, setShowAdvanced] = useState(false)
   const [showReferenceModal, setShowReferenceModal] = useState(false)
+  const [isEnhancing, setIsEnhancing] = useState(false)
+
+  const handleEnhance = async () => {
+    if (!userDescription.trim() || !assetType || !category) return
+
+    setIsEnhancing(true)
+    try {
+      const enhanced = await enhancePrompt(userDescription, assetType, category, stylePreset)
+      setAiPrompt(enhanced)
+    } finally {
+      setIsEnhancing(false)
+    }
+  }
 
   const handleGenerate = () => {
-    if (prompt.trim()) {
+    // Auto-enhance if AI prompt is empty
+    if (assetName.trim() && userDescription.trim()) {
+      if (!aiPrompt.trim()) {
+        // Use user description as AI prompt if not enhanced
+        setAiPrompt(userDescription)
+      }
       nextStep()
     }
   }
 
-  const getPlaceholder = () => {
+  const canGenerate = assetName.trim() && userDescription.trim()
+
+  const getDescriptionPlaceholder = () => {
     if (assetType === "audio") {
-      return "Describe the audio you want to generate..."
+      if (category === "music") return "Describe the music you want (e.g., 'upbeat corporate music with piano')"
+      if (category === "sound_effect") return "Describe the sound effect (e.g., 'whoosh transition sound')"
+      if (category === "voice") return "Describe the voice and what it should say"
     }
+    if (category === "character") return "Describe the character's appearance and personality"
+    if (category === "scene") return "Describe the scene or environment"
+    if (category === "stage") return "Describe the stage or backdrop"
     return "Describe what you want to generate..."
   }
 
+  const getAiPromptPlaceholder = () => {
+    if (assetType === "audio") {
+      return "Technical prompt for audio generation..."
+    }
+    return "Technical prompt with lighting, composition, style details..."
+  }
+
   return (
-    <div className="flex-1 flex flex-col items-center justify-center p-6 lg:p-8">
+    <div className="flex-1 flex flex-col items-center justify-center p-6 lg:p-8 overflow-y-auto">
       <div className="max-w-2xl w-full">
         <div className="text-center mb-8">
           <h1 className="text-2xl font-bold text-zinc-100 mb-2">
             Describe your {category}
           </h1>
           <p className="text-zinc-400">
-            Be specific about what you want to generate
+            Provide a description and we'll enhance it for better results
           </p>
         </div>
 
-        {/* Main Prompt */}
+        {/* Asset Name */}
         <div className="mb-6">
           <label className="block text-sm font-medium text-zinc-300 mb-2">
-            Description
+            Name <span className="text-red-400">*</span>
+          </label>
+          <input
+            type="text"
+            value={assetName}
+            onChange={(e) => setAssetName(e.target.value)}
+            placeholder={`Name your ${category}...`}
+            className="w-full px-4 py-3 bg-zinc-900 border border-zinc-700 rounded-xl text-zinc-100 placeholder:text-zinc-600 focus:outline-none focus:border-sky-500"
+          />
+        </div>
+
+        {/* User Description */}
+        <div className="mb-6">
+          <label className="block text-sm font-medium text-zinc-300 mb-2">
+            Description <span className="text-red-400">*</span>
           </label>
           <textarea
-            value={prompt}
-            onChange={(e) => setPrompt(e.target.value)}
-            placeholder={getPlaceholder()}
-            rows={4}
+            value={userDescription}
+            onChange={(e) => setUserDescription(e.target.value)}
+            placeholder={getDescriptionPlaceholder()}
+            rows={3}
             className="w-full px-4 py-3 bg-zinc-900 border border-zinc-700 rounded-xl text-zinc-100 placeholder:text-zinc-600 focus:outline-none focus:border-sky-500 resize-none"
           />
+          <p className="text-xs text-zinc-500 mt-1">
+            Write in plain language what you want to create
+          </p>
         </div>
 
         {/* Style Presets (for images/video) */}
@@ -100,11 +217,52 @@ export function PromptStep() {
           </div>
         )}
 
+        {/* AI Prompt (Enhanced) */}
+        <div className="mb-6">
+          <div className="flex items-center justify-between mb-2">
+            <label className="block text-sm font-medium text-zinc-300">
+              AI Prompt
+            </label>
+            <button
+              onClick={handleEnhance}
+              disabled={!userDescription.trim() || isEnhancing}
+              className={cn(
+                "px-3 py-1.5 rounded-lg text-xs font-medium transition-all inline-flex items-center gap-1.5",
+                userDescription.trim() && !isEnhancing
+                  ? "bg-sky-500/20 text-sky-400 hover:bg-sky-500/30"
+                  : "bg-zinc-800 text-zinc-500 cursor-not-allowed"
+              )}
+            >
+              {isEnhancing ? (
+                <>
+                  <Loader2 className="w-3 h-3 animate-spin" />
+                  Enhancing...
+                </>
+              ) : (
+                <>
+                  <Wand2 className="w-3 h-3" />
+                  Enhance
+                </>
+              )}
+            </button>
+          </div>
+          <textarea
+            value={aiPrompt}
+            onChange={(e) => setAiPrompt(e.target.value)}
+            placeholder={getAiPromptPlaceholder()}
+            rows={4}
+            className="w-full px-4 py-3 bg-zinc-800/50 border border-zinc-700 rounded-xl text-zinc-100 placeholder:text-zinc-600 focus:outline-none focus:border-sky-500 resize-none"
+          />
+          <p className="text-xs text-zinc-500 mt-1">
+            Click "Enhance" to generate a detailed prompt, or write your own. This is sent to the AI.
+          </p>
+        </div>
+
         {/* Reference Images (for images/video only) */}
         {assetType !== "audio" && (
           <div className="mb-6">
             <label className="block text-sm font-medium text-zinc-300 mb-2">
-              Reference
+              Reference Images
             </label>
 
             <div className="grid grid-cols-4 gap-2">
@@ -114,9 +272,9 @@ export function PromptStep() {
                   key={asset.id}
                   className="relative group aspect-square rounded-xl overflow-hidden border border-zinc-700 bg-zinc-800"
                 >
-                  {asset.thumbnail_url || asset.url ? (
+                  {asset.url ? (
                     <img
-                      src={asset.thumbnail_url || asset.url}
+                      src={asset.url}
                       alt={asset.name}
                       className="w-full h-full object-cover"
                     />
@@ -188,10 +346,10 @@ export function PromptStep() {
           </button>
           <button
             onClick={handleGenerate}
-            disabled={!prompt.trim()}
+            disabled={!canGenerate}
             className={cn(
               "px-8 py-3 rounded-xl font-medium transition-all inline-flex items-center gap-2",
-              prompt.trim()
+              canGenerate
                 ? "bg-gradient-to-br from-sky-400 via-sky-500 to-blue-600 text-white hover:opacity-90"
                 : "bg-zinc-800 text-zinc-500 cursor-not-allowed"
             )}

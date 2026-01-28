@@ -19,6 +19,8 @@ export type VisualAssetCategory = 'scene' | 'stage' | 'character' | 'weather' | 
 export type AudioAssetCategory = 'music' | 'sound_effect' | 'voice'
 // Combined type
 export type AssetCategory = VisualAssetCategory | AudioAssetCategory
+// Storage type for assets (local filesystem vs cloud storage)
+export type AssetStorageType = 'local' | 'cloud'
 export type ExportResolution = '720p' | '1080p' | '4k'
 export type ExportFormat = 'mp4' | 'webm' | 'mov'
 export type ExportQuality = 'draft' | 'standard' | 'high'
@@ -89,6 +91,7 @@ export interface MoodBoard {
   images: Json
   colors: Json
   keywords: Json
+  foundation_id?: string
   created_at: string
   updated_at: string
 }
@@ -141,6 +144,10 @@ export interface Shot {
   media_thumbnail_url: string | null
   video_url: string | null
   video_thumbnail_url: string | null
+  // Asset references (new approach - assets as first-class citizens)
+  image_asset_id: string | null
+  video_asset_id: string | null
+  audio_asset_id: string | null
   created_at: string
   updated_at: string
 }
@@ -152,12 +159,20 @@ export interface Asset {
   name: string
   type: AssetType
   category: AssetCategory | null
-  url: string
-  thumbnail_url: string | null
+  url: string | null  // nullable for local-only assets
   duration: number | null
   file_size: number | null
   metadata: Json
+  // Local storage support
+  storage_type: AssetStorageType
+  local_path: string | null
+  // Generation metadata
+  user_description: string | null  // what the user asked for
+  ai_prompt: string | null         // actual prompt sent to AI (editable)
+  generation_model: string | null  // model used for generation
+  generation_settings: Json        // model-specific settings
   created_at: string
+  updated_at: string
 }
 
 export interface ExportSettings {
@@ -182,6 +197,46 @@ export interface UsageTracking {
   storage_bytes_used: number
   created_at: string
   updated_at: string
+}
+
+// Script types
+export type ScriptSectionType = 'description' | 'dialogue'
+
+export interface ScriptCharacter {
+  id: string
+  project_id: string
+  name: string
+  description: string | null
+  voice_description: string | null
+  voice_settings: Json
+  avatar_url: string | null  // Legacy - prefer avatar_asset_id
+  avatar_asset_id: string | null  // Links to assets table (category='character')
+  created_at: string
+  updated_at: string
+}
+
+// ScriptCharacter with the avatar asset expanded
+export interface ScriptCharacterWithAsset extends ScriptCharacter {
+  avatar_asset?: Asset | null
+}
+
+export interface ScriptSection {
+  id: string
+  project_id: string
+  type: ScriptSectionType
+  content: string
+  character_id: string | null
+  notes: string | null
+  sort_order: number
+  is_new_scene: boolean
+  scene_context: string | null
+  created_at: string
+  updated_at: string
+}
+
+// Script section with character expanded
+export interface ScriptSectionWithCharacter extends ScriptSection {
+  character?: ScriptCharacter | null
 }
 
 // Insert types (for creating new records)
@@ -240,6 +295,7 @@ export interface MoodBoardInsert {
   images?: Json
   colors?: Json
   keywords?: Json
+  foundation_id?: string
 }
 
 export interface StoryboardInsert {
@@ -256,6 +312,29 @@ export interface StoryboardCardInsert {
   content?: string | null
   thumbnail_url?: string | null
   sort_order?: number
+}
+
+export interface ScriptCharacterInsert {
+  id?: string
+  project_id: string
+  name: string
+  description?: string | null
+  voice_description?: string | null
+  voice_settings?: Json
+  avatar_url?: string | null
+  avatar_asset_id?: string | null
+}
+
+export interface ScriptSectionInsert {
+  id?: string
+  project_id: string
+  type: ScriptSectionType
+  content?: string
+  character_id?: string | null
+  notes?: string | null
+  sort_order?: number
+  is_new_scene?: boolean
+  scene_context?: string | null
 }
 
 export interface SceneInsert {
@@ -284,6 +363,10 @@ export interface ShotInsert {
   media_thumbnail_url?: string | null
   video_url?: string | null
   video_thumbnail_url?: string | null
+  // Asset references (new approach)
+  image_asset_id?: string | null
+  video_asset_id?: string | null
+  audio_asset_id?: string | null
 }
 
 export interface AssetInsert {
@@ -293,11 +376,18 @@ export interface AssetInsert {
   name: string
   type: AssetType
   category?: AssetCategory | null
-  url: string
-  thumbnail_url?: string | null
+  url?: string | null  // nullable for local-only assets
   duration?: number | null
   file_size?: number | null
   metadata?: Json
+  // Local storage support
+  storage_type?: AssetStorageType
+  local_path?: string | null
+  // Generation metadata
+  user_description?: string | null
+  ai_prompt?: string | null
+  generation_model?: string | null
+  generation_settings?: Json
 }
 
 export interface ExportSettingsInsert {
@@ -329,6 +419,7 @@ export interface ProjectWithRelations extends Project {
   mood_board?: MoodBoard
   storyboard?: Storyboard
   storyboard_cards?: StoryboardCard[]
+  script_sections?: ScriptSection[]
   scenes?: SceneWithShots[]
   assets?: Asset[]
   export_settings?: ExportSettings
@@ -338,6 +429,13 @@ export interface ProjectWithRelations extends Project {
 
 export interface SceneWithShots extends Scene {
   shots: Shot[]
+}
+
+// Shot with linked assets expanded
+export interface ShotWithAssets extends Shot {
+  image_asset?: Asset | null
+  video_asset?: Asset | null
+  audio_asset?: Asset | null
 }
 
 // Subscription limits by tier

@@ -1,11 +1,12 @@
 import { useLocation, useNavigate } from "react-router-dom"
-import { Home, Video, Layers, Box } from "lucide-react"
+import { Home, FolderOpen, Video, Layers, Box } from "lucide-react"
 import { cn } from "@/lib/utils"
 
-type NavTab = "home" | "projects" | "assets" | "foundations"
+type NavTab = "home" | "platforms" | "projects" | "assets" | "foundations"
 
 const NAV_TABS: { id: NavTab; label: string; icon: React.ElementType; path: string }[] = [
   { id: "home", label: "Home", icon: Home, path: "/" },
+  { id: "platforms", label: "Platforms", icon: FolderOpen, path: "/library/platforms" },
   { id: "projects", label: "Projects", icon: Video, path: "/library/projects" },
   { id: "assets", label: "Assets", icon: Layers, path: "/library/assets" },
   { id: "foundations", label: "Foundations", icon: Box, path: "/library/foundations" },
@@ -16,6 +17,8 @@ export function DashboardNav() {
   const navigate = useNavigate()
 
   const getActiveTab = (): NavTab => {
+    if (location.pathname.startsWith("/library/platforms")) return "platforms"
+    if (location.pathname.startsWith("/platform/")) return "platforms"
     if (location.pathname.startsWith("/library/projects")) return "projects"
     if (location.pathname.startsWith("/library/assets")) return "assets"
     if (location.pathname.startsWith("/library/foundations")) return "foundations"

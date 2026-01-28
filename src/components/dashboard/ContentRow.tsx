@@ -1,4 +1,4 @@
-import { FolderOpen, Image, Palette, PenLine } from "lucide-react"
+import { FolderOpen, Image, PenLine, Film, Volume2 } from "lucide-react"
 
 export type ContentRowType = "projects" | "assets" | "foundations"
 
@@ -8,6 +8,11 @@ interface ContentItem {
   thumbnail?: string | null
   updatedAt: string
   type?: "image" | "video" | "audio"
+  category?: string | null
+  // Foundation-specific fields
+  colorPalette?: string[]
+  style?: string | null
+  mood?: string | null
 }
 
 interface ContentRowProps {
@@ -20,14 +25,7 @@ interface ContentRowProps {
 
 function EmptyIcon({ type }: { type: ContentRowType }) {
   const iconClass = "h-12 w-12 md:h-14 md:w-14 lg:h-16 lg:w-16 text-zinc-600"
-  switch (type) {
-    case "projects":
-      return <FolderOpen className={iconClass} />
-    case "assets":
-      return <Image className={iconClass} />
-    case "foundations":
-      return <Palette className={iconClass} />
-  }
+  return <FolderOpen className={iconClass} />
 }
 
 function EmptyState({ type }: { type: ContentRowType }) {
@@ -45,35 +43,60 @@ function EmptyState({ type }: { type: ContentRowType }) {
   )
 }
 
-function ItemCard({ item, onClick, isDraft }: { item: ContentItem; onClick?: () => void; isDraft?: boolean }) {
-  const typeIcons = {
-    image: "🖼",
-    video: "🎬",
-    audio: "🔊",
-  }
+function ItemCard({ item, onClick, isDraft, isFoundation }: { item: ContentItem; onClick?: () => void; isDraft?: boolean; isFoundation?: boolean }) {
+  const TypeIcon = item.type === 'video' ? Film : item.type === 'audio' ? Volume2 : FolderOpen
+  const hasColorPalette = isFoundation && item.colorPalette && item.colorPalette.length > 0
 
   return (
     <button
       onClick={onClick}
-      className="w-full group focus:outline-none focus:ring-2 focus:ring-sky-500 rounded-lg text-left"
-    >
-      <div className={`aspect-video rounded-lg bg-zinc-800 overflow-hidden relative group-hover:border-zinc-600 transition-colors ${
+      className={`w-full group focus:outline-none text-left bg-zinc-900 rounded-xl overflow-hidden transition-colors ${
         isDraft
-          ? "border-2 border-dashed border-orange-500/50 group-hover:border-orange-400/70"
-          : "border border-zinc-700"
-      }`}>
+          ? "border-2 border-dashed border-orange-500/50 hover:border-orange-400/70"
+          : "border border-zinc-800 hover:border-zinc-700"
+      }`}
+    >
+      <div className="aspect-square bg-zinc-800 relative">
         {item.thumbnail ? (
           <img
             src={item.thumbnail}
             alt={item.name}
             className="w-full h-full object-cover"
           />
+        ) : hasColorPalette ? (
+          <div className="w-full h-full flex flex-col">
+            {/* Color palette display */}
+            <div className="flex-1 grid grid-cols-2 gap-0.5 p-2">
+              {item.colorPalette!.slice(0, 4).map((color, i) => (
+                <div
+                  key={i}
+                  className="rounded-md"
+                  style={{ backgroundColor: color }}
+                />
+              ))}
+            </div>
+            {/* Style/mood tags */}
+            {(item.style || item.mood) && (
+              <div className="px-2 pb-2 flex flex-wrap gap-1">
+                {item.style && (
+                  <span className="text-[10px] px-1.5 py-0.5 bg-zinc-700/50 text-zinc-400 rounded capitalize">
+                    {item.style}
+                  </span>
+                )}
+                {item.mood && (
+                  <span className="text-[10px] px-1.5 py-0.5 bg-zinc-700/50 text-zinc-400 rounded capitalize">
+                    {item.mood}
+                  </span>
+                )}
+              </div>
+            )}
+          </div>
         ) : (
-          <div className="w-full h-full flex items-center justify-center text-2xl">
+          <div className="w-full h-full flex items-center justify-center">
             {isDraft ? (
               <PenLine className="w-8 h-8 text-orange-500/70" />
             ) : (
-              item.type ? typeIcons[item.type] : "▶"
+              <TypeIcon className="w-8 h-8 text-zinc-700" />
             )}
           </div>
         )}
@@ -84,9 +107,18 @@ function ItemCard({ item, onClick, isDraft }: { item: ContentItem; onClick?: () 
           </div>
         )}
       </div>
-      <div className="mt-2">
-        <p className="text-sm font-medium text-zinc-200 truncate">{item.name}</p>
-        <p className="text-xs text-zinc-500">{item.updatedAt}</p>
+      <div className="p-3">
+        <p className={`text-sm font-medium truncate ${isDraft ? "text-orange-200 group-hover:text-orange-300" : "text-zinc-200 group-hover:text-sky-400"} transition-colors`}>{item.name}</p>
+        <p className="text-xs text-zinc-500 mt-0.5">
+          {item.type ? (
+            <>
+              <span className="capitalize">{item.type}</span>
+              {item.category && <> · <span className="capitalize">{item.category.replace('_', ' ')}</span></>}
+            </>
+          ) : (
+            item.updatedAt
+          )}
+        </p>
       </div>
     </button>
   )
@@ -96,6 +128,7 @@ export function ContentRow({ title, type, items = [], onItemClick, isDraft }: Co
   const hasItems = items.length > 0
   // Max 12 items (4 per row, 3 rows)
   const displayItems = items.slice(0, 12)
+  const isFoundation = type === 'foundations'
 
   return (
     <div className="py-4 sm:py-6 md:py-8">
@@ -111,11 +144,21 @@ export function ContentRow({ title, type, items = [], onItemClick, isDraft }: Co
               item={item}
               onClick={() => onItemClick?.(item.id)}
               isDraft={isDraft}
+              isFoundation={isFoundation}
             />
           ))}
         </div>
       ) : (
         <EmptyState type={type} />
+      )}
+
+      {/* Foundation info - always show under foundations section */}
+      {isFoundation && (
+        <div className="mt-4 p-4 bg-zinc-900/50 rounded-lg border border-zinc-800/50">
+          <p className="text-xs text-zinc-500">
+            <span className="text-zinc-400 font-medium">Foundations</span> are visual style guides that help maintain consistency across your projects. They include color palettes, typography choices, mood settings, and tone of voice.
+          </p>
+        </div>
       )}
     </div>
   )

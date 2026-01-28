@@ -6,14 +6,28 @@ import {
   ContentRow,
   DashboardNav,
 } from "@/components/dashboard"
+import { AssetDetailsModal } from "@/components/library/AssetDetailsModal"
 import { BubblePanel } from "@/components/create"
 import { useUIStore } from "@/state/uiStore"
 import { useProjectWizardStore } from "@/state/projectWizardStore"
 import { useAuth } from "@/contexts/AuthContext"
 import { getCompletedProjects, getDraftProjects } from "@/services/projects"
 import { getAssets } from "@/services/assets"
-import { getPlatforms } from "@/services/platforms"
-import type { Project, Asset, Platform } from "@/types/database"
+import { getAssetDisplayUrl } from "@/services/localStorage"
+import type { Project, Asset, AssetCategory } from "@/types/database"
+
+// Asset categories in display order (same as Assets page)
+const ASSET_CATEGORIES: { id: AssetCategory; label: string }[] = [
+  { id: "scene", label: "Scenes" },
+  { id: "stage", label: "Stages" },
+  { id: "character", label: "Characters" },
+  { id: "weather", label: "Weather" },
+  { id: "prop", label: "Props" },
+  { id: "effect", label: "Effects" },
+  { id: "music", label: "Music" },
+  { id: "sound_effect", label: "Sound Effects" },
+  { id: "voice", label: "Voice" },
+]
 
 function formatRelativeTime(dateString: string): string {
   const date = new Date(dateString)
@@ -40,8 +54,8 @@ export function Dashboard() {
   const [projects, setProjects] = useState<Project[]>([])
   const [draftProjects, setDraftProjects] = useState<Project[]>([])
   const [assets, setAssets] = useState<Asset[]>([])
-  const [platforms, setPlatforms] = useState<Platform[]>([])
   const [isLoading, setIsLoading] = useState(true)
+  const [selectedAsset, setSelectedAsset] = useState<Asset | null>(null)
 
   // Fetch data from Supabase
   useEffect(() => {
@@ -50,16 +64,14 @@ export function Dashboard() {
 
       setIsLoading(true)
       try {
-        const [completedData, draftsData, assetsData, platformsData] = await Promise.all([
+        const [completedData, draftsData, assetsData] = await Promise.all([
           getCompletedProjects(user.id),
           getDraftProjects(user.id),
           getAssets(user.id),
-          getPlatforms(user.id),
         ])
         setProjects(completedData)
         setDraftProjects(draftsData)
         setAssets(assetsData)
-        setPlatforms(platformsData)
       } catch (error) {
         console.error("Error fetching dashboard data:", error)
       } finally {
@@ -84,20 +96,26 @@ export function Dashboard() {
     updatedAt: formatRelativeTime(project.updated_at),
   }))
 
-  // Transform assets for ContentRow (show most recent 12)
-  const recentAssets = assets.slice(0, 12).map(asset => ({
-    id: asset.id,
-    name: asset.name,
-    type: asset.type,
-    updatedAt: formatRelativeTime(asset.created_at),
-  }))
+  // Group assets by category and get 12 most recent for each
+  const assetsByCategory = ASSET_CATEGORIES.map(category => {
+    const categoryAssets = assets
+      .filter(asset => asset.category === category.id)
+      .slice(0, 12)
+      .map(asset => ({
+        id: asset.id,
+        name: asset.name,
+        type: asset.type,
+        category: asset.category,
+        thumbnail: asset.type !== 'audio' ? getAssetDisplayUrl(asset) : null,
+        updatedAt: formatRelativeTime(asset.created_at),
+      }))
 
-  // Transform platforms (foundations) for ContentRow (show most recent 12)
-  const recentFoundations = platforms.slice(0, 12).map(platform => ({
-    id: platform.id,
-    name: platform.name,
-    updatedAt: formatRelativeTime(platform.updated_at),
-  }))
+    return {
+      ...category,
+      assets: categoryAssets,
+    }
+  }).filter(category => category.assets.length > 0)
+
 
   const handleNewProject = () => {
     // Always reset wizard for a fresh start
@@ -121,6 +139,23 @@ export function Dashboard() {
 
   const handleProjectClick = (projectId: string) => {
     navigate(`/project/${projectId}`)
+  }
+
+  const handleAssetClick = (assetId: string) => {
+    const asset = assets.find(a => a.id === assetId)
+    if (asset) {
+      setSelectedAsset(asset)
+    }
+  }
+
+  const handleAssetUpdate = (updatedAsset: Asset) => {
+    setAssets(prev => prev.map(a => a.id === updatedAsset.id ? updatedAsset : a))
+    setSelectedAsset(updatedAsset)
+  }
+
+  const handleAssetDelete = (assetId: string) => {
+    setAssets(prev => prev.filter(a => a.id !== assetId))
+    setSelectedAsset(null)
   }
 
   return (
@@ -178,27 +213,32 @@ export function Dashboard() {
               onItemClick={handleProjectClick}
             />
 
-            <div className="border-t border-zinc-800/50" />
+            {/* Asset Categories - only show categories with assets */}
+            {assetsByCategory.map(category => (
+              <div key={category.id}>
+                <div className="border-t border-zinc-800/50" />
+                <ContentRow
+                  title={category.label}
+                  type="assets"
+                  items={category.assets}
+                  onItemClick={handleAssetClick}
+                />
+              </div>
+            ))}
 
-            <ContentRow
-              title="Recent Assets"
-              type="assets"
-              items={recentAssets}
-            />
-
-            <div className="border-t border-zinc-800/50" />
-
-            <ContentRow
-              title="Foundations"
-              type="foundations"
-              items={recentFoundations}
-              onItemClick={(id) => navigate(`/foundation/${id}`)}
-            />
           </div>
         </main>
       </div>
 
       <DashboardNav />
+
+      <AssetDetailsModal
+        isOpen={selectedAsset !== null}
+        asset={selectedAsset}
+        onClose={() => setSelectedAsset(null)}
+        onUpdate={handleAssetUpdate}
+        onDelete={handleAssetDelete}
+      />
     </div>
   )
 }

@@ -10,8 +10,7 @@ import {
   AssetStepTimeline,
   TypeStep,
   CategoryStep,
-  PromptStep,
-  GenerateStep,
+  PromptAndGenerateStep,
   ReviewStep,
 } from "@/components/create-asset"
 
@@ -21,15 +20,15 @@ export function CreateAssetWizard() {
   const { isBubbleCollapsed, toggleBubbleCollapsed } = useUIStore()
   const { user, profile, signOut } = useAuth()
 
-  const { currentStep, setPrompt, resetWizard } = useAssetWizardStore()
+  const { currentStep, setUserDescription, resetWizard } = useAssetWizardStore()
 
   // Extract initial prompt from URL params
   useEffect(() => {
     const prompt = searchParams.get("prompt")
     if (prompt) {
-      setPrompt(prompt)
+      setUserDescription(prompt)
     }
-  }, [searchParams, setPrompt])
+  }, [searchParams, setUserDescription])
 
   const handleBack = () => {
     resetWizard()
@@ -43,9 +42,7 @@ export function CreateAssetWizard() {
       case "category":
         return <CategoryStep />
       case "prompt":
-        return <PromptStep />
-      case "generate":
-        return <GenerateStep />
+        return <PromptAndGenerateStep />
       case "review":
         return <ReviewStep />
       default:
