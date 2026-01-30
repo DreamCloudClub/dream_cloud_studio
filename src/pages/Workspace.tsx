@@ -13,7 +13,6 @@ import {
   StoryboardPage,
   PlatformPage,
   EditorPage,
-  SceneManagerPage,
   AssetsPage,
   ExportPage,
   InspectorPanel,
@@ -53,8 +52,6 @@ export function Workspace() {
         return <PlatformPage />
       case "editor":
         return <EditorPage />
-      case "scenes":
-        return <SceneManagerPage />
       case "assets":
         return <AssetsPage />
       case "export":

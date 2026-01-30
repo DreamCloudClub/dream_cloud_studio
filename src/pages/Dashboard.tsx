@@ -10,9 +10,8 @@ import { AssetDetailsModal } from "@/components/library/AssetDetailsModal"
 import { BubblePanel } from "@/components/create"
 import { InspectorPanel } from "@/components/workspace"
 import { useUIStore } from "@/state/uiStore"
-import { useProjectWizardStore } from "@/state/projectWizardStore"
 import { useAuth } from "@/contexts/AuthContext"
-import { getCompletedProjects, getDraftProjects, ProjectWithThumbnail } from "@/services/projects"
+import { getCompletedProjects, ProjectWithThumbnail } from "@/services/projects"
 import { getAssets } from "@/services/assets"
 import { getAssetDisplayUrl } from "@/services/localStorage"
 import type { Asset, AssetCategory } from "@/types/database"
@@ -50,10 +49,8 @@ export function Dashboard() {
   const navigate = useNavigate()
   const { user, profile, signOut } = useAuth()
   const { isBubbleCollapsed, toggleBubbleCollapsed, setBubbleCollapsed } = useUIStore()
-  const resetWizard = useProjectWizardStore((state) => state.resetWizard)
 
   const [projects, setProjects] = useState<ProjectWithThumbnail[]>([])
-  const [draftProjects, setDraftProjects] = useState<ProjectWithThumbnail[]>([])
   const [assets, setAssets] = useState<Asset[]>([])
   const [isLoading, setIsLoading] = useState(true)
   const [selectedAsset, setSelectedAsset] = useState<Asset | null>(null)
@@ -66,13 +63,11 @@ export function Dashboard() {
 
       setIsLoading(true)
       try {
-        const [completedData, draftsData, assetsData] = await Promise.all([
+        const [completedData, assetsData] = await Promise.all([
           getCompletedProjects(user.id),
-          getDraftProjects(user.id),
           getAssets(user.id),
         ])
         setProjects(completedData)
-        setDraftProjects(draftsData)
         setAssets(assetsData)
       } catch (error) {
         console.error("Error fetching dashboard data:", error)
@@ -86,14 +81,6 @@ export function Dashboard() {
 
   // Transform projects for ContentRow (show most recent 12 - 4 per row, max 3 rows)
   const recentProjects = projects.slice(0, 12).map(project => ({
-    id: project.id,
-    name: project.name,
-    thumbnail: null,
-    updatedAt: formatRelativeTime(project.updated_at),
-  }))
-
-  // Transform draft projects for ContentRow
-  const recentDrafts = draftProjects.slice(0, 12).map(project => ({
     id: project.id,
     name: project.name,
     thumbnail: null,
@@ -120,21 +107,6 @@ export function Dashboard() {
     }
   }).filter(category => category.assets.length > 0)
 
-
-  const handleNewProject = () => {
-    // Always reset wizard for a fresh start
-    resetWizard()
-    navigate("/create/project")
-  }
-
-  const handleContinueDraft = (projectId: string) => {
-    // TODO: Load draft into wizard and navigate to the right step
-    navigate(`/create/project?draft=${projectId}`)
-  }
-
-  const handleNewAsset = () => {
-    navigate("/create/asset")
-  }
 
   const handleStartWithBubble = () => {
     // Open the Bubble panel
@@ -189,24 +161,8 @@ export function Dashboard() {
         <main className="flex-1 overflow-auto">
           <div className="w-full max-w-[90%] md:max-w-[80%] lg:max-w-3xl mx-auto px-4">
             <CreateNewHero
-              onNewProject={handleNewProject}
-              onNewAsset={handleNewAsset}
               onStartWithBubble={handleStartWithBubble}
             />
-
-            {/* Draft Projects - Continue Setup */}
-            {recentDrafts.length > 0 && (
-              <>
-                <div className="border-t border-zinc-800/50" />
-                <ContentRow
-                  title="Continue Setup"
-                  type="projects"
-                  items={recentDrafts}
-                  onItemClick={handleContinueDraft}
-                  isDraft
-                />
-              </>
-            )}
 
             <div className="border-t border-zinc-800/50" />
 

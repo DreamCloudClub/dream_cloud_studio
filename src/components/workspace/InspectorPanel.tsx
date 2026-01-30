@@ -1,10 +1,43 @@
-import { ChevronRight, Settings } from "lucide-react"
+import { useState, useEffect } from "react"
+import {
+  ChevronRight,
+  ChevronDown,
+  Settings,
+  SlidersHorizontal,
+  StickyNote,
+  Layers,
+  Play,
+  GripVertical,
+  Trash2,
+  Plus,
+  Film,
+  Image,
+  Music,
+  ScrollText,
+  FileText,
+  Palette,
+  BookOpen,
+  Download,
+  FolderOpen,
+  Loader2,
+} from "lucide-react"
 import { cn } from "@/lib/utils"
-import { useWorkspaceStore, Shot, WorkspaceTab } from "@/state/workspaceStore"
+import {
+  useWorkspaceStore,
+  WorkspaceTab,
+  ProjectAsset,
+  getClipsWithAssets,
+} from "@/state/workspaceStore"
+import { useLibraryStore, type LibraryAsset } from "@/state/libraryStore"
+import { useAuth } from "@/contexts/AuthContext"
+import { getAssetDisplayUrl } from "@/services/localStorage"
 import type { PanDirection } from "@/remotion/components"
 
 // Library page types for non-workspace contexts
 export type LibraryPageType = "dashboard" | "platforms" | "projects" | "assets" | "foundations"
+
+// Control Panel tab types - standardized across entire app
+type ControlPanelTab = "properties" | "notes" | "assets"
 
 // Available pan direction options for images
 const PAN_OPTIONS: { value: PanDirection; label: string; description: string }[] = [
@@ -19,235 +52,619 @@ const PAN_OPTIONS: { value: PanDirection; label: string; description: string }[]
   { value: "bottom-right-to-top-left", label: "Diagonal ↖", description: "Bottom-right to top-left" },
 ]
 
-// Shot Inspector Content - always visible on Editor tab
-function ShotInspectorContent() {
-  const { project, selectedShotId, updateShot } = useWorkspaceStore()
+// ============================================
+// CLIP PROPERTIES - For Editor tab
+// ============================================
 
-  // Find the selected shot
-  let selectedShot: Shot | null = null
-  let selectedSceneId: string | null = null
-  if (project && selectedShotId) {
-    for (const scene of project.scenes) {
-      const shot = scene.shots.find(s => s.id === selectedShotId)
-      if (shot) {
-        selectedShot = shot
-        selectedSceneId = scene.id
-        break
-      }
+function ClipPropertiesContent() {
+  const { project, selectedClipId, trimClip, setClipVolume, setClipAnimation } = useWorkspaceStore()
+
+  if (!project) return null
+
+  const clips = getClipsWithAssets(project.timeline.clips, project.assets)
+  const selectedClip = clips.find((c) => c.id === selectedClipId)
+
+  const isDisabled = !selectedClip
+  const isVideo = selectedClip?.asset?.type === "video"
+  const isImage = selectedClip?.asset?.type === "image"
+
+  // Current values
+  const currentDuration = selectedClip?.duration || 5
+  const currentVolume = selectedClip?.volume ?? 1
+  const currentPan = selectedClip?.animation?.pan || "zoom-in"
+
+  const handleDurationChange = (duration: number) => {
+    if (selectedClipId) {
+      trimClip(selectedClipId, undefined, duration)
     }
   }
 
-  // Check asset types if shot is selected
-  const hasImageAsset = selectedShot && (
-    selectedShot.imageAsset
-    || selectedShot.media?.type === "image"
-    || selectedShot.assets?.scene?.type === "image"
-  )
-  const hasVideoAsset = selectedShot && (
-    selectedShot.videoAsset
-    || selectedShot.media?.type === "video"
-    || selectedShot.assets?.scene?.type === "video"
-  )
+  const handleVolumeChange = (volume: number) => {
+    if (selectedClipId) {
+      setClipVolume(selectedClipId, volume)
+    }
+  }
 
   const handlePanChange = (pan: PanDirection) => {
-    if (selectedSceneId && selectedShotId) {
-      updateShot(selectedSceneId, selectedShotId, { pan })
+    if (selectedClipId) {
+      setClipAnimation(selectedClipId, { pan })
     }
   }
-
-  const handleScaleChange = (scale: number) => {
-    if (selectedSceneId && selectedShotId) {
-      updateShot(selectedSceneId, selectedShotId, { scale })
-    }
-  }
-
-  const handlePositionXChange = (positionX: number) => {
-    if (selectedSceneId && selectedShotId) {
-      updateShot(selectedSceneId, selectedShotId, { positionX })
-    }
-  }
-
-  const handlePositionYChange = (positionY: number) => {
-    if (selectedSceneId && selectedShotId) {
-      updateShot(selectedSceneId, selectedShotId, { positionY })
-    }
-  }
-
-  const handleReset = () => {
-    if (selectedSceneId && selectedShotId) {
-      updateShot(selectedSceneId, selectedShotId, { scale: 1, positionX: 0, positionY: 0 })
-    }
-  }
-
-  // Current values (from selected shot or defaults)
-  const currentScale = selectedShot?.scale || 1
-  const currentPositionX = selectedShot?.positionX || 0
-  const currentPositionY = selectedShot?.positionY || 0
-  const currentPan = selectedShot?.pan || "zoom-in"
-
-  const isDisabled = !selectedShot
 
   return (
-    <div className="space-y-6">
-      {/* Header - shows which shot is targeted */}
+    <div className="space-y-5">
+      {/* Header */}
       <div>
-        <h3 className="text-sm font-semibold text-zinc-100 mb-1">Shot Properties</h3>
+        <h3 className="text-sm font-semibold text-zinc-100 mb-1">Clip Properties</h3>
         <p className="text-xs text-zinc-500">
-          {selectedShot ? selectedShot.name : "Select a shot to edit"}
+          {selectedClip ? selectedClip.asset?.name || "Untitled Clip" : "Select a clip to edit"}
         </p>
       </div>
 
-      {/* Scale/Position controls (for video or general use) */}
-      <div className={cn("space-y-5", isDisabled && "opacity-50")}>
-        {/* Scale slider */}
+      {/* Duration slider */}
+      <div className={cn("space-y-4", isDisabled && "opacity-50")}>
         <div>
           <div className="flex items-center justify-between mb-2">
-            <label className="text-xs font-medium text-zinc-400">Scale / Zoom</label>
-            <span className="text-xs text-sky-400 font-mono">{Math.round(currentScale * 100)}%</span>
+            <label className="text-xs font-medium text-zinc-400">Duration</label>
+            <span className="text-xs text-sky-400 font-mono">{currentDuration.toFixed(1)}s</span>
           </div>
           <input
             type="range"
-            min="50"
-            max="200"
-            value={currentScale * 100}
-            onChange={(e) => handleScaleChange(Number(e.target.value) / 100)}
+            min="0.5"
+            max="30"
+            step="0.5"
+            value={currentDuration}
+            onChange={(e) => handleDurationChange(Number(e.target.value))}
             disabled={isDisabled}
             className="w-full h-2 bg-zinc-700 rounded-lg appearance-none cursor-pointer accent-sky-500 disabled:cursor-not-allowed"
           />
           <div className="flex justify-between text-xs text-zinc-600 mt-1">
-            <span>50%</span>
-            <span>200%</span>
+            <span>0.5s</span>
+            <span>30s</span>
           </div>
         </div>
 
-        {/* Horizontal Position */}
-        <div>
-          <div className="flex items-center justify-between mb-2">
-            <label className="text-xs font-medium text-zinc-400">Horizontal</label>
-            <span className="text-xs text-sky-400 font-mono">{currentPositionX}%</span>
+        {/* Volume slider (for video clips) */}
+        {isVideo && (
+          <div>
+            <div className="flex items-center justify-between mb-2">
+              <label className="text-xs font-medium text-zinc-400">Volume</label>
+              <span className="text-xs text-sky-400 font-mono">{Math.round(currentVolume * 100)}%</span>
+            </div>
+            <input
+              type="range"
+              min="0"
+              max="100"
+              value={currentVolume * 100}
+              onChange={(e) => handleVolumeChange(Number(e.target.value) / 100)}
+              disabled={isDisabled}
+              className="w-full h-2 bg-zinc-700 rounded-lg appearance-none cursor-pointer accent-sky-500 disabled:cursor-not-allowed"
+            />
+            <div className="flex justify-between text-xs text-zinc-600 mt-1">
+              <span>Mute</span>
+              <span>100%</span>
+            </div>
           </div>
-          <input
-            type="range"
-            min="-50"
-            max="50"
-            value={currentPositionX}
-            onChange={(e) => handlePositionXChange(Number(e.target.value))}
-            disabled={isDisabled}
-            className="w-full h-2 bg-zinc-700 rounded-lg appearance-none cursor-pointer accent-sky-500 disabled:cursor-not-allowed"
-          />
-          <div className="flex justify-between text-xs text-zinc-600 mt-1">
-            <span>Left</span>
-            <span>Right</span>
-          </div>
-        </div>
-
-        {/* Vertical Position */}
-        <div>
-          <div className="flex items-center justify-between mb-2">
-            <label className="text-xs font-medium text-zinc-400">Vertical</label>
-            <span className="text-xs text-sky-400 font-mono">{currentPositionY}%</span>
-          </div>
-          <input
-            type="range"
-            min="-50"
-            max="50"
-            value={currentPositionY}
-            onChange={(e) => handlePositionYChange(Number(e.target.value))}
-            disabled={isDisabled}
-            className="w-full h-2 bg-zinc-700 rounded-lg appearance-none cursor-pointer accent-sky-500 disabled:cursor-not-allowed"
-          />
-          <div className="flex justify-between text-xs text-zinc-600 mt-1">
-            <span>Up</span>
-            <span>Down</span>
-          </div>
-        </div>
-
-        {/* Reset button */}
-        <button
-          onClick={handleReset}
-          disabled={isDisabled}
-          className="w-full py-2 text-xs text-zinc-500 hover:text-zinc-300 bg-zinc-800 hover:bg-zinc-700 rounded-lg transition-colors disabled:cursor-not-allowed disabled:hover:text-zinc-500 disabled:hover:bg-zinc-800"
-        >
-          Reset to default
-        </button>
+        )}
       </div>
 
       {/* Pan controls for images */}
-      <div className={cn("space-y-4", (isDisabled || hasVideoAsset) && "opacity-50")}>
-        <div>
-          <label className="block text-xs font-medium text-zinc-400 mb-3">Pan / Zoom Effect</label>
-          <div className="grid grid-cols-2 gap-2">
-            {PAN_OPTIONS.map((option) => (
-              <button
-                key={option.value}
-                onClick={() => handlePanChange(option.value)}
-                disabled={isDisabled || !!hasVideoAsset}
-                className={cn(
-                  "px-3 py-2 text-xs rounded-lg border transition-all text-left disabled:cursor-not-allowed",
-                  currentPan === option.value
-                    ? "bg-sky-500/20 border-sky-500 text-sky-400"
-                    : "bg-zinc-800 border-zinc-700 text-zinc-400 hover:border-zinc-600 disabled:hover:border-zinc-700"
-                )}
-              >
-                {option.label}
-              </button>
-            ))}
+      {isImage && (
+        <div className={cn("space-y-3", isDisabled && "opacity-50")}>
+          <div>
+            <label className="block text-xs font-medium text-zinc-400 mb-2">Pan / Zoom Effect</label>
+            <div className="grid grid-cols-2 gap-1.5">
+              {PAN_OPTIONS.map((option) => (
+                <button
+                  key={option.value}
+                  onClick={() => handlePanChange(option.value)}
+                  disabled={isDisabled}
+                  className={cn(
+                    "px-2 py-1.5 text-[11px] rounded border transition-all text-left disabled:cursor-not-allowed",
+                    currentPan === option.value
+                      ? "bg-sky-500/20 border-sky-500 text-sky-400"
+                      : "bg-zinc-800 border-zinc-700 text-zinc-400 hover:border-zinc-600 disabled:hover:border-zinc-700"
+                  )}
+                >
+                  {option.label}
+                </button>
+              ))}
+            </div>
           </div>
+          <p className="text-[10px] text-zinc-600">
+            {PAN_OPTIONS.find((o) => o.value === currentPan)?.description}
+          </p>
         </div>
-        <p className="text-xs text-zinc-600">
-          {hasVideoAsset ? "Pan effects are for images only" : PAN_OPTIONS.find(o => o.value === currentPan)?.description}
-        </p>
-      </div>
+      )}
+
+      {/* No clip selected message */}
+      {!selectedClip && (
+        <div className="text-center py-4 text-zinc-500">
+          <SlidersHorizontal className="w-6 h-6 mx-auto mb-2 opacity-50" />
+          <p className="text-xs">Click a clip on the timeline to edit its properties</p>
+        </div>
+      )}
     </div>
   )
 }
 
-// Generic placeholder for tabs without specific settings yet
-function TabPlaceholder({ icon: Icon, title, description }: { icon: React.ElementType; title: string; description: string }) {
+// ============================================
+// GENERIC PROPERTIES - For non-Editor tabs
+// ============================================
+
+interface GenericPropertiesProps {
+  activeTab: WorkspaceTab
+}
+
+const TAB_INFO: Record<WorkspaceTab, { icon: React.ElementType; title: string; description: string }> = {
+  platform: { icon: FolderOpen, title: "Platform", description: "Platform settings and configuration" },
+  brief: { icon: FileText, title: "Project Brief", description: "Define your project goals and audience" },
+  script: { icon: ScrollText, title: "Script", description: "Write and organize your script" },
+  moodboard: { icon: Palette, title: "Mood Board", description: "Collect visual inspiration" },
+  storyboard: { icon: BookOpen, title: "Storyboard", description: "Plan your visual narrative" },
+  editor: { icon: Film, title: "Editor", description: "Edit your timeline" },
+  assets: { icon: Layers, title: "Assets", description: "Manage your media assets" },
+  export: { icon: Download, title: "Export", description: "Configure export settings" },
+}
+
+function GenericPropertiesContent({ activeTab }: GenericPropertiesProps) {
+  const info = TAB_INFO[activeTab] || TAB_INFO.editor
+  const Icon = info.icon
+
   return (
-    <div className="flex flex-col items-center justify-center h-full text-center px-4">
-      <div className="w-12 h-12 rounded-lg bg-zinc-800 flex items-center justify-center mb-3">
-        <Icon className="w-6 h-6 text-zinc-600" />
+    <div className="space-y-4">
+      <div>
+        <h3 className="text-sm font-semibold text-zinc-100 mb-1">Properties</h3>
+        <p className="text-xs text-zinc-500">{info.title}</p>
       </div>
-      <p className="text-sm text-zinc-400 mb-1">{title}</p>
-      <p className="text-xs text-zinc-600">{description}</p>
+
+      <div className="text-center py-6 text-zinc-500">
+        <Icon className="w-8 h-8 mx-auto mb-2 opacity-50" />
+        <p className="text-xs">{info.description}</p>
+      </div>
     </div>
   )
 }
 
-// Tab-specific settings configurations for workspace
-const TAB_CONFIG: Record<WorkspaceTab, { title: string; subtitle: string; icon: React.ElementType }> = {
-  platform: { title: "Control Panel", subtitle: "System Properties", icon: Settings },
-  brief: { title: "Control Panel", subtitle: "System Properties", icon: Settings },
-  script: { title: "Control Panel", subtitle: "System Properties", icon: Settings },
-  moodboard: { title: "Control Panel", subtitle: "System Properties", icon: Settings },
-  storyboard: { title: "Control Panel", subtitle: "System Properties", icon: Settings },
-  editor: { title: "Control Panel", subtitle: "System Properties", icon: Settings },
-  scenes: { title: "Control Panel", subtitle: "System Properties", icon: Settings },
-  assets: { title: "Control Panel", subtitle: "System Properties", icon: Settings },
-  export: { title: "Control Panel", subtitle: "System Properties", icon: Settings },
+// ============================================
+// PROPERTIES TAB - Context-aware
+// ============================================
+
+function PropertiesContent() {
+  const { activeTab } = useWorkspaceStore()
+
+  // Editor tab shows clip properties
+  if (activeTab === "editor") {
+    return <ClipPropertiesContent />
+  }
+
+  // Other tabs show generic properties
+  return <GenericPropertiesContent activeTab={activeTab} />
 }
+
+// ============================================
+// NOTES TAB - Notes + Scripts combined
+// ============================================
+
+interface NoteCardProps {
+  note: { id: string; content: string; createdAt: string }
+  onDelete: (id: string) => void
+}
+
+function NoteCard({ note, onDelete }: NoteCardProps) {
+  const formatDate = (dateStr: string) => {
+    const date = new Date(dateStr)
+    return date.toLocaleDateString("en-US", {
+      month: "short",
+      day: "numeric",
+      hour: "numeric",
+      minute: "2-digit",
+    })
+  }
+
+  return (
+    <div className="group p-2.5 bg-zinc-800/50 border border-zinc-700/50 rounded-lg">
+      <p className="text-xs text-zinc-300 whitespace-pre-wrap line-clamp-4">{note.content}</p>
+      <div className="flex items-center justify-between mt-2 pt-2 border-t border-zinc-700/50">
+        <span className="text-[10px] text-zinc-500">{formatDate(note.createdAt)}</span>
+        <button
+          onClick={() => onDelete(note.id)}
+          className="p-1 text-zinc-500 hover:text-red-400 opacity-0 group-hover:opacity-100 transition-all"
+          title="Delete note"
+        >
+          <Trash2 className="w-3 h-3" />
+        </button>
+      </div>
+    </div>
+  )
+}
+
+function NotesContent() {
+  const { project, editorNotes, addEditorNote, deleteEditorNote } = useWorkspaceStore()
+  const [newNote, setNewNote] = useState("")
+
+  const handleAddNote = () => {
+    if (!newNote.trim()) return
+    addEditorNote(newNote.trim())
+    setNewNote("")
+  }
+
+  const handleKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
+      e.preventDefault()
+      handleAddNote()
+    }
+  }
+
+  // Get script sections if available
+  const scriptSections = project?.scriptSections || []
+
+  return (
+    <div className="space-y-3">
+      {/* Add Note Input */}
+      <div className="space-y-2">
+        <textarea
+          value={newNote}
+          onChange={(e) => setNewNote(e.target.value)}
+          onKeyDown={handleKeyDown}
+          placeholder="Add a note... (⌘+Enter)"
+          className="w-full px-2.5 py-2 bg-zinc-800/50 border border-zinc-700 rounded-lg text-xs text-zinc-200 placeholder:text-zinc-500 focus:outline-none focus:border-sky-500 resize-none"
+          rows={2}
+        />
+        <button
+          onClick={handleAddNote}
+          disabled={!newNote.trim()}
+          className="w-full px-2.5 py-1.5 bg-sky-500 hover:bg-sky-600 disabled:bg-zinc-700 disabled:text-zinc-500 text-white text-xs font-medium rounded-lg transition-colors flex items-center justify-center gap-1.5"
+        >
+          <Plus className="w-3 h-3" />
+          Add Note
+        </button>
+      </div>
+
+      {/* Notes List */}
+      {editorNotes.length > 0 && (
+        <div className="space-y-2">
+          <h4 className="text-[10px] font-medium text-zinc-500 uppercase tracking-wider">Notes</h4>
+          {editorNotes.map((note) => (
+            <NoteCard key={note.id} note={note} onDelete={deleteEditorNote} />
+          ))}
+        </div>
+      )}
+
+      {/* Script Sections (read-only, from project) */}
+      {scriptSections.length > 0 && (
+        <div className="space-y-2 pt-2 border-t border-zinc-800">
+          <h4 className="text-[10px] font-medium text-zinc-500 uppercase tracking-wider flex items-center gap-1.5">
+            <ScrollText className="w-3 h-3" />
+            Script
+          </h4>
+          {scriptSections
+            .sort((a, b) => a.order - b.order)
+            .map((section) => (
+              <div
+                key={section.id}
+                className="p-2.5 bg-zinc-800/30 border border-zinc-700/30 rounded-lg"
+              >
+                {section.isNewScene && (
+                  <div className="text-[9px] font-medium text-sky-400 uppercase tracking-wider mb-1">
+                    Scene
+                  </div>
+                )}
+                {section.characterName && (
+                  <div className="text-[10px] font-medium text-orange-400 mb-1">
+                    {section.characterName}
+                  </div>
+                )}
+                <p className="text-xs text-zinc-400 whitespace-pre-wrap">{section.content}</p>
+              </div>
+            ))}
+        </div>
+      )}
+
+      {/* Empty state */}
+      {editorNotes.length === 0 && scriptSections.length === 0 && (
+        <div className="text-center py-4 text-zinc-500">
+          <StickyNote className="w-5 h-5 mx-auto mb-1.5 opacity-50" />
+          <p className="text-[10px]">No notes yet</p>
+        </div>
+      )}
+    </div>
+  )
+}
+
+// ============================================
+// ASSETS TAB - Grouped by Type with Collapsible Sections
+// ============================================
+
+// Asset type sections in display order
+type AssetTypeSection = "video" | "image" | "audio"
+
+const ASSET_SECTIONS: { type: AssetTypeSection; label: string; icon: React.ElementType; emptyText: string }[] = [
+  { type: "video", label: "Videos", icon: Film, emptyText: "No videos yet" },
+  { type: "image", label: "Images", icon: Image, emptyText: "No images yet" },
+  { type: "audio", label: "Audio", icon: Music, emptyText: "No audio yet" },
+]
+
+interface AssetThumbnailCardProps {
+  asset: LibraryAsset
+  onDragStart: (e: React.DragEvent, asset: LibraryAsset) => void
+  onClick?: () => void
+}
+
+function AssetThumbnailCard({ asset, onDragStart, onClick }: AssetThumbnailCardProps) {
+  const [thumbnailError, setThumbnailError] = useState(false)
+  const isVideo = asset.type === "video"
+  const isAudio = asset.type === "audio"
+  // Convert LibraryAsset fields to match getAssetDisplayUrl expected format
+  const displayUrl = getAssetDisplayUrl({
+    url: asset.url,
+    local_path: asset.localPath,
+    storage_type: asset.storageType,
+  })
+
+  const formatDuration = (seconds: number) => {
+    const mins = Math.floor(seconds / 60)
+    const secs = Math.floor(seconds % 60)
+    return mins > 0 ? `${mins}:${secs.toString().padStart(2, "0")}` : `${secs}s`
+  }
+
+  const renderThumbnail = () => {
+    if (thumbnailError || !displayUrl) {
+      // Fallback icon
+      const Icon = isVideo ? Film : isAudio ? Music : Image
+      return (
+        <div className="absolute inset-0 flex items-center justify-center bg-zinc-800">
+          <Icon className="w-6 h-6 text-zinc-600" />
+        </div>
+      )
+    }
+
+    if (isAudio) {
+      return (
+        <div className="absolute inset-0 flex items-center justify-center bg-gradient-to-br from-purple-500/20 to-purple-600/30">
+          <Music className="w-6 h-6 text-purple-400" />
+        </div>
+      )
+    }
+
+    if (isVideo) {
+      return (
+        <>
+          <video
+            src={displayUrl}
+            className="absolute inset-0 w-full h-full object-cover"
+            preload="metadata"
+            muted
+            playsInline
+            onError={() => setThumbnailError(true)}
+          />
+          <div className="absolute inset-0 flex items-center justify-center bg-black/20">
+            <div className="w-6 h-6 rounded-full bg-black/50 flex items-center justify-center">
+              <Play className="w-3 h-3 text-white fill-white ml-0.5" />
+            </div>
+          </div>
+        </>
+      )
+    }
+
+    // Image
+    return (
+      <img
+        src={displayUrl}
+        alt={asset.name}
+        className="absolute inset-0 w-full h-full object-cover"
+        onError={() => setThumbnailError(true)}
+      />
+    )
+  }
+
+  return (
+    <div
+      draggable
+      onDragStart={(e) => onDragStart(e, asset)}
+      onClick={onClick}
+      className="group bg-zinc-800/50 hover:bg-zinc-800 border border-zinc-700/50 hover:border-zinc-600 rounded-lg overflow-hidden cursor-grab active:cursor-grabbing transition-all"
+    >
+      {/* Thumbnail - 16:9 aspect ratio */}
+      <div className="relative w-full aspect-video bg-zinc-900">
+        {renderThumbnail()}
+      </div>
+
+      {/* Info */}
+      <div className="p-2">
+        <p className="text-[11px] font-medium text-zinc-200 truncate group-hover:text-sky-400 transition-colors">
+          {asset.name}
+        </p>
+        {asset.duration && (
+          <p className="text-[10px] text-zinc-500 mt-0.5">{formatDuration(asset.duration)}</p>
+        )}
+      </div>
+    </div>
+  )
+}
+
+interface AssetSectionProps {
+  type: AssetTypeSection
+  label: string
+  icon: React.ElementType
+  emptyText: string
+  assets: LibraryAsset[]
+  onDragStart: (e: React.DragEvent, asset: LibraryAsset) => void
+  defaultExpanded?: boolean
+}
+
+function AssetSection({ type, label, icon: Icon, emptyText, assets, onDragStart, defaultExpanded = true }: AssetSectionProps) {
+  const [isExpanded, setIsExpanded] = useState(defaultExpanded)
+
+  return (
+    <div className="border-b border-zinc-800 last:border-b-0">
+      {/* Section Header - Always visible */}
+      <button
+        onClick={() => setIsExpanded(!isExpanded)}
+        className="w-full flex items-center justify-between px-1 py-2 hover:bg-zinc-800/50 transition-colors"
+      >
+        <div className="flex items-center gap-2">
+          <Icon className="w-3.5 h-3.5 text-zinc-400" />
+          <span className="text-xs font-medium text-zinc-200">{label}</span>
+          <span className="text-[10px] text-zinc-500">({assets.length})</span>
+        </div>
+        <ChevronDown
+          className={cn(
+            "w-3.5 h-3.5 text-zinc-500 transition-transform",
+            !isExpanded && "-rotate-90"
+          )}
+        />
+      </button>
+
+      {/* Section Content - Collapsible */}
+      {isExpanded && (
+        <div className="pb-3 px-1">
+          {assets.length > 0 ? (
+            <div className="grid grid-cols-2 gap-2">
+              {assets.map((asset) => (
+                <AssetThumbnailCard
+                  key={asset.id}
+                  asset={asset}
+                  onDragStart={onDragStart}
+                />
+              ))}
+            </div>
+          ) : (
+            <div className="text-center py-4 text-zinc-500">
+              <Icon className="w-5 h-5 mx-auto mb-1.5 opacity-40" />
+              <p className="text-[10px]">{emptyText}</p>
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  )
+}
+
+function AssetsContent() {
+  const { user } = useAuth()
+  const { assets: libraryAssets, isLoading, loadAssets } = useLibraryStore()
+
+  // Load library assets on mount
+  useEffect(() => {
+    if (user?.id && libraryAssets.length === 0) {
+      console.log("[AssetsContent] Loading library assets for user:", user.id)
+      loadAssets(user.id)
+    }
+  }, [user?.id, libraryAssets.length, loadAssets])
+
+  // Debug logging
+  useEffect(() => {
+    if (libraryAssets.length > 0) {
+      const videoCount = libraryAssets.filter(a => a.type === "video").length
+      const imageCount = libraryAssets.filter(a => a.type === "image").length
+      const audioCount = libraryAssets.filter(a => a.type === "audio").length
+      console.log(`[AssetsContent] Loaded ${libraryAssets.length} assets: ${videoCount} videos, ${imageCount} images, ${audioCount} audio`)
+    }
+  }, [libraryAssets])
+
+  // Group assets by type
+  const assetsByType: Record<AssetTypeSection, LibraryAsset[]> = {
+    video: libraryAssets.filter((a) => a.type === "video"),
+    image: libraryAssets.filter((a) => a.type === "image"),
+    audio: libraryAssets.filter((a) => a.type === "audio"),
+  }
+
+  // Sort assets within each type by createdAt (newest first) to match Assets page
+  Object.keys(assetsByType).forEach((type) => {
+    assetsByType[type as AssetTypeSection].sort(
+      (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+    )
+  })
+
+  const handleDragStart = (e: React.DragEvent, asset: LibraryAsset) => {
+    e.dataTransfer.setData(
+      "application/json",
+      JSON.stringify({
+        type: "asset",
+        assetId: asset.id,
+        assetType: asset.type,
+        duration: asset.duration || 5,
+      })
+    )
+    e.dataTransfer.effectAllowed = "copy"
+  }
+
+  const totalAssets = libraryAssets.length
+
+  if (isLoading) {
+    return (
+      <div className="flex items-center justify-center py-8">
+        <Loader2 className="w-5 h-5 animate-spin text-zinc-500" />
+      </div>
+    )
+  }
+
+  return (
+    <div className="space-y-1">
+      {/* Header */}
+      <div className="flex items-center justify-between px-1 pb-2">
+        <p className="text-[10px] text-zinc-500">Drag to timeline</p>
+        <span className="text-[10px] text-zinc-500">{totalAssets} total</span>
+      </div>
+
+      {/* Asset Sections by Type */}
+      {ASSET_SECTIONS.map((section) => (
+        <AssetSection
+          key={section.type}
+          type={section.type}
+          label={section.label}
+          icon={section.icon}
+          emptyText={section.emptyText}
+          assets={assetsByType[section.type]}
+          onDragStart={handleDragStart}
+        />
+      ))}
+
+      {/* Global empty state if no assets at all */}
+      {totalAssets === 0 && (
+        <div className="text-center py-6 text-zinc-500">
+          <Layers className="w-6 h-6 mx-auto mb-2 opacity-40" />
+          <p className="text-xs">No assets yet</p>
+          <p className="text-[10px] mt-1">Add assets from the Library</p>
+        </div>
+      )}
+    </div>
+  )
+}
+
+// ============================================
+// CONTROL PANEL TABS - Global, 3 tabs only
+// ============================================
+
+const CONTROL_PANEL_TABS: { id: ControlPanelTab; label: string; icon: React.ElementType }[] = [
+  { id: "properties", label: "Properties", icon: SlidersHorizontal },
+  { id: "notes", label: "Notes", icon: StickyNote },
+  { id: "assets", label: "Assets", icon: Layers },
+]
 
 // Library page configurations for non-workspace contexts
-const LIBRARY_CONFIG: Record<LibraryPageType, { title: string; subtitle: string; icon: React.ElementType }> = {
-  dashboard: { title: "Control Panel", subtitle: "System Properties", icon: Settings },
-  platforms: { title: "Control Panel", subtitle: "System Properties", icon: Settings },
-  projects: { title: "Control Panel", subtitle: "System Properties", icon: Settings },
-  assets: { title: "Control Panel", subtitle: "System Properties", icon: Settings },
-  foundations: { title: "Control Panel", subtitle: "System Properties", icon: Settings },
+const LIBRARY_CONFIG: Record<
+  LibraryPageType,
+  { title: string; subtitle: string }
+> = {
+  dashboard: { title: "Control Panel", subtitle: "Dashboard" },
+  platforms: { title: "Control Panel", subtitle: "Platforms" },
+  projects: { title: "Control Panel", subtitle: "Projects" },
+  assets: { title: "Control Panel", subtitle: "Assets" },
+  foundations: { title: "Control Panel", subtitle: "Foundations" },
 }
 
-// Library page placeholder content
-function LibraryPlaceholder({ icon: Icon, title, description }: { icon: React.ElementType; title: string; description: string }) {
-  return (
-    <div className="flex flex-col items-center justify-center h-full text-center px-4">
-      <div className="w-12 h-12 rounded-lg bg-zinc-800 flex items-center justify-center mb-3">
-        <Icon className="w-6 h-6 text-zinc-600" />
-      </div>
-      <p className="text-sm text-zinc-400 mb-1">{title}</p>
-      <p className="text-xs text-zinc-600">{description}</p>
-    </div>
-  )
+// Workspace tab subtitles
+const WORKSPACE_SUBTITLES: Partial<Record<WorkspaceTab, string>> = {
+  platform: "Platform",
+  brief: "Brief",
+  script: "Script",
+  moodboard: "Mood Board",
+  storyboard: "Storyboard",
+  editor: "Editor",
+  assets: "Assets",
+  export: "Export",
 }
 
 interface InspectorPanelProps {
@@ -257,35 +674,31 @@ interface InspectorPanelProps {
   libraryPage?: LibraryPageType
 }
 
-export function InspectorPanel({ isCollapsed = false, onToggleCollapse, libraryPage }: InspectorPanelProps) {
-  const { activeTab, selectedShotId } = useWorkspaceStore()
+export function InspectorPanel({
+  isCollapsed = false,
+  onToggleCollapse,
+  libraryPage,
+}: InspectorPanelProps) {
+  const { activeTab, controlPanelTab, setControlPanelTab } = useWorkspaceStore()
 
-  // Determine which config to use
+  // Determine subtitle
   const isLibraryMode = !!libraryPage
-  const tabConfig = isLibraryMode
-    ? LIBRARY_CONFIG[libraryPage!] || LIBRARY_CONFIG.dashboard
-    : TAB_CONFIG[activeTab] || TAB_CONFIG.editor
-  const TabIcon = tabConfig.icon
+  const subtitle = isLibraryMode
+    ? LIBRARY_CONFIG[libraryPage!]?.subtitle || "Control Panel"
+    : WORKSPACE_SUBTITLES[activeTab] || "Control Panel"
 
-  // Render content for library pages
-  const renderLibraryContent = () => {
-    return <LibraryPlaceholder icon={Settings} title="Control Panel" description="System Properties" />
-  }
-
-  // Render content based on active tab (workspace mode)
-  const renderContent = () => {
-    // If in library mode, use library content
-    if (isLibraryMode) {
-      return renderLibraryContent()
+  // Render control panel tab content
+  const renderControlPanelTabContent = () => {
+    switch (controlPanelTab) {
+      case "properties":
+        return <PropertiesContent />
+      case "notes":
+        return <NotesContent />
+      case "assets":
+        return <AssetsContent />
+      default:
+        return <PropertiesContent />
     }
-
-    // Editor always shows shot tools
-    if (activeTab === "editor") {
-      return <ShotInspectorContent />
-    }
-
-    // All other tabs show the same placeholder
-    return <TabPlaceholder icon={Settings} title="Control Panel" description="System Properties" />
   }
 
   // Always render full width (w-80) - parent container handles clipping during animation
@@ -293,15 +706,15 @@ export function InspectorPanel({ isCollapsed = false, onToggleCollapse, libraryP
   return (
     <div className="w-80 h-full bg-zinc-900 border-l border-zinc-800 flex flex-col ml-auto">
       {/* Panel Header */}
-      <div className={`border-b border-zinc-800 ${isCollapsed ? 'py-4 flex justify-center' : 'p-4'}`}>
+      <div className={`border-b border-zinc-800 ${isCollapsed ? "py-3 flex justify-center" : "px-3 py-2"}`}>
         {isCollapsed ? (
           // Collapsed: just the gear button, clickable to expand
           <button
             onClick={onToggleCollapse}
-            className="w-11 h-11 rounded-lg bg-gradient-to-br from-emerald-400 via-emerald-500 to-green-600 flex items-center justify-center shadow-lg shadow-emerald-500/20 hover:shadow-emerald-500/30 transition-all hover:scale-105"
+            className="w-10 h-10 rounded-lg bg-gradient-to-br from-emerald-400 via-emerald-500 to-green-600 flex items-center justify-center shadow-lg shadow-emerald-500/20 hover:shadow-emerald-500/30 transition-all hover:scale-105"
             title="Open Control Panel"
           >
-            <Settings className="w-5 h-5 text-white" />
+            <Settings className="w-4 h-4 text-white" />
           </button>
         ) : (
           // Expanded: full header with arrow, text, and gear
@@ -310,22 +723,22 @@ export function InspectorPanel({ isCollapsed = false, onToggleCollapse, libraryP
             {onToggleCollapse && (
               <button
                 onClick={onToggleCollapse}
-                className="w-8 h-8 rounded-lg bg-zinc-800 hover:bg-zinc-700 flex items-center justify-center text-zinc-400 hover:text-zinc-200 transition-colors"
+                className="w-7 h-7 rounded-lg bg-zinc-800 hover:bg-zinc-700 flex items-center justify-center text-zinc-400 hover:text-zinc-200 transition-colors"
                 title="Collapse panel"
               >
-                <ChevronRight className="w-4 h-4" />
+                <ChevronRight className="w-3.5 h-3.5" />
               </button>
             )}
 
             {/* Text (left-aligned) */}
-            <div className="flex-1 ml-3">
-              <h3 className="text-sm font-semibold text-zinc-100">Control Panel</h3>
-              <p className="text-xs text-zinc-500">{tabConfig.subtitle}</p>
+            <div className="flex-1 ml-2">
+              <h3 className="text-xs font-semibold text-zinc-100">Control Panel</h3>
+              <p className="text-[10px] text-zinc-500">{subtitle}</p>
             </div>
 
             {/* Gear - outer edge (right) */}
-            <div className="w-11 h-11 rounded-lg bg-gradient-to-br from-emerald-400 via-emerald-500 to-green-600 flex items-center justify-center shadow-lg shadow-emerald-500/20">
-              <TabIcon className="w-5 h-5 text-white" />
+            <div className="w-9 h-9 rounded-lg bg-gradient-to-br from-emerald-400 via-emerald-500 to-green-600 flex items-center justify-center shadow-lg shadow-emerald-500/20">
+              <Settings className="w-4 h-4 text-white" />
             </div>
           </div>
         )}
@@ -333,8 +746,33 @@ export function InspectorPanel({ isCollapsed = false, onToggleCollapse, libraryP
 
       {/* Panel Content - hidden when collapsed */}
       {!isCollapsed && (
-        <div className="flex-1 overflow-y-auto p-4 scrollbar-hide [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]">
-          {renderContent()}
+        <div className="flex-1 flex flex-col overflow-hidden">
+          {/* Tab Toggle - Compact */}
+          <div className="flex border-b border-zinc-800">
+            {CONTROL_PANEL_TABS.map((tab) => {
+              const Icon = tab.icon
+              return (
+                <button
+                  key={tab.id}
+                  onClick={() => setControlPanelTab(tab.id)}
+                  className={cn(
+                    "flex-1 flex items-center justify-center gap-1.5 px-2 py-1.5 text-[10px] font-medium transition-colors border-b-2 -mb-[2px]",
+                    controlPanelTab === tab.id
+                      ? "text-sky-400 border-sky-500"
+                      : "text-zinc-500 border-transparent hover:text-zinc-300"
+                  )}
+                >
+                  <Icon className="w-3.5 h-3.5" />
+                  <span>{tab.label}</span>
+                </button>
+              )
+            })}
+          </div>
+
+          {/* Tab Content */}
+          <div className="flex-1 overflow-y-auto p-3 scrollbar-hide [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]">
+            {renderControlPanelTabContent()}
+          </div>
         </div>
       )}
     </div>

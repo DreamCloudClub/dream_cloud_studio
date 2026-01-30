@@ -1,11 +1,10 @@
 import { useState, useEffect } from "react"
 import { useNavigate } from "react-router-dom"
-import { Search, Plus, FolderOpen, Clock, PenLine, CheckCircle2, Trash2, AlertTriangle, Filter, ChevronDown, ChevronRight, Video } from "lucide-react"
+import { Search, FolderOpen, Clock, CheckCircle2, Trash2, AlertTriangle, Filter, ChevronDown, ChevronRight, Video, Plus } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { LibraryLayout } from "@/components/library"
 import { useAuth } from "@/contexts/AuthContext"
-import { useProjectWizardStore } from "@/state/projectWizardStore"
-import { getCompletedProjects, getDraftProjects, deleteProject, ProjectWithThumbnail } from "@/services/projects"
+import { getCompletedProjects, createBlankProject, deleteProject, ProjectWithThumbnail } from "@/services/projects"
 
 interface Project {
   id: string
@@ -42,8 +41,6 @@ interface ProjectCardProps {
 }
 
 function ProjectCard({ project, onClick, onDelete }: ProjectCardProps) {
-  const isDraft = project.status === "draft"
-
   const handleDelete = (e: React.MouseEvent) => {
     e.stopPropagation()
     onDelete()
@@ -52,12 +49,7 @@ function ProjectCard({ project, onClick, onDelete }: ProjectCardProps) {
   return (
     <div
       onClick={onClick}
-      className={cn(
-        "group text-left bg-zinc-900 rounded-xl overflow-hidden transition-colors focus:outline-none flex flex-col cursor-pointer relative",
-        isDraft
-          ? "border-2 border-dashed border-orange-500/50 hover:border-orange-400/70"
-          : "border border-zinc-800 hover:border-zinc-700"
-      )}
+      className="group text-left bg-zinc-900 rounded-xl overflow-hidden transition-colors focus:outline-none flex flex-col cursor-pointer relative border border-zinc-800 hover:border-zinc-700"
     >
       {/* Thumbnail */}
       <div className="aspect-square bg-zinc-800 relative flex-shrink-0">
@@ -69,29 +61,15 @@ function ProjectCard({ project, onClick, onDelete }: ProjectCardProps) {
           />
         ) : (
           <div className="absolute inset-0 flex items-center justify-center overflow-hidden">
-            {isDraft ? (
-              <>
-                <div className="absolute inset-0 bg-gradient-to-b from-orange-400/20 via-orange-500/10 to-orange-600/20" />
-                <PenLine className="w-10 h-10 text-orange-500/70 relative z-10" />
-              </>
-            ) : (
-              <>
-                <div className="absolute inset-0 bg-gradient-to-b from-emerald-600 via-emerald-700 to-green-800" />
-                <Video className="w-12 h-12 text-white/60 relative z-10 drop-shadow-lg" />
-              </>
-            )}
+            <div className="absolute inset-0 bg-gradient-to-b from-emerald-600 via-emerald-700 to-green-800" />
+            <Video className="w-12 h-12 text-white/60 relative z-10 drop-shadow-lg" />
           </div>
         )}
         <div className="absolute inset-0 bg-black/0 group-hover:bg-black/20 transition-colors" />
-        {isDraft && (
-          <div className="absolute top-2 right-2 px-2 py-0.5 bg-orange-500/90 text-white text-[10px] font-medium rounded">
-            Draft
-          </div>
-        )}
         {/* Delete button - shows on hover */}
         <button
           onClick={handleDelete}
-          className="absolute top-2 left-2 p-1.5 bg-zinc-900/80 hover:bg-orange-500 text-zinc-400 hover:text-white rounded-lg opacity-0 group-hover:opacity-100 transition-all"
+          className="absolute top-2 left-2 p-1.5 bg-zinc-900/80 hover:bg-red-500 text-zinc-400 hover:text-white rounded-lg opacity-0 group-hover:opacity-100 transition-all"
           title="Delete project"
         >
           <Trash2 className="w-4 h-4" />
@@ -100,12 +78,7 @@ function ProjectCard({ project, onClick, onDelete }: ProjectCardProps) {
 
       {/* Info */}
       <div className="p-3">
-        <h3 className={cn(
-          "text-sm font-medium truncate transition-colors",
-          isDraft
-            ? "text-orange-200 group-hover:text-orange-300"
-            : "text-zinc-200 group-hover:text-emerald-400"
-        )}>
+        <h3 className="text-sm font-medium truncate transition-colors text-zinc-200 group-hover:text-emerald-400">
           {project.name}
         </h3>
         {project.description && (
@@ -125,19 +98,16 @@ function ProjectCard({ project, onClick, onDelete }: ProjectCardProps) {
 export function LibraryProjectsPage() {
   const navigate = useNavigate()
   const { user } = useAuth()
-  const resetWizard = useProjectWizardStore((state) => state.resetWizard)
-  const [completedProjects, setCompletedProjects] = useState<ProjectWithThumbnail[]>([])
-  const [draftProjects, setDraftProjects] = useState<ProjectWithThumbnail[]>([])
+  const [projects, setProjects] = useState<ProjectWithThumbnail[]>([])
   const [isLoading, setIsLoading] = useState(true)
   const [searchQuery, setSearchQuery] = useState("")
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("all")
   const [expandedSections, setExpandedSections] = useState({
-    drafts: true,
     active: true,
     completed: true,
   })
 
-  const toggleSection = (section: "drafts" | "active" | "completed") => {
+  const toggleSection = (section: "active" | "completed") => {
     setExpandedSections(prev => ({ ...prev, [section]: !prev[section] }))
   }
   const [deleteModal, setDeleteModal] = useState<{ isOpen: boolean; project: Project | null }>({
@@ -152,12 +122,8 @@ export function LibraryProjectsPage() {
       if (!user) return
       setIsLoading(true)
       try {
-        const [completed, drafts] = await Promise.all([
-          getCompletedProjects(user.id),
-          getDraftProjects(user.id),
-        ])
-        setCompletedProjects(completed)
-        setDraftProjects(drafts)
+        const completed = await getCompletedProjects(user.id)
+        setProjects(completed)
       } catch (error) {
         console.error("Error fetching projects:", error)
       } finally {
@@ -177,11 +143,8 @@ export function LibraryProjectsPage() {
     status: p.status,
   })
 
-  // Combine all projects (already sorted by updated_at from DB)
-  const allProjects: Project[] = [
-    ...draftProjects.map(transformProject),
-    ...completedProjects.map(transformProject),
-  ]
+  // Transform all projects (already sorted by updated_at from DB)
+  const allProjects: Project[] = projects.map(transformProject)
 
   const statusLabels: Record<StatusFilter, string> = {
     all: "All",
@@ -204,18 +167,17 @@ export function LibraryProjectsPage() {
   }
 
   const handleProjectClick = (project: Project) => {
-    if (project.status === "draft") {
-      // Drafts open in wizard to continue setup
-      navigate(`/create/project?draft=${project.id}`)
-    } else {
-      // Completed projects open in workspace
-      navigate(`/project/${project.id}`)
-    }
+    navigate(`/project/${project.id}`)
   }
 
-  const handleNewProject = () => {
-    resetWizard()
-    navigate("/create/project")
+  const handleNewProject = async () => {
+    if (!user) return
+    try {
+      const project = await createBlankProject(user.id)
+      navigate(`/project/${project.id}`)
+    } catch (error) {
+      console.error("Error creating project:", error)
+    }
   }
 
   const handleDeleteClick = (project: Project) => {
@@ -229,8 +191,7 @@ export function LibraryProjectsPage() {
     try {
       await deleteProject(deleteModal.project.id)
       // Remove from local state
-      setCompletedProjects(prev => prev.filter(p => p.id !== deleteModal.project!.id))
-      setDraftProjects(prev => prev.filter(p => p.id !== deleteModal.project!.id))
+      setProjects(prev => prev.filter(p => p.id !== deleteModal.project!.id))
       setDeleteModal({ isOpen: false, project: null })
     } catch (error) {
       console.error("Error deleting project:", error)
@@ -251,8 +212,7 @@ export function LibraryProjectsPage() {
           <div>
             <h1 className="text-2xl font-bold text-zinc-100">All Projects</h1>
             <p className="text-zinc-400 mt-1">
-              {completedProjects.length} project{completedProjects.length !== 1 ? "s" : ""}
-              {draftProjects.length > 0 && ` · ${draftProjects.length} draft${draftProjects.length !== 1 ? "s" : ""}`}
+              {projects.length} project{projects.length !== 1 ? "s" : ""}
             </p>
           </div>
           <button
@@ -298,56 +258,6 @@ export function LibraryProjectsPage() {
             </div>
           </div>
         </div>
-
-        {/* Drafts Section - only show when filter is "all" or "draft" */}
-        {(statusFilter === "all" || statusFilter === "draft") &&
-          filteredProjects.filter(p => p.status === "draft").length > 0 && (
-          <div className="space-y-3">
-            {statusFilter === "all" ? (
-              <button
-                onClick={() => toggleSection("drafts")}
-                className="flex items-center gap-2 text-orange-400 hover:text-orange-300 transition-colors"
-              >
-                {expandedSections.drafts ? (
-                  <ChevronDown className="w-4 h-4" />
-                ) : (
-                  <ChevronRight className="w-4 h-4" />
-                )}
-                <PenLine className="w-4 h-4" />
-                <span className="text-sm font-semibold uppercase tracking-wide">
-                  Continue Setup
-                </span>
-                <span className="text-xs text-zinc-500">
-                  ({filteredProjects.filter(p => p.status === "draft").length})
-                </span>
-              </button>
-            ) : (
-              <div className="flex items-center gap-2 text-orange-400">
-                <PenLine className="w-4 h-4" />
-                <span className="text-sm font-semibold uppercase tracking-wide">
-                  Continue Setup
-                </span>
-                <span className="text-xs text-zinc-500">
-                  ({filteredProjects.filter(p => p.status === "draft").length})
-                </span>
-              </div>
-            )}
-            {(statusFilter !== "all" || expandedSections.drafts) && (
-              <div className={cn("grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-4 items-start", statusFilter === "all" && "ml-6")}>
-                {filteredProjects
-                  .filter(p => p.status === "draft")
-                  .map((project) => (
-                    <ProjectCard
-                      key={project.id}
-                      project={project}
-                      onClick={() => handleProjectClick(project)}
-                      onDelete={() => handleDeleteClick(project)}
-                    />
-                  ))}
-              </div>
-            )}
-          </div>
-        )}
 
         {/* Active Projects Section - only show when filter is "all" or "in_progress" */}
         {(statusFilter === "all" || statusFilter === "in_progress") &&

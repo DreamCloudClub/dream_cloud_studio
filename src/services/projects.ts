@@ -175,6 +175,21 @@ export async function createDraftProject(userId: string, platformId?: string): P
   return data as Project
 }
 
+export async function createBlankProject(userId: string): Promise<Project> {
+  const { data, error } = await supabase
+    .from('projects')
+    .insert({
+      user_id: userId,
+      name: 'Untitled Project',
+      status: 'in_progress',
+    })
+    .select()
+    .single()
+
+  if (error) throw error
+  return data as Project
+}
+
 export async function markProjectComplete(projectId: string): Promise<Project> {
   const { data, error } = await supabase
     .from('projects')

@@ -1,11 +1,197 @@
 import { useState } from "react"
-import { Video, Layers, ChevronLeft, ChevronRight, Sparkles, Cloud, Clapperboard, Wand2, Download, MessageSquare } from "lucide-react"
+import { useNavigate } from "react-router-dom"
+import {
+  ChevronLeft,
+  ChevronRight,
+  Sparkles,
+  Clapperboard,
+  Wand2,
+  Download,
+  MessageSquare,
+  Mic,
+  Rocket,
+  Image,
+  Video,
+  Music,
+  Play,
+  Cloud,
+  Type,
+  ImagePlus,
+  Paintbrush,
+  Expand,
+  Maximize,
+  ArrowRight,
+  RefreshCw,
+  Mic2,
+  Volume2,
+  LucideIcon,
+  Loader2,
+} from "lucide-react"
+import { useCreatorStore, type AssetType } from "@/state/creatorStore"
+import { generateAssetDraft } from "@/services/claude"
 
 interface CreateNewHeroProps {
-  onNewProject?: () => void
-  onNewAsset?: () => void
   onStartWithBubble?: () => void
 }
+
+// Primary modes
+type PrimaryMode = "bubble" | "image" | "video" | "audio" | "animation"
+
+// Sub-mode definition
+interface SubMode {
+  id: string
+  label: string
+  icon: LucideIcon
+  title: string
+  description: string
+  inputs: string
+  outputs: string
+}
+
+// Sub-modes for each primary mode
+const IMAGE_SUB_MODES: SubMode[] = [
+  {
+    id: "text-to-image",
+    label: "Text → Image",
+    icon: Type,
+    title: "Text to Image Generation",
+    description: "Generate images from natural language descriptions. The model interprets your text prompt and synthesizes a corresponding visual output using diffusion-based generation.",
+    inputs: "Text prompt describing the desired image, optional style modifiers, aspect ratio, and quality settings.",
+    outputs: "Single or batch of generated images at specified resolution (up to 2048x2048)."
+  },
+  {
+    id: "image-to-image",
+    label: "Img → Img",
+    icon: ImagePlus,
+    title: "Image to Image Transformation",
+    description: "Transform existing images using text guidance. The model uses your source image as a structural reference while applying modifications based on your prompt.",
+    inputs: "Source image + text prompt describing desired changes. Strength parameter controls deviation from original (0.1-1.0).",
+    outputs: "Transformed image maintaining structural similarity to input based on strength setting."
+  },
+  {
+    id: "inpaint",
+    label: "Inpaint",
+    icon: Paintbrush,
+    title: "Inpainting & Selective Editing",
+    description: "Selectively modify regions of an image while preserving the rest. Paint a mask over areas to regenerate, and the model will seamlessly blend new content.",
+    inputs: "Source image + binary mask indicating edit regions + text prompt for masked area content.",
+    outputs: "Edited image with masked regions regenerated according to prompt, seamlessly blended."
+  },
+  {
+    id: "selective-edit",
+    label: "Multi-Ref",
+    icon: Expand,
+    title: "Selective Editing (Multi-Reference)",
+    description: "Compose or edit images using multiple reference images. Insert characters into scenes, blend styles, or create new compositions from reference elements.",
+    inputs: "Text prompt + 1-4 reference images with optional roles (character, scene, style, object).",
+    outputs: "Generated image combining elements from references according to prompt."
+  },
+  {
+    id: "upscale",
+    label: "Upscale",
+    icon: Maximize,
+    title: "AI Upscaling & Enhancement",
+    description: "Increase image resolution while adding realistic detail. Uses super-resolution models to intelligently upscale without introducing artifacts.",
+    inputs: "Low-resolution source image + scale factor (2x, 4x) + optional enhancement parameters.",
+    outputs: "High-resolution image with enhanced detail and clarity."
+  },
+]
+
+const VIDEO_SUB_MODES: SubMode[] = [
+  {
+    id: "text-to-video",
+    label: "Text → Video",
+    icon: Type,
+    title: "Text to Video Generation",
+    description: "Generate video clips from text descriptions. The model synthesizes temporally coherent frames depicting motion and action described in your prompt.",
+    inputs: "Text prompt describing scene, action, and camera movement. Duration (3-10s), aspect ratio, and frame rate settings.",
+    outputs: "Generated video clip with smooth motion and temporal consistency."
+  },
+  {
+    id: "image-to-video",
+    label: "Img → Video",
+    icon: ImagePlus,
+    title: "Image to Video Animation",
+    description: "Animate static images into video sequences. The model infers natural motion from your image and generates frames that bring the scene to life.",
+    inputs: "Source image + motion prompt describing desired animation. Optional camera movement parameters.",
+    outputs: "Animated video sequence derived from the source image (3-10 seconds)."
+  },
+  {
+    id: "video-to-video",
+    label: "Vid → Vid",
+    icon: RefreshCw,
+    title: "Video to Video Stylization",
+    description: "Transform existing videos with style transfer or content modification. Applies consistent transformations across all frames while maintaining temporal coherence.",
+    inputs: "Source video + style/transformation prompt. Strength parameter for style intensity.",
+    outputs: "Stylized video maintaining motion from original with applied visual transformations."
+  },
+  {
+    id: "extend",
+    label: "Extend",
+    icon: ArrowRight,
+    title: "Video Extension & Continuation",
+    description: "Extend video clips by generating additional frames that continue the action. The model predicts logical continuations of motion and narrative.",
+    inputs: "Source video clip + extension duration + optional prompt guiding continuation.",
+    outputs: "Extended video with AI-generated frames appended to original sequence."
+  },
+]
+
+const AUDIO_SUB_MODES: SubMode[] = [
+  {
+    id: "text-to-speech",
+    label: "Text → Speech",
+    icon: Type,
+    title: "Text to Speech Synthesis",
+    description: "Convert written text into natural-sounding speech. Advanced neural TTS models produce human-like intonation, rhythm, and expressiveness.",
+    inputs: "Text content + voice selection + speaking style (neutral, expressive, narrative). Optional speed and pitch adjustments.",
+    outputs: "High-quality audio file with synthesized speech matching selected voice characteristics."
+  },
+  {
+    id: "voice-to-voice",
+    label: "Voice → Voice",
+    icon: Mic2,
+    title: "Voice Conversion & Cloning",
+    description: "Transform voice recordings to match different speaker characteristics. Clone voices from samples or convert between predefined voice profiles.",
+    inputs: "Source audio recording + target voice profile or reference sample for cloning.",
+    outputs: "Converted audio with source speech content in target voice characteristics."
+  },
+  {
+    id: "music-sfx",
+    label: "Music / SFX",
+    icon: Volume2,
+    title: "Music & Sound Effect Generation",
+    description: "Generate original music tracks and sound effects from text descriptions. Create ambient soundscapes, musical compositions, or specific audio effects.",
+    inputs: "Text description of desired audio + duration + optional genre/mood/tempo parameters.",
+    outputs: "Generated audio file matching description (music track, ambient sound, or specific SFX)."
+  },
+]
+
+// Primary mode definitions with info card content
+const PRIMARY_MODES = [
+  {
+    id: "bubble" as PrimaryMode,
+    label: "Ask Bubble",
+    icon: Cloud,
+    color: "sky",
+    title: "AI Production Assistant",
+    description: "Describe what you want to create in natural language. Bubble will analyze your request, ask clarifying questions, and guide you through the optimal generation workflow.",
+    inputs: "Open-ended natural language description of your creative vision.",
+    outputs: "Guided workflow recommendations, asset generation, and project assembly assistance."
+  },
+  { id: "image" as PrimaryMode, label: "Image", icon: Image, color: "orange" },
+  { id: "video" as PrimaryMode, label: "Video", icon: Video, color: "red" },
+  { id: "audio" as PrimaryMode, label: "Audio", icon: Music, color: "violet" },
+  {
+    id: "animation" as PrimaryMode,
+    label: "Animation",
+    icon: Play,
+    color: "emerald",
+    title: "Animation Generation",
+    description: "Advanced animation capabilities are currently in development. This will include character animation, motion graphics, and procedural animation tools.",
+    inputs: "Coming soon.",
+    outputs: "Coming soon."
+  },
+]
 
 // Instruction cards for the carousel
 const instructionCards = [
@@ -19,13 +205,13 @@ const instructionCards = [
     id: 2,
     icon: Sparkles,
     title: "Choose Your Path",
-    description: "Start a full Project for video production, or create a standalone Asset like an image or audio.",
+    description: "Select a generation mode — image, video, audio — and let AI handle the rest.",
   },
   {
     id: 3,
     icon: Wand2,
     title: "AI-Guided Creation",
-    description: "Our production assistant, Bubble AI will ask clarifying questions and help refine your ideas.",
+    description: "Bubble AI will ask clarifying questions and help refine your ideas.",
   },
   {
     id: 4,
@@ -37,7 +223,7 @@ const instructionCards = [
     id: 5,
     icon: Video,
     title: "Assemble & Edit",
-    description: "Claude Code assembles your raw edit. Refine and polish in the workspace.",
+    description: "Assemble your assets into a timeline. Refine and polish in the workspace.",
   },
   {
     id: 6,
@@ -47,8 +233,139 @@ const instructionCards = [
   },
 ]
 
-export function CreateNewHero({ onNewProject, onNewAsset, onStartWithBubble }: CreateNewHeroProps) {
+// Helper to get sub-modes for a primary mode
+function getSubModes(primaryMode: PrimaryMode): SubMode[] | null {
+  switch (primaryMode) {
+    case "image":
+      return IMAGE_SUB_MODES
+    case "video":
+      return VIDEO_SUB_MODES
+    case "audio":
+      return AUDIO_SUB_MODES
+    default:
+      return null
+  }
+}
+
+// Helper to get default sub-mode for a primary mode
+function getDefaultSubMode(primaryMode: PrimaryMode): string | null {
+  switch (primaryMode) {
+    case "image":
+      return "text-to-image"
+    case "video":
+      return "text-to-video"
+    case "audio":
+      return "text-to-speech"
+    default:
+      return null
+  }
+}
+
+// Helper to get info card content
+function getInfoCardContent(primaryMode: PrimaryMode, subMode: string | null) {
+  const subModes = getSubModes(primaryMode)
+
+  if (subModes && subMode) {
+    const selectedSubMode = subModes.find(m => m.id === subMode)
+    if (selectedSubMode) {
+      return {
+        title: selectedSubMode.title,
+        description: selectedSubMode.description,
+        inputs: selectedSubMode.inputs,
+        outputs: selectedSubMode.outputs,
+      }
+    }
+  }
+
+  // Fall back to primary mode info
+  const primaryModeData = PRIMARY_MODES.find(m => m.id === primaryMode)
+  if (primaryModeData && 'title' in primaryModeData) {
+    return {
+      title: primaryModeData.title,
+      description: primaryModeData.description,
+      inputs: primaryModeData.inputs,
+      outputs: primaryModeData.outputs,
+    }
+  }
+
+  return null
+}
+
+export function CreateNewHero({ onStartWithBubble }: CreateNewHeroProps) {
+  const navigate = useNavigate()
   const [carouselIndex, setCarouselIndex] = useState(0)
+  const [inputValue, setInputValue] = useState("")
+  const [primaryMode, setPrimaryMode] = useState<PrimaryMode>("image")
+  const [subMode, setSubMode] = useState<string | null>("text-to-image")
+  const [isLaunching, setIsLaunching] = useState(false)
+
+  const {
+    setDraft,
+    setMode,
+    setOriginalPrompt,
+    setIsGeneratingDraft,
+    setDraftError,
+  } = useCreatorStore()
+
+  const handlePrimaryModeChange = (mode: PrimaryMode) => {
+    setPrimaryMode(mode)
+    setSubMode(getDefaultSubMode(mode))
+  }
+
+  // Get the route for the creator page based on mode selection
+  const getCreatorRoute = (type: PrimaryMode, sub: string | null): string => {
+    if (type === "bubble") return "/"
+    if (!sub) return `/create/${type}`
+    return `/create/${type}/${sub}`
+  }
+
+  // Handle Launch button click
+  const handleLaunch = async () => {
+    // If "Ask Bubble" mode, open Bubble panel instead
+    if (primaryMode === "bubble") {
+      onStartWithBubble?.()
+      return
+    }
+
+    const trimmedPrompt = inputValue.trim()
+    const route = getCreatorRoute(primaryMode, subMode)
+
+    // Store the mode selection
+    setMode(primaryMode as AssetType, subMode || "")
+    setOriginalPrompt(trimmedPrompt)
+
+    // If no prompt, just navigate to the creator page (empty form)
+    if (!trimmedPrompt) {
+      setDraft(null)
+      navigate(route)
+      return
+    }
+
+    // Generate AI draft
+    setIsLaunching(true)
+    setIsGeneratingDraft(true)
+    setDraftError(null)
+
+    try {
+      const draft = await generateAssetDraft({
+        userPrompt: trimmedPrompt,
+        assetType: primaryMode as AssetType,
+        subMode: subMode || "text-to-image",
+      })
+
+      setDraft(draft)
+      navigate(route)
+    } catch (error) {
+      console.error("Failed to generate draft:", error)
+      setDraftError(error instanceof Error ? error.message : "Failed to generate draft")
+      // Still navigate, but with empty draft
+      setDraft(null)
+      navigate(route)
+    } finally {
+      setIsLaunching(false)
+      setIsGeneratingDraft(false)
+    }
+  }
 
   const canGoLeft = carouselIndex > 0
   const canGoRight = carouselIndex < instructionCards.length - 1
@@ -61,13 +378,19 @@ export function CreateNewHero({ onNewProject, onNewAsset, onStartWithBubble }: C
     if (canGoRight) setCarouselIndex(carouselIndex + 1)
   }
 
+  const currentSubModes = getSubModes(primaryMode)
+  const infoCard = getInfoCardContent(primaryMode, subMode)
+
+  // Get color for current primary mode
+  const currentPrimaryMode = PRIMARY_MODES.find(m => m.id === primaryMode)
+  const modeColor = currentPrimaryMode?.color || "sky"
+
   return (
     <div className="py-6 sm:py-8 md:py-10 lg:py-12">
       <div className="w-full max-w-[90%] md:max-w-[80%] lg:max-w-3xl mx-auto space-y-4">
 
         {/* Instruction Carousel */}
         <div className="relative">
-          {/* Left Arrow */}
           <button
             onClick={handlePrev}
             disabled={!canGoLeft}
@@ -78,7 +401,6 @@ export function CreateNewHero({ onNewProject, onNewAsset, onStartWithBubble }: C
             <ChevronLeft className="h-6 w-6 text-zinc-400" />
           </button>
 
-          {/* Cards Container */}
           <div className="overflow-hidden px-[1px]">
             <div
               className="flex gap-4 transition-transform duration-300 ease-out"
@@ -89,7 +411,6 @@ export function CreateNewHero({ onNewProject, onNewAsset, onStartWithBubble }: C
                 const isActive = idx === carouselIndex
                 const isNext = idx === carouselIndex + 1
 
-                // Active card bright, next card dimmer, rest very dim
                 const opacityClass = isActive
                   ? "border-zinc-500 bg-zinc-900/80"
                   : isNext
@@ -115,11 +436,9 @@ export function CreateNewHero({ onNewProject, onNewAsset, onStartWithBubble }: C
               })}
             </div>
 
-            {/* Fade overlay on right edge */}
             <div className="absolute right-0 top-0 bottom-0 w-20 bg-gradient-to-l from-zinc-950 to-transparent pointer-events-none" />
           </div>
 
-          {/* Right Arrow */}
           <button
             onClick={handleNext}
             disabled={!canGoRight}
@@ -130,7 +449,6 @@ export function CreateNewHero({ onNewProject, onNewAsset, onStartWithBubble }: C
             <ChevronRight className="h-6 w-6 text-zinc-400" />
           </button>
 
-          {/* Dot indicators */}
           <div className="flex justify-center gap-1.5 mt-4">
             {instructionCards.map((_, idx) => (
               <button
@@ -146,63 +464,194 @@ export function CreateNewHero({ onNewProject, onNewAsset, onStartWithBubble }: C
           </div>
         </div>
 
-        {/* Start with Bubble Card - Soft white with glowing border */}
-        <button
-          onClick={onStartWithBubble}
-          className="group relative w-full overflow-hidden rounded-xl p-6 sm:p-8 bg-zinc-200 hover:bg-zinc-100 ring-4 ring-inset ring-sky-500 shadow-xl shadow-sky-500/20 hover:shadow-sky-500/30 transition-all hover:scale-[1.01] text-left"
-        >
-          <div className="relative z-10 flex items-center gap-5 sm:gap-6">
-            {/* Glowing blue cloud icon */}
-            <div className="w-14 h-14 sm:w-16 sm:h-16 rounded-2xl bg-sky-500 flex items-center justify-center flex-shrink-0 shadow-lg shadow-sky-500/50">
-              <Cloud className="h-8 w-8 sm:h-9 sm:w-9 text-white" />
+        {/* Main Chat Input Bar */}
+        <div className="relative flex items-center gap-2 p-2 bg-zinc-900 border border-zinc-700 rounded-2xl shadow-xl shadow-black/20 focus-within:border-sky-500 focus-within:ring-1 focus-within:ring-sky-500/50 transition-all">
+          <button
+            type="button"
+            className="flex-shrink-0 w-12 h-12 flex items-center justify-center rounded-xl bg-zinc-800 hover:bg-zinc-700 text-zinc-400 hover:text-sky-400 transition-colors"
+            aria-label="Voice input"
+          >
+            <Mic className="w-5 h-5" />
+          </button>
+
+          <input
+            type="text"
+            value={inputValue}
+            onChange={(e) => setInputValue(e.target.value)}
+            placeholder="Describe what you want to create..."
+            className="flex-1 bg-transparent border-none outline-none text-zinc-100 placeholder:text-zinc-500 text-base sm:text-lg px-2 py-2"
+          />
+        </div>
+
+        {/* Row 1: Primary Mode Toggles - Equal width, fill container */}
+        <div className="grid grid-cols-5 gap-2">
+          {PRIMARY_MODES.map((mode) => {
+            const Icon = mode.icon
+            const isSelected = primaryMode === mode.id
+
+            const colorClasses = isSelected
+              ? mode.id === "bubble"
+                ? "bg-sky-500/10 text-sky-400 border-sky-500"
+                : mode.id === "image"
+                  ? "bg-orange-500/10 text-orange-400 border-orange-500"
+                  : mode.id === "video"
+                    ? "bg-red-500/10 text-red-400 border-red-500"
+                    : mode.id === "audio"
+                      ? "bg-violet-500/10 text-violet-400 border-violet-500"
+                      : "bg-emerald-500/10 text-emerald-400 border-emerald-500"
+              : "bg-zinc-800/50 text-zinc-400 border-zinc-700 hover:bg-zinc-800 hover:text-zinc-200 hover:border-zinc-600"
+
+            return (
+              <button
+                key={mode.id}
+                onClick={() => handlePrimaryModeChange(mode.id)}
+                className={`flex flex-col items-center justify-center gap-1 py-3 rounded-xl border font-medium text-xs sm:text-sm transition-all ${colorClasses}`}
+              >
+                <Icon className="w-5 h-5" />
+                <span className="hidden sm:inline">{mode.label}</span>
+              </button>
+            )
+          })}
+        </div>
+
+        {/* Info Card with Sub-Mode Icons */}
+        {infoCard && (
+          <div className={`rounded-xl border p-5 transition-all ${
+            modeColor === "sky" ? "bg-sky-500/5 border-sky-500/20" :
+            modeColor === "orange" ? "bg-orange-500/5 border-orange-500/20" :
+            modeColor === "red" ? "bg-red-500/5 border-red-500/20" :
+            modeColor === "violet" ? "bg-violet-500/5 border-violet-500/20" :
+            modeColor === "emerald" ? "bg-emerald-500/5 border-emerald-500/20" :
+            "bg-zinc-800/50 border-zinc-700"
+          }`}>
+            {/* Sub-mode icons row - always reserve space */}
+            <div className="h-11 flex justify-center items-center gap-2 mb-4">
+              {currentSubModes ? (
+                currentSubModes.map((mode) => {
+                  const Icon = mode.icon
+                  const isSelected = subMode === mode.id
+
+                  const selectedColorClass =
+                    primaryMode === "image" ? "bg-orange-500/20 border-orange-500 text-orange-300" :
+                    primaryMode === "video" ? "bg-red-500/20 border-red-500 text-red-300" :
+                    primaryMode === "audio" ? "bg-violet-500/20 border-violet-500 text-violet-300" :
+                    "bg-zinc-700 border-zinc-500 text-white"
+
+                  return (
+                    <button
+                      key={mode.id}
+                      onClick={() => setSubMode(mode.id)}
+                      title={mode.label}
+                      className={`w-11 h-11 flex items-center justify-center rounded-lg border transition-all ${
+                        isSelected
+                          ? selectedColorClass
+                          : "bg-zinc-800/30 text-zinc-500 border-zinc-800 hover:bg-zinc-800/50 hover:text-zinc-300 hover:border-zinc-700"
+                      }`}
+                    >
+                      <Icon className="w-5 h-5" />
+                    </button>
+                  )
+                })
+              ) : null}
             </div>
-            <div className="flex-1 min-w-0">
-              <h3 className="text-xl sm:text-2xl font-bold text-zinc-900 mb-1">Start with Bubble</h3>
-              <p className="text-sm sm:text-base text-zinc-600">
-                Your AI production assistant. Describe what you want to create.
-              </p>
+
+            {/* Divider line */}
+            <div className={`h-px mb-4 ${
+              modeColor === "sky" ? "bg-sky-500/20" :
+              modeColor === "orange" ? "bg-orange-500/20" :
+              modeColor === "red" ? "bg-red-500/20" :
+              modeColor === "violet" ? "bg-violet-500/20" :
+              modeColor === "emerald" ? "bg-emerald-500/20" :
+              "bg-zinc-700"
+            }`} />
+
+            <h3 className={`text-lg font-semibold mb-2 ${
+              modeColor === "sky" ? "text-sky-300" :
+              modeColor === "orange" ? "text-orange-300" :
+              modeColor === "red" ? "text-red-300" :
+              modeColor === "violet" ? "text-violet-300" :
+              modeColor === "emerald" ? "text-emerald-300" :
+              "text-zinc-200"
+            }`}>
+              {infoCard.title}
+            </h3>
+            <p className="text-sm text-zinc-400 mb-4 leading-relaxed">
+              {infoCard.description}
+            </p>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-xs">
+              <div className="space-y-1">
+                <div className={`font-medium uppercase tracking-wide ${
+                  modeColor === "sky" ? "text-sky-400" :
+                  modeColor === "orange" ? "text-orange-400" :
+                  modeColor === "red" ? "text-red-400" :
+                  modeColor === "violet" ? "text-violet-400" :
+                  modeColor === "emerald" ? "text-emerald-400" :
+                  "text-zinc-300"
+                }`}>
+                  Inputs
+                </div>
+                <p className="text-zinc-500 leading-relaxed">{infoCard.inputs}</p>
+              </div>
+              <div className="space-y-1">
+                <div className={`font-medium uppercase tracking-wide ${
+                  modeColor === "sky" ? "text-sky-400" :
+                  modeColor === "orange" ? "text-orange-400" :
+                  modeColor === "red" ? "text-red-400" :
+                  modeColor === "violet" ? "text-violet-400" :
+                  modeColor === "emerald" ? "text-emerald-400" :
+                  "text-zinc-300"
+                }`}>
+                  Outputs
+                </div>
+                <p className="text-zinc-500 leading-relaxed">{infoCard.outputs}</p>
+              </div>
             </div>
           </div>
-        </button>
+        )}
 
-        {/* Workflow Cards */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 md:gap-6">
-          {/* New Project Card - Sky Blue */}
+        {/* Launch Button */}
+        {primaryMode !== "bubble" && (
           <button
-            onClick={onNewProject}
-            className="group relative overflow-hidden rounded-xl p-6 sm:p-8 bg-gradient-to-br from-sky-500 via-sky-600 to-blue-700 hover:from-sky-400 hover:via-sky-500 hover:to-blue-600 shadow-lg shadow-sky-900/20 hover:shadow-sky-900/30 transition-all hover:scale-[1.02] text-left"
+            onClick={handleLaunch}
+            disabled={isLaunching}
+            className={`w-full py-4 rounded-xl font-semibold text-lg transition-all flex items-center justify-center gap-3 border ${
+              isLaunching
+                ? "bg-zinc-800/50 text-zinc-500 border-zinc-700 cursor-wait"
+                : modeColor === "orange"
+                  ? "bg-orange-500/10 text-orange-400 border-orange-500 hover:bg-orange-500/20"
+                  : modeColor === "red"
+                    ? "bg-red-500/10 text-red-400 border-red-500 hover:bg-red-500/20"
+                    : modeColor === "violet"
+                      ? "bg-violet-500/10 text-violet-400 border-violet-500 hover:bg-violet-500/20"
+                      : modeColor === "emerald"
+                        ? "bg-emerald-500/10 text-emerald-400 border-emerald-500 hover:bg-emerald-500/20"
+                        : "bg-sky-500/10 text-sky-400 border-sky-500 hover:bg-sky-500/20"
+            }`}
           >
-            <div className="relative z-10">
-              <div className="w-12 h-12 sm:w-14 sm:h-14 rounded-full bg-white/20 flex items-center justify-center mb-4">
-                <Video className="h-6 w-6 sm:h-7 sm:w-7 text-white" />
-              </div>
-              <h3 className="text-xl sm:text-2xl font-bold text-white mb-2">New Project</h3>
-              <p className="text-sm sm:text-base text-white/80">
-                Full video production with brief, storyboard, scenes, and timeline.
-              </p>
-            </div>
-            {/* Decorative gradient overlay */}
-            <div className="absolute inset-0 bg-gradient-to-t from-black/10 to-transparent opacity-0 group-hover:opacity-100 transition-opacity" />
+            {isLaunching ? (
+              <>
+                <Loader2 className="w-5 h-5 animate-spin" />
+                <span>Preparing...</span>
+              </>
+            ) : (
+              <>
+                <Rocket className="w-5 h-5" />
+                <span>Launch</span>
+              </>
+            )}
           </button>
+        )}
 
-          {/* New Asset Card - Dark Orange */}
+        {/* Ask Bubble Button */}
+        {primaryMode === "bubble" && (
           <button
-            onClick={onNewAsset}
-            className="group relative overflow-hidden rounded-xl p-6 sm:p-8 bg-gradient-to-br from-orange-500 via-orange-600 to-amber-700 hover:from-orange-400 hover:via-orange-500 hover:to-amber-600 shadow-lg shadow-orange-900/20 hover:shadow-orange-900/30 transition-all hover:scale-[1.02] text-left"
+            onClick={() => onStartWithBubble?.()}
+            className="w-full py-4 rounded-xl font-semibold text-lg transition-all flex items-center justify-center gap-3 border bg-sky-500/10 text-sky-400 border-sky-500 hover:bg-sky-500/20"
           >
-            <div className="relative z-10">
-              <div className="w-12 h-12 sm:w-14 sm:h-14 rounded-full bg-white/20 flex items-center justify-center mb-4">
-                <Layers className="h-6 w-6 sm:h-7 sm:w-7 text-white" />
-              </div>
-              <h3 className="text-xl sm:text-2xl font-bold text-white mb-2">New Asset</h3>
-              <p className="text-sm sm:text-base text-white/80">
-                Create a standalone image, video, audio, or platform.
-              </p>
-            </div>
-            {/* Decorative gradient overlay */}
-            <div className="absolute inset-0 bg-gradient-to-t from-black/10 to-transparent opacity-0 group-hover:opacity-100 transition-opacity" />
+            <Cloud className="w-5 h-5" />
+            <span>Start with Bubble</span>
           </button>
-        </div>
+        )}
       </div>
     </div>
   )

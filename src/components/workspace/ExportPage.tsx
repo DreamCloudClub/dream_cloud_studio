@@ -15,7 +15,7 @@ import {
   Copy,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
-import { useWorkspaceStore, ExportSettings } from "@/state/workspaceStore"
+import { useWorkspaceStore, ExportSettings, getClipsWithAssets } from "@/state/workspaceStore"
 import { VideoPreview } from "@/remotion/VideoPreview"
 import type { Shot as RemotionShot } from "@/remotion/Root"
 import { getAssetDisplayUrl } from "@/services/localStorage"
@@ -57,45 +57,42 @@ export function ExportPage() {
 
   const { exportSettings } = project
 
-  // Transform workspace shots to Remotion format
+  // Get clips with their assets
+  const clips = getClipsWithAssets(project.timeline.clips, project.assets)
+
+  // Transform timeline clips to Remotion format
   const remotionShots = useMemo((): RemotionShot[] => {
     const shots: RemotionShot[] = []
 
-    for (const scene of [...project.scenes].sort((a, b) => a.order - b.order)) {
-      for (const shot of [...scene.shots].sort((a, b) => a.order - b.order)) {
-        // Get the media URL - prioritize video over image
-        let src: string | undefined
-        let type: "video" | "image" = "image"
+    // Sort clips by start time
+    const sortedClips = [...clips].sort((a, b) => a.startTime - b.startTime)
 
-        if (shot.videoAsset) {
-          src = getAssetDisplayUrl(shot.videoAsset)
-          type = "video"
-        } else if (shot.imageAsset) {
-          src = getAssetDisplayUrl(shot.imageAsset)
-          type = "image"
-        }
+    for (const clip of sortedClips) {
+      if (!clip.asset) continue
 
-        if (src) {
-          shots.push({
-            id: shot.id,
-            type,
-            src,
-            duration: shot.videoAsset?.duration || shot.duration || 5,
-            transition: shot.transition || "fade",
-            scale: shot.scale,
-            positionX: shot.positionX,
-            positionY: shot.positionY,
-            pan: shot.pan,
-          })
-        }
-      }
+      const src = getAssetDisplayUrl(clip.asset)
+      if (!src) continue
+
+      const type = clip.asset.type === "video" ? "video" : "image"
+
+      shots.push({
+        id: clip.id,
+        type,
+        src,
+        duration: clip.duration,
+        transition: "fade",
+        scale: clip.transform?.scale,
+        positionX: clip.transform?.positionX,
+        positionY: clip.transform?.positionY,
+        pan: clip.animation?.pan,
+      })
     }
 
     return shots
-  }, [project.scenes])
+  }, [clips])
 
   // Calculate estimated values
-  const totalDuration = remotionShots.reduce((acc, shot) => acc + shot.duration, 0)
+  const totalDuration = clips.reduce((acc, clip) => Math.max(acc, clip.startTime + clip.duration), 0)
 
   const estimatedSize = (() => {
     const baseSize = totalDuration * 2 // ~2MB per second at 1080p standard
@@ -186,8 +183,8 @@ export function ExportPage() {
               <div className="w-full h-full flex items-center justify-center text-zinc-600 text-center">
                 <div>
                   <Film className="w-16 h-16 mx-auto mb-4 opacity-50" />
-                  <p className="text-sm">No shots to preview</p>
-                  <p className="text-xs text-zinc-700 mt-2">Add media to your shots first</p>
+                  <p className="text-sm">No clips to preview</p>
+                  <p className="text-xs text-zinc-700 mt-2">Add clips to your timeline first</p>
                 </div>
               </div>
             )}
@@ -207,18 +204,12 @@ export function ExportPage() {
           <h3 className="text-sm font-medium text-zinc-400 uppercase tracking-wide mb-4">
             Project Summary
           </h3>
-          <div className="grid grid-cols-3 gap-4">
+          <div className="grid grid-cols-2 gap-4">
             <div>
               <p className="text-2xl font-bold text-zinc-100">
-                {project.scenes.length}
+                {clips.length}
               </p>
-              <p className="text-sm text-zinc-500">Scenes</p>
-            </div>
-            <div>
-              <p className="text-2xl font-bold text-zinc-100">
-                {project.scenes.reduce((acc, s) => acc + s.shots.length, 0)}
-              </p>
-              <p className="text-sm text-zinc-500">Shots</p>
+              <p className="text-sm text-zinc-500">Clips</p>
             </div>
             <div>
               <p className="text-2xl font-bold text-zinc-100">
@@ -384,7 +375,7 @@ export function ExportPage() {
               />
             </div>
             <p className="text-sm text-zinc-500">
-              Processing scene {Math.ceil((renderProgress / 100) * project.scenes.length)} of {project.scenes.length}...
+              Processing clip {Math.ceil((renderProgress / 100) * clips.length)} of {clips.length}...
             </p>
           </div>
         )}
@@ -396,7 +387,7 @@ export function ExportPage() {
               <span className="font-semibold text-emerald-400">Export Options</span>
             </div>
 
-            {/* Download individual shots */}
+            {/* Download individual clips */}
             {remotionShots.length > 0 && (
               <div className="space-y-2">
                 <p className="text-sm text-zinc-400">Download source files:</p>
@@ -406,11 +397,11 @@ export function ExportPage() {
                       key={shot.id}
                       onClick={() => handleDownloadSource(
                         shot.src!,
-                        `${project.name || "shot"}-${i + 1}.${shot.type === "video" ? "mp4" : "jpg"}`
+                        `${project.name || "clip"}-${i + 1}.${shot.type === "video" ? "mp4" : "jpg"}`
                       )}
                       className="px-3 py-1.5 bg-zinc-800 hover:bg-zinc-700 rounded-lg text-sm text-zinc-300 transition-colors"
                     >
-                      Shot {i + 1} ({shot.type})
+                      Clip {i + 1} ({shot.type})
                     </button>
                   ))}
                 </div>

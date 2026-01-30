@@ -112,30 +112,33 @@ export interface BubbleContext {
     activeTab?: string
     projectId?: string
     projectName?: string
-    selectedSceneId?: string | null
-    selectedShotId?: string | null
+    selectedClipId?: string | null
     isPlaying?: boolean
-    scenes?: Array<{
+    currentTime?: number
+    // Timeline clips (flat list)
+    clips?: Array<{
       id: string
-      name: string
-      description?: string
-      shotCount: number
-      shots?: Array<{
-        id: string
-        name: string
-        description?: string
-        duration: number
-        hasImage?: boolean
-        hasVideo?: boolean
-        hasAudio?: boolean
-      }>
+      assetId: string
+      assetName?: string
+      assetType?: 'video' | 'image' | 'audio'
+      startTime: number
+      duration: number
+      inPoint: number
     }>
+    timelineDuration?: number
     assetCount?: number
     assetsByType?: {
       image?: number
       video?: number
       audio?: number
     }
+    // Available assets for adding to timeline
+    assets?: Array<{
+      id: string
+      name: string
+      type: 'video' | 'image' | 'audio'
+      duration?: number
+    }>
   }
 }
 
@@ -837,156 +840,140 @@ const TOOLS = [
       properties: {
         tab: {
           type: 'string',
-          enum: ['platform', 'brief', 'script', 'moodboard', 'storyboard', 'editor', 'scenes', 'assets', 'export'],
-          description: 'The tab to switch to: platform (platform settings), brief (project info), script (script editor), moodboard (visual references), storyboard (story cards), editor (timeline editor), scenes (scene manager), assets (asset library), export (export settings)'
+          enum: ['platform', 'brief', 'script', 'moodboard', 'storyboard', 'editor', 'assets', 'export'],
+          description: 'The tab to switch to: platform (platform settings), brief (project info), script (script editor), moodboard (visual references), storyboard (story cards), editor (timeline editor), assets (asset library), export (export settings)'
         }
       },
       required: ['tab']
     }
   },
+  // ============================================
+  // TIMELINE EDITING TOOLS (core video editing)
+  // ============================================
   {
-    name: 'workspace_select_scene',
-    description: 'Select a scene in the workspace editor. Use to focus on a specific scene for editing or viewing.',
+    name: 'timeline_add_clip',
+    description: 'Add a clip to the timeline. Places an asset at a specific time on the timeline.',
     input_schema: {
       type: 'object',
       properties: {
-        scene_id: {
+        asset_id: {
           type: 'string',
-          description: 'The ID of the scene to select'
+          description: 'The ID of the asset to add to the timeline'
         },
-        scene_name: {
-          type: 'string',
-          description: 'The name of the scene to select (alternative to scene_id)'
-        }
-      }
-    }
-  },
-  {
-    name: 'workspace_select_shot',
-    description: 'Select a specific shot in the workspace editor. Use to focus on a shot for editing.',
-    input_schema: {
-      type: 'object',
-      properties: {
-        shot_id: {
-          type: 'string',
-          description: 'The ID of the shot to select'
-        }
-      },
-      required: ['shot_id']
-    }
-  },
-  {
-    name: 'workspace_add_scene',
-    description: 'Add a new scene to the project in workspace mode.',
-    input_schema: {
-      type: 'object',
-      properties: {
-        name: {
-          type: 'string',
-          description: 'Name for the new scene (e.g., "Opening Scene", "Scene 2")'
-        },
-        description: {
-          type: 'string',
-          description: 'Description of what happens in this scene'
-        }
-      },
-      required: ['name']
-    }
-  },
-  {
-    name: 'workspace_add_shot',
-    description: 'Add a new shot to a scene in workspace mode.',
-    input_schema: {
-      type: 'object',
-      properties: {
-        scene_id: {
-          type: 'string',
-          description: 'The ID of the scene to add the shot to'
-        },
-        scene_name: {
-          type: 'string',
-          description: 'The name of the scene to add the shot to (alternative to scene_id)'
-        },
-        name: {
-          type: 'string',
-          description: 'Name/title for the shot'
-        },
-        description: {
-          type: 'string',
-          description: 'Visual description of the shot - this becomes the image generation prompt'
+        start_time: {
+          type: 'number',
+          description: 'Where on the timeline to place the clip (seconds from start)'
         },
         duration: {
           type: 'number',
-          description: 'Duration in seconds (default 3)'
+          description: 'Duration of the clip in seconds (defaults to asset duration or 5s for images)'
+        },
+        in_point: {
+          type: 'number',
+          description: 'Where to start within the source asset (seconds, default 0)'
         }
       },
-      required: ['description']
+      required: ['asset_id', 'start_time']
     }
   },
   {
-    name: 'workspace_update_shot',
-    description: 'Update an existing shot in workspace mode.',
+    name: 'timeline_append_clip',
+    description: 'Append a clip to the end of the timeline. Automatically places it after the last clip.',
     input_schema: {
       type: 'object',
       properties: {
-        scene_id: {
+        asset_id: {
           type: 'string',
-          description: 'The ID of the scene containing the shot'
+          description: 'The ID of the asset to append to the timeline'
+        }
+      },
+      required: ['asset_id']
+    }
+  },
+  {
+    name: 'timeline_move_clip',
+    description: 'Move a clip to a new position on the timeline.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        clip_id: {
+          type: 'string',
+          description: 'The ID of the clip to move'
         },
-        shot_id: {
+        start_time: {
+          type: 'number',
+          description: 'New start time on the timeline (seconds)'
+        }
+      },
+      required: ['clip_id', 'start_time']
+    }
+  },
+  {
+    name: 'timeline_trim_clip',
+    description: 'Trim a clip by adjusting its in-point and/or duration.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        clip_id: {
           type: 'string',
-          description: 'The ID of the shot to update'
+          description: 'The ID of the clip to trim'
         },
-        name: {
-          type: 'string',
-          description: 'New name for the shot'
-        },
-        description: {
-          type: 'string',
-          description: 'New visual description for the shot'
+        in_point: {
+          type: 'number',
+          description: 'New in-point (where to start within the source asset, in seconds)'
         },
         duration: {
           type: 'number',
-          description: 'New duration in seconds'
-        },
-        notes: {
-          type: 'string',
-          description: 'Notes for this shot'
+          description: 'New duration for the clip (seconds)'
         }
       },
-      required: ['scene_id', 'shot_id']
+      required: ['clip_id']
     }
   },
   {
-    name: 'workspace_delete_shot',
-    description: 'Delete a shot from a scene in workspace mode. Always confirm with the user before deleting.',
+    name: 'timeline_split_clip',
+    description: 'Split a clip into two clips at a specific time point.',
     input_schema: {
       type: 'object',
       properties: {
-        scene_id: {
+        clip_id: {
           type: 'string',
-          description: 'The ID of the scene containing the shot'
+          description: 'The ID of the clip to split'
         },
-        shot_id: {
-          type: 'string',
-          description: 'The ID of the shot to delete'
+        split_at: {
+          type: 'number',
+          description: 'Timeline position where to split the clip (seconds). Must be within the clip.'
         }
       },
-      required: ['scene_id', 'shot_id']
+      required: ['clip_id', 'split_at']
     }
   },
   {
-    name: 'workspace_delete_scene',
-    description: 'Delete a scene and all its shots from the project. Always confirm with the user before deleting.',
+    name: 'timeline_delete_clip',
+    description: 'Delete a clip from the timeline.',
     input_schema: {
       type: 'object',
       properties: {
-        scene_id: {
+        clip_id: {
           type: 'string',
-          description: 'The ID of the scene to delete'
+          description: 'The ID of the clip to delete'
         }
       },
-      required: ['scene_id']
+      required: ['clip_id']
+    }
+  },
+  {
+    name: 'timeline_select_clip',
+    description: 'Select a clip on the timeline for viewing/editing.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        clip_id: {
+          type: 'string',
+          description: 'The ID of the clip to select (or null to deselect)'
+        }
+      },
+      required: ['clip_id']
     }
   },
   {
@@ -1005,117 +992,25 @@ const TOOLS = [
     }
   },
   {
+    name: 'workspace_seek',
+    description: 'Seek to a specific time in the timeline.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        time: {
+          type: 'number',
+          description: 'Time to seek to (seconds)'
+        }
+      },
+      required: ['time']
+    }
+  },
+  {
     name: 'workspace_start_asset_creation',
     description: 'Navigate to the asset creation wizard within the workspace. Use when the user wants to generate new images, videos, or audio.',
     input_schema: {
       type: 'object',
       properties: {}
-    }
-  },
-  {
-    name: 'workspace_link_asset_to_shot',
-    description: 'Link an existing asset to a shot. Use to assign images, videos, or audio to shots.',
-    input_schema: {
-      type: 'object',
-      properties: {
-        shot_id: {
-          type: 'string',
-          description: 'The ID of the shot to link the asset to'
-        },
-        scene_id: {
-          type: 'string',
-          description: 'The ID of the scene containing the shot'
-        },
-        asset_id: {
-          type: 'string',
-          description: 'The ID of the asset to link'
-        },
-        asset_type: {
-          type: 'string',
-          enum: ['image', 'video', 'audio'],
-          description: 'The type of asset being linked'
-        }
-      },
-      required: ['shot_id', 'scene_id', 'asset_id', 'asset_type']
-    }
-  },
-  {
-    name: 'workspace_reorder_scenes',
-    description: 'Reorder scenes in the project.',
-    input_schema: {
-      type: 'object',
-      properties: {
-        scene_ids: {
-          type: 'array',
-          items: { type: 'string' },
-          description: 'Array of scene IDs in the new order'
-        }
-      },
-      required: ['scene_ids']
-    }
-  },
-  {
-    name: 'workspace_reorder_shots',
-    description: 'Reorder shots within a scene.',
-    input_schema: {
-      type: 'object',
-      properties: {
-        scene_id: {
-          type: 'string',
-          description: 'The ID of the scene containing the shots'
-        },
-        shot_ids: {
-          type: 'array',
-          items: { type: 'string' },
-          description: 'Array of shot IDs in the new order'
-        }
-      },
-      required: ['scene_id', 'shot_ids']
-    }
-  },
-  {
-    name: 'workspace_update_scene',
-    description: 'Update an existing scene in workspace mode. Use to change scene name or description.',
-    input_schema: {
-      type: 'object',
-      properties: {
-        scene_id: {
-          type: 'string',
-          description: 'The ID of the scene to update'
-        },
-        name: {
-          type: 'string',
-          description: 'New name for the scene'
-        },
-        description: {
-          type: 'string',
-          description: 'New description for the scene'
-        }
-      },
-      required: ['scene_id']
-    }
-  },
-  {
-    name: 'workspace_unlink_asset_from_shot',
-    description: 'Remove/unlink an asset from a shot. Use to remove an image, video, or audio from a shot.',
-    input_schema: {
-      type: 'object',
-      properties: {
-        shot_id: {
-          type: 'string',
-          description: 'The ID of the shot to unlink the asset from'
-        },
-        scene_id: {
-          type: 'string',
-          description: 'The ID of the scene containing the shot'
-        },
-        asset_type: {
-          type: 'string',
-          enum: ['image', 'video', 'audio'],
-          description: 'The type of asset to unlink'
-        }
-      },
-      required: ['shot_id', 'scene_id', 'asset_type']
     }
   },
   {
@@ -1400,61 +1295,65 @@ Tell them to click the Create button when ready.`,
 
   workspace: `You are in an existing project WORKSPACE - editing a saved project.
 
-The workspace has multiple tabs you can navigate to:
+The workspace uses a SIMPLIFIED TIMELINE MODEL:
+- Assets are media items (video, image, audio) in the library
+- The Timeline contains Clips - each clip references an asset and defines its placement
+- Clips have: startTime (when on timeline), duration (how long), inPoint (offset into source)
+
+The workspace has multiple tabs:
 - platform: Platform/channel settings
 - brief: Project info (name, audience, tone, duration)
 - script: Script editor with characters and dialogue
 - moodboard: Visual style references and colors
 - storyboard: Story cards and narrative structure
-- editor: Timeline editor with scenes/shots preview
-- scenes: Scene manager - detailed view of all scenes and shots
+- editor: Timeline editor - the main editing interface
 - assets: Asset library - images, videos, audio for this project
 - export: Export settings (resolution, format, quality)
 
-WORKSPACE TOOLS AVAILABLE:
+TIMELINE EDITING TOOLS (core editing):
+- timeline_add_clip: Add an asset to the timeline at a specific time
+- timeline_append_clip: Add an asset to the end of the timeline
+- timeline_move_clip: Move a clip to a new position
+- timeline_trim_clip: Adjust clip's in-point and/or duration
+- timeline_split_clip: Split a clip into two at a specific time
+- timeline_delete_clip: Remove a clip from the timeline
+- timeline_select_clip: Select a clip for editing
+
+PLAYBACK TOOLS:
+- workspace_play_preview: Play/pause video playback
+- workspace_seek: Jump to a specific time on the timeline
+
+OTHER WORKSPACE TOOLS:
 - switch_workspace_tab: Navigate between tabs
-- workspace_select_scene/workspace_select_shot: Select items for editing
-- workspace_add_scene/workspace_add_shot: Create new scenes/shots
-- workspace_update_scene: Update scene name/description
-- workspace_update_shot: Update shot details (name, description, duration, notes)
-- workspace_delete_scene/workspace_delete_shot: Remove items (confirm first!)
-- workspace_play_preview: Control video playback
 - workspace_start_asset_creation: Launch asset generator
-- workspace_link_asset_to_shot: Assign assets to shots
-- workspace_unlink_asset_from_shot: Remove asset from shot
-- workspace_reorder_scenes/workspace_reorder_shots: Rearrange order
 - workspace_update_export_settings: Change resolution, format, frameRate, quality
 - workspace_add_storyboard_card: Add story cards
 - workspace_update_storyboard_card: Edit story cards
 - workspace_delete_storyboard_card: Remove story cards
 
-ALSO AVAILABLE (from project wizard):
+ALSO AVAILABLE:
 - update_brief, update_mood_board, update_video_content
 - set_title_card, set_outro_card, set_transition, add_text_overlay
 - generate_image, generate_voiceover, generate_music, generate_sound_effect
 
-TEXT OVERLAY / MOTION GRAPHICS:
-Use add_text_overlay to add animated text to the video:
-- position: "top", "center", "bottom", "lower-third"
-- animation: "fade", "slide-up", "slide-left", "typewriter", "glitch"
-- shotId: (optional) attach to specific shot
-- startTime: seconds from start (or from shot start if shotId set)
-- duration: how long to show (seconds)
+EDITING WORKFLOW:
+1. First, make sure there are assets in the library (assets tab)
+2. Add clips to the timeline using timeline_add_clip or timeline_append_clip
+3. Move clips with timeline_move_clip
+4. Trim clips with timeline_trim_clip
+5. Split clips with timeline_split_clip
+6. Delete clips with timeline_delete_clip
 
-Example: add_text_overlay({ text: "Chapter 1", position: "center", animation: "fade", startTime: 2, duration: 3 })
-
-Ask what the user would like to work on. Common tasks:
-- "Add a new scene" -> workspace_add_scene
-- "Add a shot to Scene 1" -> workspace_add_shot
-- "Update the scene name" -> workspace_update_scene
+Common tasks:
+- "Add this video to the timeline" -> timeline_append_clip
+- "Put this clip at 5 seconds" -> timeline_add_clip with start_time: 5
+- "Move this clip to the beginning" -> timeline_move_clip with start_time: 0
+- "Trim the first 2 seconds" -> timeline_trim_clip with in_point: 2
+- "Split this clip in half" -> timeline_split_clip
+- "Remove this clip" -> timeline_delete_clip
 - "Go to assets" -> switch_workspace_tab to 'assets'
-- "Generate an image for this shot" -> workspace_start_asset_creation
-- "Update the shot description" -> workspace_update_shot
-- "Change the project name" -> update_brief
-- "Remove the image from this shot" -> workspace_unlink_asset_from_shot
-- "Set export to 4K" -> workspace_update_export_settings
-- "Add text overlay" -> add_text_overlay
-- "Add lower third" -> add_text_overlay with position: "lower-third"`,
+- "Generate an image" -> workspace_start_asset_creation
+- "Set export to 4K" -> workspace_update_export_settings`,
 
   // ============================================
   // ASSET CREATOR STEPS
@@ -1805,37 +1704,40 @@ function buildContextMessage(context: BubbleContext): string {
     contextInfo += `\n--- WORKSPACE DATA ---\n`
     contextInfo += `Active Tab: ${w.activeTab || 'editor'}\n`
     contextInfo += `Project: ${w.projectName || 'Unnamed'} (ID: ${w.projectId || 'unknown'})\n`
-    contextInfo += `Selected Scene: ${w.selectedSceneId || 'none'}\n`
-    contextInfo += `Selected Shot: ${w.selectedShotId || 'none'}\n`
+    contextInfo += `Selected Clip: ${w.selectedClipId || 'none'}\n`
+    contextInfo += `Current Time: ${w.currentTime?.toFixed(1) || '0'}s\n`
     contextInfo += `Playing: ${w.isPlaying ? 'Yes' : 'No'}\n`
+    contextInfo += `Timeline Duration: ${w.timelineDuration?.toFixed(1) || '0'}s\n`
 
-    if (w.scenes && w.scenes.length > 0) {
-      contextInfo += `\nScenes (${w.scenes.length}):\n`
-      w.scenes.forEach((scene, index) => {
-        contextInfo += `  ${index + 1}. ${scene.name} (ID: ${scene.id}) - ${scene.shotCount} shots\n`
-        if (scene.description) {
-          contextInfo += `     Description: ${scene.description.slice(0, 60)}${scene.description.length > 60 ? '...' : ''}\n`
-        }
-        if (scene.shots && scene.shots.length > 0) {
-          scene.shots.forEach((shot, shotIndex) => {
-            const mediaIndicators = [
-              shot.hasImage ? '📷' : '',
-              shot.hasVideo ? '🎬' : '',
-              shot.hasAudio ? '🔊' : ''
-            ].filter(Boolean).join('') || '(no media)'
-            contextInfo += `     - Shot ${shotIndex + 1}: ${shot.name} (${shot.duration}s) ${mediaIndicators}\n`
-            if (shot.description) {
-              contextInfo += `       ${shot.description.slice(0, 50)}${shot.description.length > 50 ? '...' : ''}\n`
-            }
-          })
+    if (w.clips && w.clips.length > 0) {
+      contextInfo += `\nTimeline Clips (${w.clips.length}):\n`
+      w.clips.forEach((clip, index) => {
+        const typeIcon = clip.assetType === 'video' ? '🎬' : clip.assetType === 'image' ? '📷' : '🔊'
+        contextInfo += `  ${index + 1}. ${typeIcon} ${clip.assetName || 'Unnamed'}\n`
+        contextInfo += `     ID: ${clip.id}\n`
+        contextInfo += `     Time: ${clip.startTime.toFixed(1)}s - ${(clip.startTime + clip.duration).toFixed(1)}s (${clip.duration.toFixed(1)}s)\n`
+        if (clip.inPoint > 0) {
+          contextInfo += `     In-point: ${clip.inPoint.toFixed(1)}s into source\n`
         }
       })
     } else {
-      contextInfo += `\nScenes: none yet\n`
+      contextInfo += `\nTimeline: empty (no clips yet)\n`
+    }
+
+    if (w.assets && w.assets.length > 0) {
+      contextInfo += `\nAvailable Assets (${w.assets.length}):\n`
+      w.assets.slice(0, 10).forEach((asset) => {
+        const typeIcon = asset.type === 'video' ? '🎬' : asset.type === 'image' ? '📷' : '🔊'
+        const duration = asset.duration ? ` (${asset.duration.toFixed(1)}s)` : ''
+        contextInfo += `  - ${typeIcon} ${asset.name}${duration} [ID: ${asset.id}]\n`
+      })
+      if (w.assets.length > 10) {
+        contextInfo += `  ... and ${w.assets.length - 10} more\n`
+      }
     }
 
     if (w.assetCount !== undefined) {
-      contextInfo += `\nAssets: ${w.assetCount} total`
+      contextInfo += `\nAsset Library: ${w.assetCount} total`
       if (w.assetsByType) {
         const types = []
         if (w.assetsByType.image) types.push(`${w.assetsByType.image} images`)
@@ -1961,4 +1863,109 @@ export async function sendMessage(
 // Generate initial greeting (single generic greeting for all contexts)
 export function getInitialGreeting(_step?: string, _initialPrompt?: string): string {
   return "Hi! I'm Bubble, your Production Assistant. How can I help you?"
+}
+
+// ============================================
+// ASSET DRAFT GENERATION
+// ============================================
+
+export interface AssetDraft {
+  projectName: string
+  description: string
+  enhancedPrompt: string
+}
+
+export interface DraftGenerationParams {
+  userPrompt: string
+  assetType: 'image' | 'video' | 'audio' | 'animation'
+  subMode: string
+}
+
+const DRAFT_SYSTEM_PROMPT = `You are a creative AI assistant helping users create media assets. Your job is to interpret the user's creative vision and expand it into a structured draft for asset generation.
+
+You will receive:
+1. A user's description of what they want to create
+2. The type of asset (image, video, audio, animation)
+3. The specific generation mode (e.g., text-to-image, image-to-video, etc.)
+
+You must return a JSON object with these fields:
+- projectName: A clear, concise name for this asset (2-5 words, title case)
+- description: A detailed description expanding on what the user wants (2-3 sentences)
+- enhancedPrompt: A high-quality, detailed prompt optimized for AI generation. This should:
+  - Expand on the user's original wording
+  - Add relevant details like lighting, style, mood, composition
+  - Be specific and descriptive
+  - Use terminology appropriate for the generation model
+  - Be 1-3 sentences, not too long
+
+IMPORTANT: Respond ONLY with the JSON object, no other text. The JSON must be valid and parseable.`
+
+/**
+ * Generate an AI-assisted draft for asset creation.
+ * Takes user's rough idea and creates structured form data.
+ */
+export async function generateAssetDraft(params: DraftGenerationParams): Promise<AssetDraft> {
+  if (!ANTHROPIC_API_KEY) {
+    throw new Error('Anthropic API key not configured')
+  }
+
+  const { userPrompt, assetType, subMode } = params
+
+  const userMessage = `User wants to create: "${userPrompt}"
+Asset type: ${assetType}
+Generation mode: ${subMode}
+
+Generate a structured draft for this asset.`
+
+  const response = await fetch('https://api.anthropic.com/v1/messages', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'x-api-key': ANTHROPIC_API_KEY,
+      'anthropic-version': '2023-06-01',
+      'anthropic-dangerous-direct-browser-access': 'true',
+    },
+    body: JSON.stringify({
+      model: 'claude-sonnet-4-20250514',
+      max_tokens: 512,
+      system: DRAFT_SYSTEM_PROMPT,
+      messages: [{ role: 'user', content: userMessage }],
+    }),
+  })
+
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({}))
+    throw new Error(error.error?.message || `API request failed: ${response.status}`)
+  }
+
+  const data = await response.json()
+
+  // Extract text from response
+  let responseText = ''
+  for (const block of data.content) {
+    if (block.type === 'text') {
+      responseText += block.text
+    }
+  }
+
+  // Parse JSON response
+  try {
+    // Clean up the response - remove any markdown code blocks if present
+    const cleanedResponse = responseText
+      .replace(/^```json\s*/i, '')
+      .replace(/^```\s*/i, '')
+      .replace(/\s*```$/i, '')
+      .trim()
+
+    const draft = JSON.parse(cleanedResponse) as AssetDraft
+    return draft
+  } catch (parseError) {
+    console.error('Failed to parse AI draft response:', responseText)
+    // Return a fallback draft based on user input
+    return {
+      projectName: userPrompt.slice(0, 30).trim() || 'Untitled Asset',
+      description: userPrompt,
+      enhancedPrompt: userPrompt,
+    }
+  }
 }

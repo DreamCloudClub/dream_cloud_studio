@@ -147,10 +147,10 @@ export function BriefPage() {
     }
   }
 
-  // Parse video content from brief if stored
+  // Parse video content from brief if stored (merge with defaults for safety)
   const [videoContent, setVideoContent] = useState<VideoContent>(() => {
     if (brief.videoContent) {
-      return brief.videoContent as VideoContent
+      return { ...emptyContent, ...(brief.videoContent as VideoContent) }
     }
     return emptyContent
   })
@@ -158,7 +158,7 @@ export function BriefPage() {
   // Sync video content when brief changes
   useEffect(() => {
     if (brief.videoContent) {
-      setVideoContent(brief.videoContent as VideoContent)
+      setVideoContent({ ...emptyContent, ...(brief.videoContent as VideoContent) })
     }
   }, [brief.videoContent])
 
@@ -195,7 +195,7 @@ export function BriefPage() {
   }
 
   // Check if video content has been filled in
-  const hasContent = videoContent.action || videoContent.characters.length > 0 || videoContent.setting
+  const hasContent = videoContent.action || (videoContent.characters?.length ?? 0) > 0 || videoContent.setting
 
   // Editable content section component
   const ContentSection = ({

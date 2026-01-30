@@ -1,7 +1,6 @@
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom"
 import { AuthProvider, useAuth } from "@/contexts/AuthContext"
 import { Dashboard } from "@/pages/Dashboard"
-import { CreateProjectWizard } from "@/pages/CreateProjectWizard"
 import { CreateAssetWizard } from "@/pages/CreateAssetWizard"
 import { CreateFoundationWizard } from "@/pages/CreateFoundationWizard"
 import { FoundationDetail } from "@/pages/FoundationDetail"
@@ -10,6 +9,7 @@ import { LibraryAssetsPage, LibraryProjectsPage, LibraryFoundationsPage, Library
 import { PlatformDetail } from "@/pages/PlatformDetail"
 import { PlatformEdit } from "@/pages/PlatformEdit"
 import { CreatePlatform } from "@/pages/CreatePlatform"
+import { CreatorPage } from "@/pages/CreatorPage"
 import { DevTools } from "@/pages/DevTools"
 import { Profile } from "@/pages/Profile"
 import Login from "@/pages/Login"
@@ -65,10 +65,11 @@ function AppRoutes() {
 
       {/* Protected routes */}
       <Route path="/" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
-      <Route path="/create/project" element={<ProtectedRoute><CreateProjectWizard /></ProtectedRoute>} />
       <Route path="/create/asset" element={<ProtectedRoute><CreateAssetWizard /></ProtectedRoute>} />
       <Route path="/create/foundation" element={<ProtectedRoute><CreateFoundationWizard /></ProtectedRoute>} />
       <Route path="/create/platform" element={<ProtectedRoute><CreatePlatform /></ProtectedRoute>} />
+      <Route path="/create/:type/:subMode" element={<ProtectedRoute><CreatorPage /></ProtectedRoute>} />
+      <Route path="/create/:type" element={<ProtectedRoute><CreatorPage /></ProtectedRoute>} />
       <Route path="/project/:projectId" element={<ProtectedRoute><Workspace /></ProtectedRoute>} />
       <Route path="/foundation/:foundationId" element={<ProtectedRoute><FoundationDetail /></ProtectedRoute>} />
 

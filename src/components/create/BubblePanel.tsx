@@ -20,13 +20,6 @@ import {
   getStoryboard,
   createStoryboard,
   updateStoryboard as updateStoryboardDb,
-  getScenes,
-  getScenesWithShots,
-  createScene,
-  updateScene,
-  createShot as createShotDb,
-  updateShot as updateShotDb,
-  deleteShot as deleteShotDb,
   upsertProjectComposition,
 } from "@/services/projects"
 import { createAsset, incrementUsage } from "@/services/assets"
@@ -71,23 +64,17 @@ export function BubblePanel({ className, isCollapsed = false, onToggleCollapse }
     project: workspaceProject,
     activeTab,
     setActiveTab: setWorkspaceTab,
-    selectedSceneId,
-    selectedShotId,
+    selectedClipId,
     isPlaying,
-    setSelectedScene: setWorkspaceSelectedScene,
-    setSelectedShot: setWorkspaceSelectedShot,
+    setSelectedClip: setWorkspaceSelectedClip,
     setIsPlaying: setWorkspaceIsPlaying,
     startAssetCreation: workspaceStartAssetCreation,
     updateBrief: updateWorkspaceBrief,
     updateMoodBoard: updateWorkspaceMoodBoard,
-    updateScene: updateWorkspaceScene,
-    updateShot: updateWorkspaceShot,
-    addScene: addWorkspaceScene,
-    addShot: addWorkspaceShot,
-    removeScene: removeWorkspaceScene,
-    removeShot: removeWorkspaceShot,
-    reorderScenes: reorderWorkspaceScenes,
-    reorderShots: reorderWorkspaceShots,
+    addClip: addWorkspaceClip,
+    moveClip: moveWorkspaceClip,
+    trimClip: trimWorkspaceClip,
+    deleteClip: deleteWorkspaceClip,
     updateComposition: updateWorkspaceComposition,
     updateExportSettings: updateWorkspaceExportSettings,
     addStoryboardCard: addWorkspaceStoryboardCard,
@@ -283,30 +270,27 @@ export function BubblePanel({ className, isCollapsed = false, onToggleCollapse }
             description: c.description
           })),
         } : undefined,
-        shotCount: workspaceProject.scenes.reduce((acc, s) => acc + s.shots.length, 0) || undefined,
+        clipCount: workspaceProject.timeline.clips.length || undefined,
         // Full workspace context
         workspace: {
           activeTab,
           projectId: workspaceProject.id,
           projectName: workspaceProject.name,
-          selectedSceneId,
-          selectedShotId,
+          selectedClipId,
           isPlaying,
-          scenes: workspaceProject.scenes.map(scene => ({
-            id: scene.id,
-            name: scene.name,
-            description: scene.description,
-            shotCount: scene.shots.length,
-            shots: scene.shots.map(shot => ({
-              id: shot.id,
-              name: shot.name,
-              description: shot.description,
-              duration: shot.duration,
-              hasImage: !!shot.imageAssetId || !!shot.imageAsset,
-              hasVideo: !!shot.videoAssetId || !!shot.videoAsset,
-              hasAudio: !!shot.audioAssetId || !!shot.audioAsset,
-            })),
-          })),
+          timeline: {
+            clips: workspaceProject.timeline.clips.map(clip => {
+              const asset = workspaceProject.assets.find(a => a.id === clip.assetId)
+              return {
+                id: clip.id,
+                assetId: clip.assetId,
+                assetName: asset?.name,
+                assetType: asset?.type,
+                startTime: clip.startTime,
+                duration: clip.duration,
+              }
+            }),
+          },
           assetCount: workspaceProject.assets.length,
           assetsByType,
         },
@@ -777,104 +761,20 @@ export function BubblePanel({ className, isCollapsed = false, onToggleCollapse }
               beats: Array<{ title?: string; description: string }>
             }>
 
-            // Persist to scenes/shots tables
-            const pid = await ensureProjectId()
-            if (pid) {
-              try {
-                // Get existing scenes to update/create appropriately
-                const existingScenes = await getScenesWithShots(pid)
-
-                // Create a map of existing scenes by name for matching
-                const existingSceneMap = new Map(existingScenes.map(s => [s.name, s]))
-
-                const formattedActs: Array<{
-                  id: string
-                  name: string
-                  description: string
-                  beats: Array<{ id: string; title: string; description: string }>
-                }> = []
-
-                for (let actIndex = 0; actIndex < acts.length; actIndex++) {
-                  const act = acts[actIndex]
-                  let sceneId: string
-
-                  // Check if scene with this name already exists
-                  const existingScene = existingSceneMap.get(act.name)
-
-                  if (existingScene) {
-                    // Update existing scene
-                    await updateScene(existingScene.id, {
-                      description: act.description || null,
-                      sort_order: actIndex,
-                    })
-                    sceneId = existingScene.id
-
-                    // Delete old shots for this scene
-                    for (const oldShot of existingScene.shots) {
-                      await deleteShotDb(oldShot.id)
-                    }
-                  } else {
-                    // Create new scene
-                    const newScene = await createScene({
-                      project_id: pid,
-                      name: act.name,
-                      description: act.description || null,
-                      sort_order: actIndex,
-                    })
-                    sceneId = newScene.id
-                  }
-
-                  // Create shots for this scene
-                  const formattedBeats: Array<{ id: string; title: string; description: string }> = []
-                  for (let beatIndex = 0; beatIndex < act.beats.length; beatIndex++) {
-                    const beat = act.beats[beatIndex]
-                    const newShot = await createShotDb({
-                      scene_id: sceneId,
-                      name: beat.title || `Shot ${beatIndex + 1}`,
-                      description: beat.description || null,
-                      sort_order: beatIndex,
-                      duration: 3,
-                    })
-                    formattedBeats.push({
-                      id: newShot.id,
-                      title: beat.title || '',
-                      description: beat.description,
-                    })
-                  }
-
-                  formattedActs.push({
-                    id: sceneId,
-                    name: act.name,
-                    description: act.description || '',
-                    beats: formattedBeats,
-                  })
-                }
-
-                // Update local state with real DB IDs
-                setStoryboard({ acts: formattedActs })
-
-                const totalShots = formattedActs.reduce((sum, act) => sum + act.beats.length, 0)
-                resultContent = `Updated and saved ${acts.length} scene(s) with ${totalShots} total shots`
-              } catch (dbError) {
-                console.error('Failed to save scenes/shots:', dbError)
-                resultContent = `Failed to save scenes: ${dbError instanceof Error ? dbError.message : 'Unknown error'}`
-              }
-            } else {
-              // No project yet - just update local state with temp IDs
-              const formattedActs = acts.map((act, actIndex) => ({
-                id: `new-scene-${actIndex + 1}`,
-                name: act.name,
-                description: act.description || '',
-                beats: act.beats.map((beat, beatIndex) => ({
-                  id: `new-shot-${actIndex + 1}-${beatIndex + 1}`,
-                  title: beat.title || '',
-                  description: beat.description,
-                })),
-              }))
-              setStoryboard({ acts: formattedActs })
-              const totalShots = formattedActs.reduce((sum, act) => sum + act.beats.length, 0)
-              resultContent = `Updated ${acts.length} scene(s) with ${totalShots} total shots (will save when project is created)`
-            }
+            // Update local state with temp IDs
+            const formattedActs = acts.map((act, actIndex) => ({
+              id: `scene-${actIndex + 1}`,
+              name: act.name,
+              description: act.description || '',
+              beats: act.beats.map((beat, beatIndex) => ({
+                id: `shot-${actIndex + 1}-${beatIndex + 1}`,
+                title: beat.title || '',
+                description: beat.description,
+              })),
+            }))
+            setStoryboard({ acts: formattedActs })
+            const totalShots = formattedActs.reduce((sum, act) => sum + act.beats.length, 0)
+            resultContent = `Updated ${acts.length} scene(s) with ${totalShots} total shots`
             break
           }
           case 'add_scene': {
@@ -882,70 +782,20 @@ export function BubblePanel({ className, isCollapsed = false, onToggleCollapse }
             const sceneDescription = (tool.input.description as string) || ''
             const initialShots = (tool.input.shots as Array<{ title?: string; description: string }>) || []
 
-            const pid = await ensureProjectId()
-            if (pid) {
-              try {
-                // Get existing scenes to determine sort order
-                const existingScenes = await getScenesWithShots(pid)
-                const sortOrder = existingScenes.length
-
-                // Create the new scene
-                const newScene = await createScene({
-                  project_id: pid,
-                  name: sceneName,
-                  description: sceneDescription || null,
-                  sort_order: sortOrder,
-                })
-
-                // Create initial shots if provided
-                const formattedBeats: Array<{ id: string; title: string; description: string }> = []
-                for (let i = 0; i < initialShots.length; i++) {
-                  const shot = initialShots[i]
-                  const newShot = await createShotDb({
-                    scene_id: newScene.id,
-                    name: shot.title || `Shot ${i + 1}`,
-                    description: shot.description || null,
-                    sort_order: i,
-                    duration: 3,
-                  })
-                  formattedBeats.push({
-                    id: newShot.id,
-                    title: shot.title || '',
-                    description: shot.description,
-                  })
-                }
-
-                // Update local state - add new scene to existing storyboard
-                const currentActs = storyboard?.acts || []
-                const newAct = {
-                  id: newScene.id,
-                  name: sceneName,
-                  description: sceneDescription,
-                  beats: formattedBeats,
-                }
-                setStoryboard({ acts: [...currentActs, newAct] })
-
-                resultContent = `Added scene "${sceneName}" with ${initialShots.length} shot(s)`
-              } catch (dbError) {
-                console.error('Failed to add scene:', dbError)
-                resultContent = `Failed to add scene: ${dbError instanceof Error ? dbError.message : 'Unknown error'}`
-              }
-            } else {
-              // No project yet - add to local state with temp IDs
-              const currentActs = storyboard?.acts || []
-              const newAct = {
-                id: `new-scene-${currentActs.length + 1}`,
-                name: sceneName,
-                description: sceneDescription,
-                beats: initialShots.map((shot, i) => ({
-                  id: `new-shot-${currentActs.length + 1}-${i + 1}`,
-                  title: shot.title || '',
-                  description: shot.description,
-                })),
-              }
-              setStoryboard({ acts: [...currentActs, newAct] })
-              resultContent = `Added scene "${sceneName}" (will save when project is created)`
+            // Add to local state
+            const currentActs = storyboard?.acts || []
+            const newAct = {
+              id: `scene-${currentActs.length + 1}`,
+              name: sceneName,
+              description: sceneDescription,
+              beats: initialShots.map((shot, i) => ({
+                id: `shot-${currentActs.length + 1}-${i + 1}`,
+                title: shot.title || '',
+                description: shot.description,
+              })),
             }
+            setStoryboard({ acts: [...currentActs, newAct] })
+            resultContent = `Added scene "${sceneName}" with ${initialShots.length} shot(s)`
             break
           }
           case 'add_shot_to_scene': {
@@ -953,73 +803,29 @@ export function BubblePanel({ className, isCollapsed = false, onToggleCollapse }
             const shotTitle = (tool.input.title as string) || ''
             const shotDescription = tool.input.description as string
 
-            const pid = await ensureProjectId()
-            if (pid) {
-              try {
-                // Find the scene by name
-                const existingScenes = await getScenesWithShots(pid)
-                const targetScene = existingScenes.find(s => s.name === sceneName)
-
-                if (!targetScene) {
-                  resultContent = `Scene "${sceneName}" not found. Use add_scene to create it first.`
-                  break
+            // Add to local state
+            const currentActs = storyboard?.acts || []
+            let sceneFound = false
+            const updatedActs = currentActs.map(act => {
+              if (act.name === sceneName) {
+                sceneFound = true
+                return {
+                  ...act,
+                  beats: [...act.beats, {
+                    id: `shot-${act.id}-${act.beats.length + 1}`,
+                    title: shotTitle,
+                    description: shotDescription,
+                  }],
                 }
-
-                // Add the shot to this scene
-                const sortOrder = targetScene.shots.length
-                const newShot = await createShotDb({
-                  scene_id: targetScene.id,
-                  name: shotTitle || `Shot ${sortOrder + 1}`,
-                  description: shotDescription || null,
-                  sort_order: sortOrder,
-                  duration: 3,
-                })
-
-                // Update local state - add shot to the matching scene
-                const currentActs = storyboard?.acts || []
-                const updatedActs = currentActs.map(act => {
-                  if (act.name === sceneName || act.id === targetScene.id) {
-                    return {
-                      ...act,
-                      beats: [...act.beats, {
-                        id: newShot.id,
-                        title: shotTitle,
-                        description: shotDescription,
-                      }],
-                    }
-                  }
-                  return act
-                })
-                setStoryboard({ acts: updatedActs })
-
-                resultContent = `Added shot "${shotTitle || shotDescription.slice(0, 30) + '...'}" to ${sceneName}`
-              } catch (dbError) {
-                console.error('Failed to add shot:', dbError)
-                resultContent = `Failed to add shot: ${dbError instanceof Error ? dbError.message : 'Unknown error'}`
               }
+              return act
+            })
+
+            if (!sceneFound) {
+              resultContent = `Scene "${sceneName}" not found. Use add_scene to create it first.`
             } else {
-              // No project yet - add to local state
-              const currentActs = storyboard?.acts || []
-              const updatedActs = currentActs.map(act => {
-                if (act.name === sceneName) {
-                  return {
-                    ...act,
-                    beats: [...act.beats, {
-                      id: `new-shot-${act.id}-${act.beats.length + 1}`,
-                      title: shotTitle,
-                      description: shotDescription,
-                    }],
-                  }
-                }
-                return act
-              })
-
-              if (JSON.stringify(updatedActs) === JSON.stringify(currentActs)) {
-                resultContent = `Scene "${sceneName}" not found. Use add_scene to create it first.`
-              } else {
-                setStoryboard({ acts: updatedActs })
-                resultContent = `Added shot to ${sceneName} (will save when project is created)`
-              }
+              setStoryboard({ acts: updatedActs })
+              resultContent = `Added shot "${shotTitle || shotDescription.slice(0, 30) + '...'}" to ${sceneName}`
             }
             break
           }
@@ -1031,86 +837,36 @@ export function BubblePanel({ className, isCollapsed = false, onToggleCollapse }
             const newDescription = tool.input.newDescription as string | undefined
             const append = tool.input.append as boolean | undefined
 
-            // Helper to find and update the shot
-            const updateShotInActs = (actList: typeof storyboard.acts) => {
-              return actList?.map(act => {
-                if (act.name !== sceneName) return act
+            // Update local state
+            const currentActs = storyboard?.acts || []
+            const updatedActs = currentActs.map(act => {
+              if (act.name !== sceneName) return act
 
-                const updatedBeats = act.beats.map((beat, idx) => {
-                  // Match by title or index
-                  const isMatch = shotTitle
-                    ? beat.title === shotTitle
-                    : shotIndex !== undefined && idx === shotIndex
+              const updatedBeats = act.beats.map((beat, idx) => {
+                // Match by title or index
+                const isMatch = shotTitle
+                  ? beat.title === shotTitle
+                  : shotIndex !== undefined && idx === shotIndex
 
-                  if (!isMatch) return beat
+                if (!isMatch) return beat
 
-                  return {
-                    ...beat,
-                    title: newTitle !== undefined ? newTitle : beat.title,
-                    description: newDescription !== undefined
-                      ? (append ? `${beat.description} ${newDescription}` : newDescription)
-                      : beat.description,
-                  }
-                })
-
-                return { ...act, beats: updatedBeats }
-              }) || []
-            }
-
-            const pid = await ensureProjectId()
-            if (pid) {
-              try {
-                // Find the scene and shot in the database
-                const existingScenes = await getScenesWithShots(pid)
-                const targetScene = existingScenes.find(s => s.name === sceneName)
-
-                if (!targetScene) {
-                  resultContent = `Scene "${sceneName}" not found.`
-                  break
+                return {
+                  ...beat,
+                  title: newTitle !== undefined ? newTitle : beat.title,
+                  description: newDescription !== undefined
+                    ? (append ? `${beat.description} ${newDescription}` : newDescription)
+                    : beat.description,
                 }
+              })
 
-                // Find the shot
-                const targetShot = shotTitle
-                  ? targetScene.shots.find(s => s.name === shotTitle)
-                  : shotIndex !== undefined ? targetScene.shots[shotIndex] : undefined
+              return { ...act, beats: updatedBeats }
+            })
 
-                if (!targetShot) {
-                  resultContent = `Shot not found in "${sceneName}".`
-                  break
-                }
-
-                // Build the update
-                const updates: Record<string, unknown> = {}
-                if (newTitle !== undefined) updates.name = newTitle
-                if (newDescription !== undefined) {
-                  updates.description = append
-                    ? `${targetShot.description || ''} ${newDescription}`
-                    : newDescription
-                }
-
-                // Update in database
-                await updateShotDb(targetShot.id, updates)
-
-                // Update local state
-                const currentActs = storyboard?.acts || []
-                const updatedActs = updateShotInActs(currentActs)
-                setStoryboard({ acts: updatedActs })
-
-                const shotIdentifier = shotTitle || `Shot ${(shotIndex || 0) + 1}`
-                resultContent = append
-                  ? `Appended to "${shotIdentifier}" in ${sceneName}`
-                  : `Updated "${shotIdentifier}" in ${sceneName}`
-              } catch (dbError) {
-                console.error('Failed to update shot:', dbError)
-                resultContent = `Failed to update shot: ${dbError instanceof Error ? dbError.message : 'Unknown error'}`
-              }
-            } else {
-              // No project yet - update local state only
-              const currentActs = storyboard?.acts || []
-              const updatedActs = updateShotInActs(currentActs)
-              setStoryboard({ acts: updatedActs })
-              resultContent = `Updated shot (will save when project is created)`
-            }
+            setStoryboard({ acts: updatedActs })
+            const shotIdentifier = shotTitle || `Shot ${(shotIndex || 0) + 1}`
+            resultContent = append
+              ? `Appended to "${shotIdentifier}" in ${sceneName}`
+              : `Updated "${shotIdentifier}" in ${sceneName}`
             break
           }
           case 'update_shots': {
@@ -1134,43 +890,7 @@ export function BubblePanel({ className, isCollapsed = false, onToggleCollapse }
 
             // Update local state
             setShots(formattedShots)
-
-            // Persist to database
-            const pid = await ensureProjectId()
-            if (pid) {
-              try {
-                // Get or create a default scene
-                let scenes = await getScenes(pid)
-                let scene = scenes[0]
-                if (!scene) {
-                  scene = await createScene({
-                    project_id: pid,
-                    name: 'Main Scene',
-                    sort_order: 0,
-                  })
-                }
-
-                // Create shots in database
-                for (let i = 0; i < formattedShots.length; i++) {
-                  const shot = formattedShots[i]
-                  await createShotDb({
-                    scene_id: scene.id,
-                    name: `Shot ${shot.shotNumber}`,
-                    description: shot.description,
-                    duration: shot.duration,
-                    sort_order: i,
-                    shot_type: shot.shotType,
-                    notes: shot.notes || null,
-                  })
-                }
-                resultContent = `Created and saved ${formattedShots.length} shots`
-              } catch (dbError) {
-                console.error('Failed to save shots:', dbError)
-                resultContent = `Created shots locally (save failed)`
-              }
-            } else {
-              resultContent = `Created ${formattedShots.length} shots`
-            }
+            resultContent = `Created ${formattedShots.length} shots`
             break
           }
           case 'add_shot': {
@@ -1186,39 +906,7 @@ export function BubblePanel({ className, isCollapsed = false, onToggleCollapse }
 
             // Update local state
             addShot(newShot)
-
-            // Persist to database
-            const pid = await ensureProjectId()
-            if (pid) {
-              try {
-                // Get or create a default scene
-                let scenes = await getScenes(pid)
-                let scene = scenes[newShot.sceneIndex] || scenes[0]
-                if (!scene) {
-                  scene = await createScene({
-                    project_id: pid,
-                    name: 'Main Scene',
-                    sort_order: 0,
-                  })
-                }
-
-                await createShotDb({
-                  scene_id: scene.id,
-                  name: `Shot ${newShot.shotNumber}`,
-                  description: newShot.description,
-                  duration: newShot.duration,
-                  sort_order: shots.length,
-                  shot_type: newShot.shotType,
-                  notes: newShot.notes || null,
-                })
-                resultContent = `Added and saved shot: "${newShot.description.slice(0, 30)}..."`
-              } catch (dbError) {
-                console.error('Failed to save shot:', dbError)
-                resultContent = `Added shot locally (save failed)`
-              }
-            } else {
-              resultContent = `Added shot: "${newShot.description.slice(0, 30)}..."`
-            }
+            resultContent = `Added shot: "${newShot.description.slice(0, 30)}..."`
             break
           }
           case 'set_audio': {
@@ -1419,147 +1107,15 @@ export function BubblePanel({ className, isCollapsed = false, onToggleCollapse }
             resultContent = `Switched to ${tab} tab`
             break
           }
-          case 'workspace_select_scene': {
-            if (!workspaceProject) {
-              resultContent = 'Error: No project loaded in workspace'
-              break
-            }
-            const sceneId = tool.input.scene_id as string | undefined
-            const sceneName = tool.input.scene_name as string | undefined
-
-            let targetScene = sceneId
-              ? workspaceProject.scenes.find(s => s.id === sceneId)
-              : workspaceProject.scenes.find(s => s.name === sceneName)
-
-            if (targetScene) {
-              setWorkspaceSelectedScene(targetScene.id)
-              resultContent = `Selected scene: ${targetScene.name}`
-            } else {
-              resultContent = `Scene not found: ${sceneId || sceneName}`
-            }
-            break
-          }
-          case 'workspace_select_shot': {
-            const shotId = tool.input.shot_id as string
-            setWorkspaceSelectedShot(shotId)
-            resultContent = `Selected shot: ${shotId}`
-            break
-          }
-          case 'workspace_add_scene': {
-            if (!workspaceProject) {
-              resultContent = 'Error: No project loaded in workspace'
-              break
-            }
-            const sceneName = tool.input.name as string
-            const sceneDescription = (tool.input.description as string) || ''
-            const order = workspaceProject.scenes.length
-
-            try {
-              await addWorkspaceScene({
-                name: sceneName,
-                description: sceneDescription,
-                order,
-                shots: [],
-              })
-              resultContent = `Added scene: ${sceneName}`
-            } catch (err) {
-              console.error('Failed to add scene:', err)
-              resultContent = `Error adding scene: ${err instanceof Error ? err.message : 'Unknown error'}`
-            }
-            break
-          }
-          case 'workspace_add_shot': {
-            if (!workspaceProject) {
-              resultContent = 'Error: No project loaded in workspace'
-              break
-            }
-            const sceneId = tool.input.scene_id as string | undefined
-            const sceneName = tool.input.scene_name as string | undefined
-            const shotName = (tool.input.name as string) || 'New Shot'
-            const shotDescription = tool.input.description as string
-            const duration = (tool.input.duration as number) || 3
-
-            let targetScene = sceneId
-              ? workspaceProject.scenes.find(s => s.id === sceneId)
-              : workspaceProject.scenes.find(s => s.name === sceneName)
-
-            if (!targetScene) {
-              resultContent = `Scene not found: ${sceneId || sceneName}`
-              break
-            }
-
-            try {
-              await addWorkspaceShot(targetScene.id, {
-                name: shotName,
-                description: shotDescription,
-                duration,
-                order: targetScene.shots.length,
-                assets: { characters: [], props: [], effects: [] },
-                notes: '',
-              })
-              resultContent = `Added shot "${shotName}" to ${targetScene.name}`
-            } catch (err) {
-              console.error('Failed to add shot:', err)
-              resultContent = `Error adding shot: ${err instanceof Error ? err.message : 'Unknown error'}`
-            }
-            break
-          }
-          case 'workspace_update_shot': {
-            if (!workspaceProject) {
-              resultContent = 'Error: No project loaded in workspace'
-              break
-            }
-            const sceneId = tool.input.scene_id as string
-            const shotId = tool.input.shot_id as string
-            const updates: Record<string, unknown> = {}
-            const updatedFields: string[] = []
-
-            if (tool.input.name) { updates.name = tool.input.name as string; updatedFields.push('name') }
-            if (tool.input.description) { updates.description = tool.input.description as string; updatedFields.push('description') }
-            if (tool.input.duration) { updates.duration = tool.input.duration as number; updatedFields.push('duration') }
-            if (tool.input.notes) { updates.notes = tool.input.notes as string; updatedFields.push('notes') }
-
-            try {
-              await updateWorkspaceShot(sceneId, shotId, updates)
-              resultContent = `Updated shot: ${updatedFields.join(', ')}`
-            } catch (err) {
-              console.error('Failed to update shot:', err)
-              resultContent = `Error updating shot: ${err instanceof Error ? err.message : 'Unknown error'}`
-            }
-            break
-          }
-          case 'workspace_delete_shot': {
-            if (!workspaceProject) {
-              resultContent = 'Error: No project loaded in workspace'
-              break
-            }
-            const sceneId = tool.input.scene_id as string
-            const shotId = tool.input.shot_id as string
-
-            try {
-              await removeWorkspaceShot(sceneId, shotId)
-              resultContent = `Deleted shot`
-            } catch (err) {
-              console.error('Failed to delete shot:', err)
-              resultContent = `Error deleting shot: ${err instanceof Error ? err.message : 'Unknown error'}`
-            }
-            break
-          }
+          case 'workspace_select_scene':
+          case 'workspace_select_shot':
+          case 'workspace_add_scene':
+          case 'workspace_add_shot':
+          case 'workspace_update_shot':
+          case 'workspace_delete_shot':
           case 'workspace_delete_scene': {
-            if (!workspaceProject) {
-              resultContent = 'Error: No project loaded in workspace'
-              break
-            }
-            const sceneId = tool.input.scene_id as string
-            const scene = workspaceProject.scenes.find(s => s.id === sceneId)
-
-            try {
-              await removeWorkspaceScene(sceneId)
-              resultContent = `Deleted scene: ${scene?.name || sceneId}`
-            } catch (err) {
-              console.error('Failed to delete scene:', err)
-              resultContent = `Error deleting scene: ${err instanceof Error ? err.message : 'Unknown error'}`
-            }
+            // Deprecated: scenes/shots model replaced with timeline clips
+            resultContent = 'This tool is deprecated. Use timeline clip tools instead (timeline_add_clip, timeline_move_clip, etc.)'
             break
           }
           case 'workspace_play_preview': {
@@ -1581,105 +1137,13 @@ export function BubblePanel({ className, isCollapsed = false, onToggleCollapse }
             resultContent = 'Switched to Assets tab in creation mode'
             break
           }
-          case 'workspace_link_asset_to_shot': {
-            if (!workspaceProject) {
-              resultContent = 'Error: No project loaded in workspace'
-              break
-            }
-            const shotId = tool.input.shot_id as string
-            const sceneId = tool.input.scene_id as string
-            const assetId = tool.input.asset_id as string
-            const assetType = tool.input.asset_type as 'image' | 'video' | 'audio'
-
-            try {
-              const updates: Record<string, unknown> = {}
-              if (assetType === 'image') updates.imageAssetId = assetId
-              else if (assetType === 'video') updates.videoAssetId = assetId
-              else if (assetType === 'audio') updates.audioAssetId = assetId
-
-              await updateWorkspaceShot(sceneId, shotId, updates)
-              resultContent = `Linked ${assetType} asset to shot`
-            } catch (err) {
-              console.error('Failed to link asset:', err)
-              resultContent = `Error linking asset: ${err instanceof Error ? err.message : 'Unknown error'}`
-            }
-            break
-          }
-          case 'workspace_reorder_scenes': {
-            if (!workspaceProject) {
-              resultContent = 'Error: No project loaded in workspace'
-              break
-            }
-            const sceneIds = tool.input.scene_ids as string[]
-
-            try {
-              await reorderWorkspaceScenes(sceneIds)
-              resultContent = `Reordered ${sceneIds.length} scenes`
-            } catch (err) {
-              console.error('Failed to reorder scenes:', err)
-              resultContent = `Error reordering scenes: ${err instanceof Error ? err.message : 'Unknown error'}`
-            }
-            break
-          }
-          case 'workspace_reorder_shots': {
-            if (!workspaceProject) {
-              resultContent = 'Error: No project loaded in workspace'
-              break
-            }
-            const sceneId = tool.input.scene_id as string
-            const shotIds = tool.input.shot_ids as string[]
-
-            try {
-              await reorderWorkspaceShots(sceneId, shotIds)
-              resultContent = `Reordered ${shotIds.length} shots`
-            } catch (err) {
-              console.error('Failed to reorder shots:', err)
-              resultContent = `Error reordering shots: ${err instanceof Error ? err.message : 'Unknown error'}`
-            }
-            break
-          }
-          case 'workspace_update_scene': {
-            if (!workspaceProject) {
-              resultContent = 'Error: No project loaded in workspace'
-              break
-            }
-            const sceneId = tool.input.scene_id as string
-            const updates: Record<string, unknown> = {}
-            const updatedFields: string[] = []
-
-            if (tool.input.name) { updates.name = tool.input.name as string; updatedFields.push('name') }
-            if (tool.input.description) { updates.description = tool.input.description as string; updatedFields.push('description') }
-
-            try {
-              await updateWorkspaceScene(sceneId, updates)
-              resultContent = `Updated scene: ${updatedFields.join(', ')}`
-            } catch (err) {
-              console.error('Failed to update scene:', err)
-              resultContent = `Error updating scene: ${err instanceof Error ? err.message : 'Unknown error'}`
-            }
-            break
-          }
+          case 'workspace_link_asset_to_shot':
+          case 'workspace_reorder_scenes':
+          case 'workspace_reorder_shots':
+          case 'workspace_update_scene':
           case 'workspace_unlink_asset_from_shot': {
-            if (!workspaceProject) {
-              resultContent = 'Error: No project loaded in workspace'
-              break
-            }
-            const shotId = tool.input.shot_id as string
-            const sceneId = tool.input.scene_id as string
-            const assetType = tool.input.asset_type as 'image' | 'video' | 'audio'
-
-            try {
-              const updates: Record<string, unknown> = {}
-              if (assetType === 'image') updates.imageAssetId = null
-              else if (assetType === 'video') updates.videoAssetId = null
-              else if (assetType === 'audio') updates.audioAssetId = null
-
-              await updateWorkspaceShot(sceneId, shotId, updates)
-              resultContent = `Unlinked ${assetType} asset from shot`
-            } catch (err) {
-              console.error('Failed to unlink asset:', err)
-              resultContent = `Error unlinking asset: ${err instanceof Error ? err.message : 'Unknown error'}`
-            }
+            // Deprecated: scenes/shots model replaced with timeline clips
+            resultContent = 'This tool is deprecated. Use timeline clip tools instead.'
             break
           }
           case 'workspace_update_export_settings': {

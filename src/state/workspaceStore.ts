@@ -9,12 +9,6 @@ import {
   updateMoodBoard,
   createMoodBoard,
   getMoodBoard,
-  createScene,
-  updateScene as updateSceneDb,
-  deleteScene,
-  createShot,
-  updateShot as updateShotDb,
-  deleteShot,
   createStoryboardCard,
   updateStoryboardCard as updateStoryboardCardDb,
   deleteStoryboardCard,
@@ -23,9 +17,24 @@ import {
   upsertProjectComposition,
 } from "@/services/projects"
 import { createAsset, updateAsset as updateAssetDb, deleteAsset } from "@/services/assets"
-import type { Json } from "@/types/database"
+import {
+  getClips,
+  addClip as addClipDb,
+  moveClip as moveClipDb,
+  trimClip as trimClipDb,
+  splitClip as splitClipDb,
+  deleteClip as deleteClipDb,
+  setClipVolume as setClipVolumeDb,
+  setClipAnimation as setClipAnimationDb,
+  appendClip as appendClipDb,
+} from "@/services/timeline"
+import type { Json, Asset } from "@/types/database"
+import type { TimelineClip, ClipAnimation, Timeline } from "@/types/timeline"
 
-// Workspace tab types
+// ============================================
+// WORKSPACE TAB TYPES
+// ============================================
+
 export type WorkspaceTab =
   | "brief"
   | "script"
@@ -33,11 +42,9 @@ export type WorkspaceTab =
   | "storyboard"
   | "platform"
   | "editor"
-  | "scenes"
   | "assets"
   | "export"
 
-// Tab metadata
 export const WORKSPACE_TABS: {
   id: WorkspaceTab
   label: string
@@ -49,7 +56,6 @@ export const WORKSPACE_TABS: {
   { id: "moodboard", label: "Mood", icon: "Palette" },
   { id: "storyboard", label: "Story", icon: "BookOpen" },
   { id: "editor", label: "Editor", icon: "Film" },
-  { id: "scenes", label: "Scenes", icon: "Image" },
   { id: "assets", label: "Assets", icon: "Layers" },
   { id: "export", label: "Export", icon: "Download" },
 ]
@@ -57,7 +63,7 @@ export const WORKSPACE_TABS: {
 // Re-export PanDirection for easy access
 export type { PanDirection } from "@/remotion/components"
 
-// Available pan directions for image shots
+// Available pan directions for clips
 export const PAN_DIRECTIONS: { value: PanDirection; label: string; description: string }[] = [
   { value: "none", label: "None", description: "Static center crop" },
   { value: "zoom-in", label: "Zoom In", description: "Push into center" },
@@ -70,7 +76,10 @@ export const PAN_DIRECTIONS: { value: PanDirection; label: string; description: 
   { value: "bottom-right-to-top-left", label: "Diagonal ↖", description: "Bottom-right to top-left" },
 ]
 
-// Asset categories for mood board and scene manager
+// ============================================
+// ASSET TYPES
+// ============================================
+
 export type AssetCategory =
   | "scene"
   | "stage"
@@ -90,118 +99,42 @@ export const ASSET_CATEGORIES: { id: AssetCategory; label: string; icon: string 
   { id: "audio", label: "Audio", icon: "Volume2" },
 ]
 
-// Project asset with category
 export interface ProjectAsset {
   id: string
   name: string
   type: "image" | "video" | "audio" | "animation"
   category: AssetCategory
-  url: string | null  // nullable for local-only assets
-  localPath?: string | null  // local file path (Tauri)
+  url: string | null
+  localPath?: string | null
   storageType: "local" | "cloud"
-  duration?: number // for video/audio
-  userDescription?: string | null  // what the user asked for
-  aiPrompt?: string | null  // actual prompt sent to AI
-  generationModel?: string | null  // model used
+  duration?: number
+  userDescription?: string | null
+  aiPrompt?: string | null
+  generationModel?: string | null
   createdAt: string
 }
 
-// Animation layer for effects overlay
-export interface ShotEffect {
-  id: string
-  type: 'text' | 'lower_third' | 'watermark' | 'custom'
-  name: string
-  config: {
-    duration: number
-    layers: {
-      id: string
-      type: 'text' | 'shape' | 'image'
-      content: string
-      animation: string
-      timing: [number, number]
-      position?: { x: number; y: number }
-      style?: Record<string, unknown>
-    }[]
-    background?: { color?: string; gradient?: string }
-  }
-  timing: [number, number] // [startSec, endSec] relative to shot
+// ============================================
+// TIMELINE CLIP WITH ASSET (for UI)
+// ============================================
+
+export interface TimelineClipWithAsset extends TimelineClip {
+  asset?: ProjectAsset
 }
 
-// Scene with shots
-export interface Shot {
-  id: string
-  name: string
-  description: string
-  duration: number // seconds
-  order: number
-  shotType?: string // 'media' | 'animation' - or camera: Wide, Medium, Close-up
-  // Assets used in this shot
-  assets: {
-    scene?: ProjectAsset
-    stage?: ProjectAsset
-    characters: ProjectAsset[]
-    weather?: ProjectAsset
-    props: ProjectAsset[]
-    effects: ProjectAsset[]
-  }
-  // Linked asset IDs (new approach - assets as first-class citizens)
-  imageAssetId?: string | null
-  videoAssetId?: string | null
-  audioAssetId?: string | null
-  animationAssetId?: string | null // For standalone animation shots
-  // Full asset objects when loaded (expanded from asset IDs)
-  imageAsset?: ProjectAsset | null
-  videoAsset?: ProjectAsset | null
-  audioAsset?: ProjectAsset | null
-  animationAsset?: ProjectAsset | null
-  // Effects layer (overlays that play on top of this shot)
-  effectsLayer?: ShotEffect[]
-  // Scale/crop settings (works for both images and videos)
-  scale?: number  // 1 = 100%, 1.5 = 150% zoomed in
-  positionX?: number  // -50 to 50, percentage offset from center
-  positionY?: number  // -50 to 50, percentage offset from center
-  // Pan/zoom animation settings for image shots (Ken Burns effect)
-  pan?: PanDirection
-  startPosition?: { x: number; y: number } // 0-100 percentage
-  endPosition?: { x: number; y: number }   // 0-100 percentage
-  startScale?: number
-  endScale?: number
-  // Legacy media fields (deprecated - use linked assets instead)
-  media?: {
-    type: "image" | "video"
-    url: string
-    thumbnailUrl?: string
-  }
-  // Notes for regeneration
-  notes: string
-}
+// ============================================
+// STORYBOARD & SCRIPT TYPES
+// ============================================
 
-export interface Scene {
-  id: string
-  name: string
-  description: string
-  order: number
-  shots: Shot[]
-  // Voiceover for this scene
-  voiceover?: {
-    id: string
-    script: string
-    audioUrl?: string
-    duration?: number
-  }
-}
-
-// Storyboard card (LLM-generated content)
 export interface StoryboardCard {
   id: string
   title: string
   description: string
-  content: string // Full LLM-generated content
+  content: string
   thumbnailUrl?: string
   order: number
 }
 
-// Script section (from pre-production)
 export interface ScriptSection {
   id: string
   type: "description" | "dialogue" | "action" | "transition"
@@ -213,10 +146,19 @@ export interface ScriptSection {
   order: number
 }
 
-// Aspect ratio type
+// Simple script data (title, subtitle, content)
+export interface Script {
+  title: string
+  subtitle: string
+  content: string
+}
+
+// ============================================
+// PROJECT TYPES
+// ============================================
+
 export type AspectRatio = "16:9" | "9:16" | "1:1" | "4:5" | "4:3" | "21:9"
 
-// Brief data
 export interface ProjectBrief {
   name: string
   description: string
@@ -241,7 +183,6 @@ export interface ProjectBrief {
   }
 }
 
-// Export settings
 export interface ExportSettings {
   resolution: "720p" | "1080p" | "4k"
   format: "mp4" | "webm" | "mov"
@@ -249,7 +190,6 @@ export interface ExportSettings {
   quality: "draft" | "standard" | "high"
 }
 
-// Mood board data
 export interface MoodBoardData {
   images: { id: string; url: string; name: string }[]
   colors: string[]
@@ -257,7 +197,6 @@ export interface MoodBoardData {
   foundationId?: string
 }
 
-// Composition data
 export interface CompositionData {
   titleCard?: {
     text: string
@@ -278,13 +217,16 @@ export interface CompositionData {
     text: string
     position?: string
     animation?: string
-    shotId?: string
+    clipId?: string
     startTime?: number
     duration?: number
   }>
 }
 
-// Full project state
+// ============================================
+// PROJECT STATE
+// ============================================
+
 export interface Project {
   id: string
   userId: string
@@ -293,16 +235,30 @@ export interface Project {
   brief: ProjectBrief
   moodBoard: MoodBoardData
   assets: ProjectAsset[]
-  scenes: Scene[]
+  timeline: Timeline
   storyboardCards: StoryboardCard[]
   scriptSections: ScriptSection[]
+  script: Script
   exportSettings: ExportSettings
   composition: CompositionData
   createdAt: string
   updatedAt: string
 }
 
-// Workspace state
+// ============================================
+// EDITOR NOTE TYPE
+// ============================================
+
+export interface EditorNote {
+  id: string
+  content: string
+  createdAt: string
+}
+
+// ============================================
+// WORKSPACE STORE
+// ============================================
+
 interface WorkspaceState {
   // Current project
   project: Project | null
@@ -317,7 +273,11 @@ interface WorkspaceState {
   activeTab: WorkspaceTab
   setActiveTab: (tab: WorkspaceTab) => void
 
-  // Asset Creation Mode (for launching generator from other pages)
+  // Control Panel UI state (persists across navigation)
+  controlPanelTab: "properties" | "notes" | "assets"
+  setControlPanelTab: (tab: "properties" | "notes" | "assets") => void
+
+  // Asset Creation Mode
   assetCreationMode: boolean
   assetCreationType: "image" | "video" | "audio" | "animation" | null
   startAssetCreation: (type?: "image" | "video" | "audio" | "animation") => void
@@ -327,44 +287,46 @@ interface WorkspaceState {
   selectedStoryboardCardId: string | null
   setSelectedStoryboardCard: (id: string | null) => void
 
-  // Editor
-  selectedSceneId: string | null
-  selectedShotId: string | null
+  // Editor - Timeline selection
+  selectedClipId: string | null
   isPlaying: boolean
   currentTime: number
-  setSelectedScene: (id: string | null) => void
-  setSelectedShot: (id: string | null) => void
+  setSelectedClip: (id: string | null) => void
   setIsPlaying: (playing: boolean) => void
   setCurrentTime: (time: number) => void
 
-  // Scene Manager
-  expandedSceneIds: string[]
-  toggleSceneExpanded: (id: string) => void
+  // Editor - Notes (session-based, not persisted)
+  editorNotes: EditorNote[]
+  addEditorNote: (content: string) => void
+  deleteEditorNote: (noteId: string) => void
 
-  // Generation Panel
-  generatingForShotId: string | null
-  generatingForSceneId: string | null
-  openGenerationPanel: (sceneId: string, shotId: string) => void
-  closeGenerationPanel: () => void
-
-  // Project actions - ALL PERSIST TO DATABASE
+  // Project actions
   loadProject: (projectId: string) => Promise<void>
   updateBrief: (data: Partial<ProjectBrief>) => Promise<void>
   updateMoodBoard: (data: Partial<MoodBoardData>) => Promise<void>
   addAsset: (asset: Omit<ProjectAsset, "id" | "createdAt">, userId: string) => Promise<void>
   removeAsset: (assetId: string) => Promise<void>
   updateAsset: (assetId: string, data: Partial<ProjectAsset>) => Promise<void>
-  addScene: (scene: Omit<Scene, "id">) => Promise<void>
-  updateScene: (sceneId: string, data: Partial<Scene>) => Promise<void>
-  removeScene: (sceneId: string) => Promise<void>
-  reorderScenes: (sceneIds: string[]) => Promise<void>
-  addShot: (sceneId: string, shot: Omit<Shot, "id">) => Promise<void>
-  updateShot: (sceneId: string, shotId: string, data: Partial<Shot>) => Promise<void>
-  removeShot: (sceneId: string, shotId: string) => Promise<void>
-  reorderShots: (sceneId: string, shotIds: string[]) => Promise<void>
+
+  // Timeline actions (core editing operations)
+  addClip: (assetId: string, startTime: number, options?: { duration?: number; inPoint?: number }) => Promise<string>
+  appendClip: (assetId: string) => Promise<string>
+  moveClip: (clipId: string, startTime: number) => Promise<void>
+  trimClip: (clipId: string, inPoint?: number, duration?: number) => Promise<void>
+  splitClip: (clipId: string, splitAt: number) => Promise<string>
+  deleteClip: (clipId: string) => Promise<void>
+  setClipVolume: (clipId: string, volume: number) => Promise<void>
+  setClipAnimation: (clipId: string, animation: ClipAnimation) => Promise<void>
+
+  // Storyboard actions
   addStoryboardCard: (card: Omit<StoryboardCard, "id">) => Promise<void>
   updateStoryboardCard: (cardId: string, data: Partial<StoryboardCard>) => Promise<void>
   removeStoryboardCard: (cardId: string) => Promise<void>
+
+  // Script actions
+  updateScript: (data: Partial<Script>) => Promise<void>
+
+  // Settings actions
   updateExportSettings: (settings: Partial<ExportSettings>) => Promise<void>
   updateComposition: (data: Partial<CompositionData>) => Promise<void>
   saveAll: () => Promise<void>
@@ -377,19 +339,18 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
   isSaving: false,
   saveStatus: "idle",
   activeTab: "editor",
+  controlPanelTab: "properties",
   assetCreationMode: false,
   assetCreationType: null,
   selectedStoryboardCardId: null,
-  selectedSceneId: null,
-  selectedShotId: null,
+  selectedClipId: null,
   isPlaying: false,
   currentTime: 0,
-  expandedSceneIds: [],
-  generatingForShotId: null,
-  generatingForSceneId: null,
+  editorNotes: [],
 
   // Navigation
   setActiveTab: (tab) => set({ activeTab: tab }),
+  setControlPanelTab: (tab) => set({ controlPanelTab: tab }),
 
   // Asset Creation Mode
   startAssetCreation: (type) => set({
@@ -399,7 +360,7 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
   }),
   clearAssetCreationMode: () => set({ assetCreationMode: false, assetCreationType: null }),
 
-  // Save with status tracking
+  // Save handler
   handleSave: async () => {
     const { project, saveAll } = get()
     if (!project) return
@@ -408,7 +369,6 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
     try {
       await saveAll()
       set({ saveStatus: "saved" })
-      // Reset to idle after 2 seconds
       setTimeout(() => set({ saveStatus: "idle" }), 2000)
     } catch (error) {
       console.error("Failed to save:", error)
@@ -422,32 +382,31 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
   setSelectedStoryboardCard: (id) => set({ selectedStoryboardCardId: id }),
 
   // Editor
-  setSelectedScene: (id) => set({ selectedSceneId: id, selectedShotId: null }),
-  setSelectedShot: (id) => set({ selectedShotId: id }),
+  setSelectedClip: (id) => set({ selectedClipId: id }),
   setIsPlaying: (playing) => set({ isPlaying: playing }),
   setCurrentTime: (time) => set({ currentTime: time }),
 
-  // Scene Manager
-  toggleSceneExpanded: (id) => {
-    const { expandedSceneIds } = get()
-    if (expandedSceneIds.includes(id)) {
-      set({ expandedSceneIds: expandedSceneIds.filter((s) => s !== id) })
-    } else {
-      set({ expandedSceneIds: [...expandedSceneIds, id] })
+  // Editor Notes (session-based)
+  addEditorNote: (content) => {
+    const newNote: EditorNote = {
+      id: crypto.randomUUID(),
+      content,
+      createdAt: new Date().toISOString(),
     }
+    set((state) => ({
+      editorNotes: [newNote, ...state.editorNotes],
+    }))
+  },
+  deleteEditorNote: (noteId) => {
+    set((state) => ({
+      editorNotes: state.editorNotes.filter((n) => n.id !== noteId),
+    }))
   },
 
-  // Generation Panel
-  openGenerationPanel: (sceneId, shotId) => set({
-    generatingForSceneId: sceneId,
-    generatingForShotId: shotId,
-  }),
-  closeGenerationPanel: () => set({
-    generatingForSceneId: null,
-    generatingForShotId: null,
-  }),
+  // ============================================
+  // PROJECT LOADING
+  // ============================================
 
-  // Project actions - ALL PERSIST TO DATABASE
   loadProject: async (projectId) => {
     set({ isLoading: true })
 
@@ -460,7 +419,26 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
         return
       }
 
-      // Transform DB format to workspace format
+      // Load timeline clips
+      const clips = await getClips(projectId)
+
+      // Transform assets
+      const assets: ProjectAsset[] = (dbProject.assets || []).map((a: Asset) => ({
+        id: a.id,
+        name: a.name,
+        type: a.type as "image" | "video" | "audio" | "animation",
+        category: (a.category || "scene") as AssetCategory,
+        url: a.url,
+        localPath: a.local_path || undefined,
+        storageType: (a.storage_type || "cloud") as "local" | "cloud",
+        duration: a.duration || undefined,
+        userDescription: a.user_description || undefined,
+        aiPrompt: a.ai_prompt || undefined,
+        generationModel: a.generation_model || undefined,
+        createdAt: a.created_at,
+      }))
+
+      // Build project
       const project: Project = {
         id: dbProject.id,
         userId: dbProject.user_id,
@@ -487,136 +465,9 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
           keywords: (dbProject.mood_board?.keywords as string[]) || [],
           foundationId: (dbProject.mood_board as any)?.foundation_id || undefined,
         },
-        assets: (dbProject.assets || []).map((a) => ({
-          id: a.id,
-          name: a.name,
-          type: a.type as "image" | "video" | "audio",
-          category: (a.category || "scene") as AssetCategory,
-          url: a.url,
-          localPath: a.local_path || undefined,
-          storageType: (a.storage_type || "cloud") as "local" | "cloud",
-          duration: a.duration || undefined,
-          userDescription: a.user_description || undefined,
-          aiPrompt: a.ai_prompt || undefined,
-          generationModel: a.generation_model || undefined,
-          createdAt: a.created_at,
-        })),
-        scenes: (dbProject.scenes || []).map((s) => ({
-          id: s.id,
-          name: s.name,
-          description: s.description || "",
-          order: s.sort_order,
-          shots: (s.shots || []).map((shot: any) => {
-            // Look up linked assets from the project assets array
-            const imageAsset = shot.image_asset_id
-              ? (dbProject.assets || []).find((a: any) => a.id === shot.image_asset_id)
-              : null
-            const videoAsset = shot.video_asset_id
-              ? (dbProject.assets || []).find((a: any) => a.id === shot.video_asset_id)
-              : null
-            const audioAsset = shot.audio_asset_id
-              ? (dbProject.assets || []).find((a: any) => a.id === shot.audio_asset_id)
-              : null
-            const animationAsset = shot.animation_asset_id
-              ? (dbProject.assets || []).find((a: any) => a.id === shot.animation_asset_id)
-              : null
-
-            return {
-              id: shot.id,
-              name: shot.name,
-              description: shot.description || "",
-              duration: shot.duration,
-              order: shot.sort_order,
-              shotType: shot.shot_type || undefined,
-              assets: {
-                characters: [],
-                props: [],
-                effects: [],
-              },
-              // New asset linking approach
-              imageAssetId: shot.image_asset_id || null,
-              videoAssetId: shot.video_asset_id || null,
-              audioAssetId: shot.audio_asset_id || null,
-              animationAssetId: shot.animation_asset_id || null,
-              imageAsset: imageAsset ? {
-                id: imageAsset.id,
-                name: imageAsset.name,
-                type: imageAsset.type as "image" | "video" | "audio",
-                category: (imageAsset.category || "scene") as AssetCategory,
-                url: imageAsset.url,
-                localPath: imageAsset.local_path || undefined,
-                storageType: (imageAsset.storage_type || "cloud") as "local" | "cloud",
-                duration: imageAsset.duration || undefined,
-                userDescription: imageAsset.user_description || undefined,
-                aiPrompt: imageAsset.ai_prompt || undefined,
-                generationModel: imageAsset.generation_model || undefined,
-                createdAt: imageAsset.created_at,
-              } : null,
-              videoAsset: videoAsset ? {
-                id: videoAsset.id,
-                name: videoAsset.name,
-                type: videoAsset.type as "image" | "video" | "audio",
-                category: (videoAsset.category || "scene") as AssetCategory,
-                url: videoAsset.url,
-                localPath: videoAsset.local_path || undefined,
-                storageType: (videoAsset.storage_type || "cloud") as "local" | "cloud",
-                duration: videoAsset.duration || undefined,
-                userDescription: videoAsset.user_description || undefined,
-                aiPrompt: videoAsset.ai_prompt || undefined,
-                generationModel: videoAsset.generation_model || undefined,
-                createdAt: videoAsset.created_at,
-              } : null,
-              audioAsset: audioAsset ? {
-                id: audioAsset.id,
-                name: audioAsset.name,
-                type: audioAsset.type as "image" | "video" | "audio",
-                category: (audioAsset.category || "audio") as AssetCategory,
-                url: audioAsset.url,
-                localPath: audioAsset.local_path || undefined,
-                storageType: (audioAsset.storage_type || "cloud") as "local" | "cloud",
-                duration: audioAsset.duration || undefined,
-                userDescription: audioAsset.user_description || undefined,
-                aiPrompt: audioAsset.ai_prompt || undefined,
-                generationModel: audioAsset.generation_model || undefined,
-                createdAt: audioAsset.created_at,
-              } : null,
-              animationAsset: animationAsset ? {
-                id: animationAsset.id,
-                name: animationAsset.name,
-                type: animationAsset.type as "image" | "video" | "audio",
-                category: (animationAsset.category || "effect") as AssetCategory,
-                url: animationAsset.url,
-                localPath: animationAsset.local_path || undefined,
-                storageType: (animationAsset.storage_type || "cloud") as "local" | "cloud",
-                duration: animationAsset.duration || undefined,
-                userDescription: animationAsset.user_description || undefined,
-                aiPrompt: animationAsset.ai_prompt || undefined,
-                generationModel: animationAsset.generation_model || undefined,
-                createdAt: animationAsset.created_at,
-              } : null,
-              // Effects layer (overlays)
-              effectsLayer: (shot.effects as ShotEffect[]) || [],
-              // Legacy media fields (fallback if no linked assets)
-              media: shot.media_url
-                ? {
-                    type: (shot.media_type || "image") as "image" | "video",
-                    url: shot.media_url,
-                    thumbnailUrl: shot.media_thumbnail_url || undefined,
-                  }
-                : undefined,
-              notes: shot.notes || "",
-            }
-          }),
-          voiceover: s.voiceover_script
-            ? {
-                id: `vo-${s.id}`,
-                script: s.voiceover_script,
-                audioUrl: s.voiceover_audio_url || undefined,
-                duration: s.voiceover_duration || undefined,
-              }
-            : undefined,
-        })),
-        storyboardCards: (dbProject.storyboard_cards || []).map((c) => ({
+        assets,
+        timeline: { clips },
+        storyboardCards: (dbProject.storyboard_cards || []).map((c: any) => ({
           id: c.id,
           title: c.title,
           description: c.description || "",
@@ -634,6 +485,11 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
           characterName: s.character?.name || undefined,
           order: s.sort_order,
         })),
+        script: {
+          title: dbProject.brief?.script_title || "",
+          subtitle: dbProject.brief?.script_subtitle || "",
+          content: dbProject.brief?.script_content || "",
+        },
         exportSettings: {
           resolution: (dbProject.export_settings?.resolution || "1080p") as "720p" | "1080p" | "4k",
           format: (dbProject.export_settings?.format || "mp4") as "mp4" | "webm" | "mov",
@@ -664,7 +520,6 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
       set({
         project,
         isLoading: false,
-        expandedSceneIds: project.scenes.map((s) => s.id),
         selectedStoryboardCardId: project.storyboardCards[0]?.id || null,
       })
     } catch (error) {
@@ -673,11 +528,14 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
     }
   },
 
+  // ============================================
+  // BRIEF & MOOD BOARD
+  // ============================================
+
   updateBrief: async (data) => {
     const { project } = get()
     if (!project) return
 
-    // Update local state immediately
     const updatedBrief = { ...project.brief, ...data }
     set({
       project: {
@@ -687,7 +545,6 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
       },
     })
 
-    // Persist to database
     try {
       const dbData: Record<string, unknown> = {}
       if (data.name !== undefined) dbData.name = data.name
@@ -700,11 +557,8 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
       if (data.videoContent !== undefined) dbData.video_content = data.videoContent
       if (data.audioPlans !== undefined) dbData.audio_plans = data.audioPlans
 
-      // Also update project name if brief name changed
       if (data.name !== undefined) {
-        console.log("Syncing project name to projects table:", data.name)
-        const updated = await updateProject(project.id, { name: data.name || "Untitled Project" })
-        console.log("Project name synced successfully:", updated.name)
+        await updateProject(project.id, { name: data.name || "Untitled Project" })
       }
 
       const existingBrief = await getProjectBrief(project.id)
@@ -725,8 +579,7 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
         })
       }
     } catch (error) {
-      console.error("Failed to save brief to database:", error)
-      // Re-throw so callers can handle/display the error
+      console.error("Failed to save brief:", error)
       throw error
     }
   },
@@ -735,7 +588,6 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
     const { project } = get()
     if (!project) return
 
-    // Update local state immediately
     const updatedMoodBoard = { ...project.moodBoard, ...data }
     set({
       project: {
@@ -745,12 +597,11 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
       },
     })
 
-    // Persist to database
     try {
       const dbData = {
-        images: updatedMoodBoard.images as Json,
-        colors: updatedMoodBoard.colors as Json,
-        keywords: updatedMoodBoard.keywords as Json,
+        images: updatedMoodBoard.images as unknown as Json,
+        colors: updatedMoodBoard.colors as unknown as Json,
+        keywords: updatedMoodBoard.keywords as unknown as Json,
         foundation_id: updatedMoodBoard.foundationId || null,
       }
 
@@ -761,17 +612,19 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
         await createMoodBoard({ project_id: project.id, ...dbData })
       }
     } catch (error) {
-      console.error("Failed to save mood board to database:", error)
+      console.error("Failed to save mood board:", error)
     }
   },
+
+  // ============================================
+  // ASSET MANAGEMENT
+  // ============================================
 
   addAsset: async (asset, userId) => {
     const { project } = get()
     if (!project) return
 
     try {
-      // Create in database first to get ID
-      // Import type for proper casting
       type DbAssetCategory = "scene" | "stage" | "character" | "weather" | "prop" | "effect" | "music" | "sound_effect" | "voice"
       const dbAsset = await createAsset({
         user_id: userId,
@@ -788,11 +641,10 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
         generation_model: asset.generationModel,
       })
 
-      // Then update local state
       const newAsset: ProjectAsset = {
         id: dbAsset.id,
         name: dbAsset.name,
-        type: dbAsset.type as "image" | "video" | "audio",
+        type: dbAsset.type as "image" | "video" | "audio" | "animation",
         category: (dbAsset.category || "scene") as AssetCategory,
         url: dbAsset.url,
         localPath: dbAsset.local_path || undefined,
@@ -820,7 +672,6 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
     const { project } = get()
     if (!project) return
 
-    // Update local state immediately
     set({
       project: {
         ...project,
@@ -829,7 +680,6 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
       },
     })
 
-    // Delete from database
     try {
       await deleteAsset(assetId)
     } catch (error) {
@@ -841,7 +691,6 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
     const { project } = get()
     if (!project) return
 
-    // Update local state immediately
     set({
       project: {
         ...project,
@@ -850,7 +699,6 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
       },
     })
 
-    // Persist to database
     try {
       const dbData: Record<string, unknown> = {}
       if (data.name !== undefined) dbData.name = data.name
@@ -864,291 +712,210 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
     }
   },
 
-  addScene: async (scene) => {
+  // ============================================
+  // TIMELINE EDITING OPERATIONS
+  // ============================================
+
+  addClip: async (assetId, startTime, options) => {
     const { project } = get()
-    if (!project) return
+    if (!project) throw new Error("No project loaded")
 
-    try {
-      // Create in database first
-      const dbScene = await createScene({
-        project_id: project.id,
-        name: scene.name,
-        description: scene.description,
-        sort_order: scene.order,
-        voiceover_script: scene.voiceover?.script,
-        voiceover_audio_url: scene.voiceover?.audioUrl,
-        voiceover_duration: scene.voiceover?.duration,
-      })
+    const clip = await addClipDb(project.id, assetId, startTime, options)
 
-      // Create shots if any
-      const newShots: Shot[] = []
-      for (const shot of scene.shots) {
-        const dbShot = await createShot({
-          scene_id: dbScene.id,
-          name: shot.name,
-          description: shot.description,
-          duration: shot.duration,
-          sort_order: shot.order,
-          shot_type: null,
-          notes: shot.notes,
-          media_type: shot.media?.type,
-          media_url: shot.media?.url,
-          media_thumbnail_url: shot.media?.thumbnailUrl,
-        })
-        newShots.push({
-          ...shot,
-          id: dbShot.id,
-        })
-      }
-
-      // Then update local state
-      const newScene: Scene = {
-        ...scene,
-        id: dbScene.id,
-        shots: newShots,
-      }
-
-      set({
-        project: {
-          ...project,
-          scenes: [...project.scenes, newScene],
-          updatedAt: new Date().toISOString(),
+    set({
+      project: {
+        ...project,
+        timeline: {
+          clips: [...project.timeline.clips, clip].sort((a, b) => a.startTime - b.startTime),
         },
-        expandedSceneIds: [...get().expandedSceneIds, newScene.id],
-      })
-    } catch (error) {
-      console.error("Failed to add scene:", error)
-    }
-  },
-
-  updateScene: async (sceneId, data) => {
-    const { project } = get()
-    if (!project) return
-
-    // Update local state immediately
-    set({
-      project: {
-        ...project,
-        scenes: project.scenes.map((s) => (s.id === sceneId ? { ...s, ...data } : s)),
         updatedAt: new Date().toISOString(),
       },
     })
 
-    // Persist to database
-    try {
-      const dbData: Record<string, unknown> = {}
-      if (data.name !== undefined) dbData.name = data.name
-      if (data.description !== undefined) dbData.description = data.description
-      if (data.order !== undefined) dbData.sort_order = data.order
-      if (data.voiceover !== undefined) {
-        dbData.voiceover_script = data.voiceover?.script
-        dbData.voiceover_audio_url = data.voiceover?.audioUrl
-        dbData.voiceover_duration = data.voiceover?.duration
-      }
-
-      await updateSceneDb(sceneId, dbData)
-    } catch (error) {
-      console.error("Failed to update scene:", error)
-    }
+    return clip.id
   },
 
-  removeScene: async (sceneId) => {
+  appendClip: async (assetId) => {
     const { project } = get()
-    if (!project) return
+    if (!project) throw new Error("No project loaded")
 
-    // Update local state immediately
-    set({
-      project: {
-        ...project,
-        scenes: project.scenes.filter((s) => s.id !== sceneId),
-        updatedAt: new Date().toISOString(),
-      },
-    })
-
-    // Delete from database (cascade deletes shots)
-    try {
-      await deleteScene(sceneId)
-    } catch (error) {
-      console.error("Failed to delete scene:", error)
-    }
-  },
-
-  reorderScenes: async (sceneIds) => {
-    const { project } = get()
-    if (!project) return
-
-    // Update local state immediately
-    const reordered = sceneIds
-      .map((id, index) => {
-        const scene = project.scenes.find((s) => s.id === id)
-        return scene ? { ...scene, order: index } : null
-      })
-      .filter(Boolean) as Scene[]
+    const clip = await appendClipDb(project.id, assetId)
 
     set({
       project: {
         ...project,
-        scenes: reordered,
+        timeline: {
+          clips: [...project.timeline.clips, clip].sort((a, b) => a.startTime - b.startTime),
+        },
         updatedAt: new Date().toISOString(),
       },
     })
 
-    // Persist to database
-    try {
-      for (let i = 0; i < sceneIds.length; i++) {
-        await updateSceneDb(sceneIds[i], { sort_order: i })
-      }
-    } catch (error) {
-      console.error("Failed to reorder scenes:", error)
-    }
+    return clip.id
   },
 
-  addShot: async (sceneId, shot) => {
+  moveClip: async (clipId, startTime) => {
     const { project } = get()
     if (!project) return
 
+    // Optimistic update
+    set({
+      project: {
+        ...project,
+        timeline: {
+          clips: project.timeline.clips
+            .map((c) => (c.id === clipId ? { ...c, startTime } : c))
+            .sort((a, b) => a.startTime - b.startTime),
+        },
+        updatedAt: new Date().toISOString(),
+      },
+    })
+
     try {
-      // Create in database first
-      const dbShot = await createShot({
-        scene_id: sceneId,
-        name: shot.name,
-        description: shot.description,
-        duration: shot.duration,
-        sort_order: shot.order,
-        shot_type: null,
-        notes: shot.notes,
-        media_type: shot.media?.type,
-        media_url: shot.media?.url,
-        media_thumbnail_url: shot.media?.thumbnailUrl,
-      })
+      await moveClipDb(clipId, startTime)
+    } catch (error) {
+      console.error("Failed to move clip:", error)
+      // Reload to sync state
+      await get().loadProject(project.id)
+    }
+  },
 
-      // Then update local state
-      const newShot: Shot = {
-        ...shot,
-        id: dbShot.id,
-      }
+  trimClip: async (clipId, inPoint, duration) => {
+    const { project } = get()
+    if (!project) return
 
-      set({
-        project: {
-          ...project,
-          scenes: project.scenes.map((s) =>
-            s.id === sceneId ? { ...s, shots: [...s.shots, newShot] } : s
+    // Optimistic update
+    set({
+      project: {
+        ...project,
+        timeline: {
+          clips: project.timeline.clips.map((c) =>
+            c.id === clipId
+              ? {
+                  ...c,
+                  inPoint: inPoint ?? c.inPoint,
+                  duration: duration ?? c.duration,
+                }
+              : c
           ),
-          updatedAt: new Date().toISOString(),
         },
-      })
-    } catch (error) {
-      console.error("Failed to add shot:", error)
-    }
-  },
-
-  updateShot: async (sceneId, shotId, data) => {
-    const { project } = get()
-    if (!project) return
-
-    // Update local state immediately
-    set({
-      project: {
-        ...project,
-        scenes: project.scenes.map((s) =>
-          s.id === sceneId
-            ? {
-                ...s,
-                shots: s.shots.map((shot) => (shot.id === shotId ? { ...shot, ...data } : shot)),
-              }
-            : s
-        ),
         updatedAt: new Date().toISOString(),
       },
     })
 
-    // Persist to database
     try {
-      const dbData: Record<string, unknown> = {}
-      if (data.name !== undefined) dbData.name = data.name
-      if (data.description !== undefined) dbData.description = data.description
-      if (data.duration !== undefined) dbData.duration = data.duration
-      if (data.order !== undefined) dbData.sort_order = data.order
-      if (data.notes !== undefined) dbData.notes = data.notes
-      if (data.shotType !== undefined) dbData.shot_type = data.shotType
-      // Asset linking (new approach)
-      if (data.imageAssetId !== undefined) dbData.image_asset_id = data.imageAssetId
-      if (data.videoAssetId !== undefined) dbData.video_asset_id = data.videoAssetId
-      if (data.audioAssetId !== undefined) dbData.audio_asset_id = data.audioAssetId
-      // Legacy media fields
-      if (data.media !== undefined) {
-        dbData.media_type = data.media?.type
-        dbData.media_url = data.media?.url
-        dbData.media_thumbnail_url = data.media?.thumbnailUrl
-      }
-
-      await updateShotDb(shotId, dbData)
+      await trimClipDb(clipId, inPoint, duration)
     } catch (error) {
-      console.error("Failed to update shot:", error)
+      console.error("Failed to trim clip:", error)
+      await get().loadProject(project.id)
     }
   },
 
-  removeShot: async (sceneId, shotId) => {
+  splitClip: async (clipId, splitAt) => {
     const { project } = get()
-    if (!project) return
+    if (!project) throw new Error("No project loaded")
 
-    // Update local state immediately
+    const { original, newClip } = await splitClipDb(clipId, splitAt)
+
     set({
       project: {
         ...project,
-        scenes: project.scenes.map((s) =>
-          s.id === sceneId ? { ...s, shots: s.shots.filter((shot) => shot.id !== shotId) } : s
-        ),
+        timeline: {
+          clips: project.timeline.clips
+            .map((c) => (c.id === clipId ? original : c))
+            .concat([newClip])
+            .sort((a, b) => a.startTime - b.startTime),
+        },
         updatedAt: new Date().toISOString(),
       },
     })
 
-    // Delete from database
-    try {
-      await deleteShot(shotId)
-    } catch (error) {
-      console.error("Failed to delete shot:", error)
-    }
+    return newClip.id
   },
 
-  reorderShots: async (sceneId, shotIds) => {
-    const { project } = get()
+  deleteClip: async (clipId) => {
+    const { project, selectedClipId } = get()
     if (!project) return
 
-    // Update local state immediately
+    // Clear selection if deleting selected clip
+    if (selectedClipId === clipId) {
+      set({ selectedClipId: null })
+    }
+
+    // Optimistic update
     set({
       project: {
         ...project,
-        scenes: project.scenes.map((s) => {
-          if (s.id !== sceneId) return s
-          const reordered = shotIds
-            .map((id, index) => {
-              const shot = s.shots.find((sh) => sh.id === id)
-              return shot ? { ...shot, order: index } : null
-            })
-            .filter(Boolean) as Shot[]
-          return { ...s, shots: reordered }
-        }),
+        timeline: {
+          clips: project.timeline.clips.filter((c) => c.id !== clipId),
+        },
         updatedAt: new Date().toISOString(),
       },
     })
 
-    // Persist to database
     try {
-      for (let i = 0; i < shotIds.length; i++) {
-        await updateShotDb(shotIds[i], { sort_order: i })
-      }
+      await deleteClipDb(clipId)
     } catch (error) {
-      console.error("Failed to reorder shots:", error)
+      console.error("Failed to delete clip:", error)
+      await get().loadProject(project.id)
     }
   },
+
+  setClipVolume: async (clipId, volume) => {
+    const { project } = get()
+    if (!project) return
+
+    set({
+      project: {
+        ...project,
+        timeline: {
+          clips: project.timeline.clips.map((c) =>
+            c.id === clipId ? { ...c, volume } : c
+          ),
+        },
+        updatedAt: new Date().toISOString(),
+      },
+    })
+
+    try {
+      await setClipVolumeDb(clipId, volume)
+    } catch (error) {
+      console.error("Failed to set clip volume:", error)
+    }
+  },
+
+  setClipAnimation: async (clipId, animation) => {
+    const { project } = get()
+    if (!project) return
+
+    set({
+      project: {
+        ...project,
+        timeline: {
+          clips: project.timeline.clips.map((c) =>
+            c.id === clipId ? { ...c, animation } : c
+          ),
+        },
+        updatedAt: new Date().toISOString(),
+      },
+    })
+
+    try {
+      await setClipAnimationDb(clipId, animation)
+    } catch (error) {
+      console.error("Failed to set clip animation:", error)
+    }
+  },
+
+  // ============================================
+  // STORYBOARD
+  // ============================================
 
   addStoryboardCard: async (card) => {
     const { project } = get()
     if (!project) return
 
     try {
-      // Create in database first
       const dbCard = await createStoryboardCard({
         project_id: project.id,
         title: card.title,
@@ -1158,7 +925,6 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
         sort_order: card.order,
       })
 
-      // Then update local state
       const newCard: StoryboardCard = {
         ...card,
         id: dbCard.id,
@@ -1180,7 +946,6 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
     const { project } = get()
     if (!project) return
 
-    // Update local state immediately
     set({
       project: {
         ...project,
@@ -1191,7 +956,6 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
       },
     })
 
-    // Persist to database
     try {
       const dbData: Record<string, unknown> = {}
       if (data.title !== undefined) dbData.title = data.title
@@ -1210,7 +974,6 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
     const { project } = get()
     if (!project) return
 
-    // Update local state immediately
     set({
       project: {
         ...project,
@@ -1219,7 +982,6 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
       },
     })
 
-    // Delete from database
     try {
       await deleteStoryboardCard(cardId)
     } catch (error) {
@@ -1227,11 +989,14 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
     }
   },
 
+  // ============================================
+  // SETTINGS
+  // ============================================
+
   updateExportSettings: async (settings) => {
     const { project } = get()
     if (!project) return
 
-    // Update local state immediately
     const updatedSettings = { ...project.exportSettings, ...settings }
     set({
       project: {
@@ -1241,7 +1006,6 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
       },
     })
 
-    // Persist to database
     try {
       const dbData: Record<string, unknown> = {}
       if (settings.resolution !== undefined) dbData.resolution = settings.resolution
@@ -1252,7 +1016,6 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
       await updateExportSettingsDb(project.id, dbData)
     } catch (error) {
       console.error("Failed to update export settings:", error)
-      // Try creating if doesn't exist
       try {
         await createExportSettings({
           project_id: project.id,
@@ -1262,7 +1025,7 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
           quality: updatedSettings.quality,
         })
       } catch {
-        // Already exists or other error
+        // Already exists
       }
     }
   },
@@ -1271,7 +1034,6 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
     const { project } = get()
     if (!project) return
 
-    // Update local state immediately
     const updatedComposition = { ...project.composition, ...data }
     set({
       project: {
@@ -1281,7 +1043,6 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
       },
     })
 
-    // Persist to database
     try {
       const dbData: Record<string, unknown> = {}
       if (data.titleCard !== undefined) dbData.title_card = data.titleCard
@@ -1296,18 +1057,38 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
     }
   },
 
-  // Full project save - saves all data to database
+  updateScript: async (data) => {
+    const { project } = get()
+    if (!project) return
+
+    const updatedScript = { ...project.script, ...data }
+    set({
+      project: {
+        ...project,
+        script: updatedScript,
+        updatedAt: new Date().toISOString(),
+      },
+    })
+
+    try {
+      // Persist to database - store script in project_briefs for now
+      await updateProjectBrief(project.id, {
+        script_title: updatedScript.title,
+        script_subtitle: updatedScript.subtitle,
+        script_content: updatedScript.content,
+      })
+    } catch (error) {
+      console.error("Failed to update script:", error)
+    }
+  },
+
   saveAll: async () => {
     const { project } = get()
     if (!project) return
 
     try {
-      // Save project name
-      await updateProject(project.id, {
-        name: project.name,
-      })
+      await updateProject(project.id, { name: project.name })
 
-      // Save brief
       const briefData: Record<string, unknown> = {
         name: project.brief.name,
         description: project.brief.description,
@@ -1326,7 +1107,6 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
         await createProjectBrief({ project_id: project.id, name: project.brief.name || "Untitled", ...briefData })
       }
 
-      // Save mood board
       const moodBoardData = {
         images: project.moodBoard.images as unknown as Json,
         colors: project.moodBoard.colors as unknown as Json,
@@ -1340,10 +1120,6 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
         await createMoodBoard({ project_id: project.id, ...moodBoardData })
       }
 
-      // Note: Storyboard cards are saved individually via updateStoryboardCard
-      // The legacy storyboard save has been removed since Project uses storyboardCards
-
-      // Save composition
       await upsertProjectComposition(project.id, {
         title_card: project.composition.titleCard as unknown as Json,
         outro_card: project.composition.outroCard as unknown as Json,
@@ -1359,3 +1135,24 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
     }
   },
 }))
+
+// ============================================
+// HELPER: Get clip with its asset data
+// ============================================
+
+export function getClipWithAsset(
+  clip: TimelineClip,
+  assets: ProjectAsset[]
+): TimelineClipWithAsset {
+  return {
+    ...clip,
+    asset: assets.find((a) => a.id === clip.assetId),
+  }
+}
+
+export function getClipsWithAssets(
+  clips: TimelineClip[],
+  assets: ProjectAsset[]
+): TimelineClipWithAsset[] {
+  return clips.map((clip) => getClipWithAsset(clip, assets))
+}
