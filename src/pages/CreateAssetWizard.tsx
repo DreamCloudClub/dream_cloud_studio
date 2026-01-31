@@ -11,6 +11,7 @@ import studioLogo from "@/assets/images/studio_logo.png"
 import {
   TypeStep,
   PromptTypeStep,
+  AnimationGenerateStep,
   SaveStep,
 } from "@/components/create-asset"
 
@@ -47,8 +48,12 @@ export function CreateAssetWizard() {
     }
   }, [initialType]) // Re-run when type param changes
 
-  // When we reach the generate step, redirect to the CreatorPage
+  // When we reach the generate step, redirect to the CreatorPage (except for animation)
   useEffect(() => {
+    // Animation uses AnimationGenerateStep directly in wizard, not CreatorPage
+    if (assetType === "animation") {
+      return
+    }
     if (currentStep === "generate" && assetType && promptType) {
       const url = projectId
         ? `/create/${assetType}/${promptType}?projectId=${projectId}`
@@ -63,6 +68,13 @@ export function CreateAssetWizard() {
         return <TypeStep />
       case "promptType":
         return <PromptTypeStep />
+      case "generate":
+        // Animation uses its own generate step within the wizard
+        if (assetType === "animation") {
+          return <AnimationGenerateStep />
+        }
+        // Other asset types redirect to CreatorPage (handled by useEffect)
+        return null
       case "save":
         return <SaveStep />
       default:

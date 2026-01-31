@@ -1,4 +1,4 @@
-import { ChevronLeft, ChevronRight, Type, ImagePlus, Paintbrush, Expand, Maximize, RefreshCw, ArrowRight, Mic2, Volume2 } from "lucide-react"
+import { ChevronLeft, ChevronRight, Type, ImagePlus, Paintbrush, Expand, Maximize, RefreshCw, ArrowRight, Mic2, Volume2, Wand2, LayoutTemplate } from "lucide-react"
 import { cn } from "@/lib/utils"
 import {
   useAssetWizardStore,
@@ -64,6 +64,8 @@ const PROMPT_TYPE_ICONS: Record<string, React.ElementType> = {
   "text-to-speech": Type,
   "voice-to-voice": Mic2,
   "music-sfx": Volume2,
+  "text-to-animation": Wand2,
+  "template": LayoutTemplate,
 }
 
 export function PromptTypeStep() {
@@ -92,6 +94,7 @@ export function PromptTypeStep() {
       case "image": return "Select Image Generation Type"
       case "video": return "Select Video Generation Type"
       case "audio": return "Select Audio Generation Type"
+      case "animation": return "Select Animation Type"
       default: return "Select Generation Type"
     }
   }

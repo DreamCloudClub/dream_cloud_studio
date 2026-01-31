@@ -50,6 +50,7 @@ const TYPE_ICONS: Record<AssetType, React.ElementType> = {
   image: Image,
   video: Film,
   audio: Volume2,
+  animation: Sparkles,
 }
 
 export function UploadAssetModal({ isOpen, onClose, onSuccess }: UploadAssetModalProps) {

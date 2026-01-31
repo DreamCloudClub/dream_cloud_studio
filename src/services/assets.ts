@@ -660,3 +660,61 @@ export async function getAllAssets(userId: string): Promise<Asset[]> {
   if (error) throw error
   return data as Asset[]
 }
+
+// ============================================
+// ANIMATION ASSET CREATION
+// ============================================
+
+export interface AnimationAssetOptions {
+  userId: string
+  projectId?: string
+  name: string
+  category?: AssetCategory
+  userDescription: string
+  animationConfig: Json  // The Remotion AnimationConfig
+  duration?: number
+}
+
+/**
+ * Create an animation asset that stores the Remotion AnimationConfig
+ * Animations are rendered on-the-fly by Remotion, so we don't store a URL
+ */
+export async function createAnimationAsset(options: AnimationAssetOptions): Promise<Asset> {
+  const {
+    userId,
+    projectId,
+    name,
+    category,
+    userDescription,
+    animationConfig,
+    duration,
+  } = options
+
+  // Generate a new asset ID
+  const assetId = await generateAssetId()
+
+  // Create the asset record with animation config in generation_settings
+  const assetInsert: AssetInsert = {
+    id: assetId,
+    user_id: userId,
+    project_id: projectId || null,
+    name,
+    type: 'animation',
+    category: category || null,
+    url: null,  // Animation assets don't have a pre-rendered URL
+    duration: duration || null,
+    file_size: null,
+    metadata: {
+      remotion: true,  // Flag to indicate this is a Remotion animation
+    },
+    storage_type: 'cloud',  // Config is stored in database
+    local_path: null,
+    user_description: userDescription,
+    ai_prompt: userDescription,
+    generation_model: 'remotion',
+    generation_settings: animationConfig,  // Store the full AnimationConfig here
+  }
+
+  const asset = await createAsset(assetInsert)
+  return asset
+}

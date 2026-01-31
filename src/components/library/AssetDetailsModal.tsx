@@ -205,6 +205,7 @@ export function AssetDetailsModal({
         image: "png",
         video: "mp4",
         audio: "mp3",
+        animation: "json",  // Animation configs are JSON
       }
       const extension = extensions[asset.type]
       const filename = `${asset.name.replace(/[^a-zA-Z0-9]/g, "_")}.${extension}`

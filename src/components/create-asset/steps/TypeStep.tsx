@@ -74,7 +74,7 @@ const ASSET_TYPES: {
     label: "Animation",
     description: "Create text animations, motion graphics, and animated overlays",
     icon: Sparkles,
-    available: false,
+    available: true,
   },
 ]
 

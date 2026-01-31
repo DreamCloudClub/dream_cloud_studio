@@ -86,7 +86,7 @@ export function TimelineTrack({
           isDroppingAsset
             ? "bg-sky-500/20 border-2 border-dashed border-sky-500/50"
             : isDragTarget
-            ? "bg-emerald-500/20 border-2 border-dashed border-emerald-500/50"
+            ? "bg-sky-500/20 border-2 border-dashed border-sky-500/50"
             : "bg-zinc-800/50 hover:bg-zinc-800/70"
         )}
         style={{

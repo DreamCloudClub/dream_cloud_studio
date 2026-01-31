@@ -30,7 +30,7 @@ import { HeaderActions } from "@/components/shared"
 import { DashboardNav } from "@/components/dashboard"
 import studioLogo from "@/assets/images/studio_logo.png"
 import { ReferenceModal } from "@/components/create-asset/ReferenceModal"
-import { generateImages } from "@/services/replicate"
+import { generateImages, generateVideo } from "@/services/replicate"
 import { getAssetDisplayUrl } from "@/services/localStorage"
 import type { Asset, AssetCategory } from "@/types/database"
 import {
@@ -229,6 +229,23 @@ const TYPE_COLORS: Record<string, { bg: string; text: string; border: string; ac
   animation: { bg: "bg-emerald-500/10", text: "text-emerald-400", border: "border-emerald-500/30", accent: "bg-emerald-500" },
 }
 
+// Video generation options
+const VIDEO_MODELS = [
+  { value: "kling", label: "Kling v2.1", description: "Best quality" },
+  { value: "minimax", label: "Minimax", description: "Fast" },
+]
+
+const VIDEO_DURATIONS = [
+  { value: "5", label: "5 seconds" },
+  { value: "10", label: "10 seconds" },
+]
+
+const VIDEO_ASPECT_RATIOS = [
+  { value: "16:9", label: "Landscape (16:9)" },
+  { value: "9:16", label: "Portrait (9:16)" },
+  { value: "1:1", label: "Square (1:1)" },
+]
+
 // ============================================
 // Auto-growing textarea hook
 // ============================================
@@ -299,9 +316,19 @@ export function CreatorPage() {
   // Selective editing specific
   const [referenceStrength, setReferenceStrength] = useState(0.8)
 
-  // Base image (for img2img, inpaint)
+  // Base image (for img2img, inpaint, image-to-video)
   const [baseImage, setBaseImage] = useState<Asset | null>(null)
   const [baseImageUrl, setBaseImageUrl] = useState<string | null>(null)
+
+  // Video-specific state
+  const [videoModel, setVideoModel] = useState<"kling" | "minimax">("kling")
+  const [videoDuration, setVideoDuration] = useState<5 | 10>(5)
+  const [videoAspectRatio, setVideoAspectRatio] = useState("16:9")
+
+  // Check if this is a video type
+  const isVideo = type === "video"
+  const isImageToVideo = isVideo && subMode === "image-to-video"
+  const isTextToVideo = isVideo && subMode === "text-to-video"
 
   // Reference images (for selective-edit)
   const [referenceImages, setReferenceImages] = useState<ReferenceImage[]>([])
@@ -397,6 +424,12 @@ export function CreatorPage() {
       return
     }
 
+    // Validate base image for image-to-video
+    if (isImageToVideo && !baseImage) {
+      setError("Please select a source image for video generation")
+      return
+    }
+
     if (caps.requires_base_image && !baseImage) {
       setError("Please select a base image")
       return
@@ -413,45 +446,75 @@ export function CreatorPage() {
 
     const effectivePrompt = enhancedPrompt.trim() || description.trim()
     const batchId = `batch-${Date.now()}`
-    const numOutputs = parseInt(outputCount)
 
     try {
-      // Build reference URLs
-      let referenceUrls: string[] = []
-      if (caps.allows_reference_images && referenceImages.length > 0) {
-        referenceUrls = referenceImages
-          .map(r => getAssetDisplayUrl(r.asset))
-          .filter(Boolean) as string[]
+      // Handle video generation
+      if (isVideo) {
+        const sourceImageUrl = baseImage ? getAssetDisplayUrl(baseImage) : undefined
+
+        const videoUrl = await generateVideo({
+          imageUrl: sourceImageUrl,
+          prompt: effectivePrompt,
+          duration: videoDuration,
+          aspectRatio: videoAspectRatio as "16:9" | "9:16" | "1:1",
+          model: videoModel,
+        })
+
+        const newBatch: GeneratedBatch = {
+          id: batchId,
+          assets: [{
+            id: `${batchId}-0`,
+            url: videoUrl,
+            selected: false,
+            isVideo: true,
+          }],
+          prompt: effectivePrompt,
+          timestamp: Date.now(),
+          refinement: "",
+        }
+
+        setBatches(prev => [...prev, newBatch])
+      } else {
+        // Handle image generation
+        const numOutputs = parseInt(outputCount)
+
+        // Build reference URLs
+        let referenceUrls: string[] = []
+        if (caps.allows_reference_images && referenceImages.length > 0) {
+          referenceUrls = referenceImages
+            .map(r => getAssetDisplayUrl(r.asset))
+            .filter(Boolean) as string[]
+        }
+
+        // Get aspect ratio dimensions
+        const selectedAspect = ASPECT_RATIOS.find(r => r.id === aspectRatio) || ASPECT_RATIOS[0]
+
+        const urls = await generateImages({
+          prompt: effectivePrompt,
+          negativePrompt: caps.supports_negative_prompt ? negativePrompt : undefined,
+          style: caps.supports_style_preset && stylePreset ? stylePreset : undefined,
+          referenceImageUrls: referenceUrls.length > 0 ? referenceUrls : undefined,
+          model: model as "flux-pro" | "gpt" | "sdxl",
+          numOutputs,
+          width: selectedAspect.width,
+          height: selectedAspect.height,
+        })
+
+        const newBatch: GeneratedBatch = {
+          id: batchId,
+          assets: urls.map((url, i) => ({
+            id: `${batchId}-${i}`,
+            url,
+            selected: false,
+            isVideo: false,
+          })),
+          prompt: effectivePrompt,
+          timestamp: Date.now(),
+          refinement: "",
+        }
+
+        setBatches(prev => [...prev, newBatch])
       }
-
-      // Get aspect ratio dimensions
-      const selectedAspect = ASPECT_RATIOS.find(r => r.id === aspectRatio) || ASPECT_RATIOS[0]
-
-      const urls = await generateImages({
-        prompt: effectivePrompt,
-        negativePrompt: caps.supports_negative_prompt ? negativePrompt : undefined,
-        style: caps.supports_style_preset && stylePreset ? stylePreset : undefined,
-        referenceImageUrls: referenceUrls.length > 0 ? referenceUrls : undefined,
-        model: model as "flux-pro" | "gpt" | "sdxl",
-        numOutputs,
-        width: selectedAspect.width,
-        height: selectedAspect.height,
-      })
-
-      const newBatch: GeneratedBatch = {
-        id: batchId,
-        assets: urls.map((url, i) => ({
-          id: `${batchId}-${i}`,
-          url,
-          selected: false,
-          isVideo: false,
-        })),
-        prompt: effectivePrompt,
-        timestamp: Date.now(),
-        refinement: "",
-      }
-
-      setBatches(prev => [...prev, newBatch])
     } catch (err) {
       console.error("Generation error:", err)
       setError(err instanceof Error ? err.message : "Generation failed")
@@ -677,6 +740,47 @@ export function CreatorPage() {
             </div>
 
             {/* ============================================ */}
+            {/* VIDEO SOURCE IMAGE (image-to-video) */}
+            {/* ============================================ */}
+            {isImageToVideo && (
+              <div>
+                <label className="block text-sm font-medium text-zinc-300 mb-2">
+                  Source Image <span className="text-red-400">*</span>
+                </label>
+                {baseImage ? (
+                  <div className="relative w-full aspect-video rounded-xl overflow-hidden border-2 border-red-500/30 bg-zinc-800 group">
+                    <img
+                      src={baseImageUrl || getAssetDisplayUrl(baseImage)}
+                      alt={baseImage.name}
+                      className="w-full h-full object-contain"
+                    />
+                    <button
+                      onClick={() => {
+                        setBaseImage(null)
+                        setBaseImageUrl(null)
+                      }}
+                      className="absolute top-2 right-2 p-2 rounded-lg bg-black/70 hover:bg-red-500 text-white opacity-0 group-hover:opacity-100 transition-all"
+                    >
+                      <X className="w-4 h-4" />
+                    </button>
+                  </div>
+                ) : (
+                  <button
+                    onClick={() => {
+                      setReferenceModalTarget("base")
+                      setShowReferenceModal(true)
+                    }}
+                    className="w-full aspect-video rounded-xl border-2 border-dashed border-red-500/30 hover:border-red-500 hover:bg-red-500/5 flex flex-col items-center justify-center gap-3 text-zinc-500 hover:text-red-400 transition-all"
+                  >
+                    <ImagePlus className="w-10 h-10" />
+                    <span className="text-sm font-medium">Select Source Image</span>
+                    <span className="text-xs text-zinc-600">This image will be animated into video</span>
+                  </button>
+                )}
+              </div>
+            )}
+
+            {/* ============================================ */}
             {/* BASE IMAGE (img2img, inpaint) */}
             {/* ============================================ */}
             {caps.requires_base_image && (
@@ -715,7 +819,7 @@ export function CreatorPage() {
                       setReferenceModalTarget("base")
                       setShowReferenceModal(true)
                     }}
-                    className="w-full aspect-video rounded-xl border-2 border-dashed border-zinc-700 hover:border-sky-500 hover:bg-sky-500/5 flex flex-col items-center justify-center gap-3 text-zinc-500 hover:text-sky-400 transition-all"
+                    className="w-full aspect-video rounded-xl border-2 border-dashed border-zinc-700 hover:border-orange-500 hover:bg-orange-500/5 flex flex-col items-center justify-center gap-3 text-zinc-500 hover:text-orange-400 transition-all"
                   >
                     <Upload className="w-10 h-10" />
                     <span className="text-sm font-medium">Select Base Image</span>
@@ -785,119 +889,153 @@ export function CreatorPage() {
             <div className="space-y-4">
               <h3 className="text-sm font-medium text-zinc-400">Parameters</h3>
 
-              <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
-                {/* Model - Always shown */}
-                <div>
-                  <label className="block text-xs font-medium text-zinc-400 mb-1.5">Model</label>
-                  <CustomDropdown
-                    value={model}
-                    onChange={setModel}
-                    options={IMAGE_MODELS.map(m => ({
-                      value: m.id,
-                      label: m.label,
-                      description: m.description,
-                    }))}
-                  />
-                </div>
-
-                {/* Aspect Ratio */}
-                {caps.supports_aspect_ratio && (
+              {isVideo ? (
+                /* Video Parameters */
+                <div className="grid grid-cols-3 gap-3">
+                  <div>
+                    <label className="block text-xs font-medium text-zinc-400 mb-1.5">Model</label>
+                    <CustomDropdown
+                      value={videoModel}
+                      onChange={(val) => setVideoModel(val as "kling" | "minimax")}
+                      options={VIDEO_MODELS}
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-zinc-400 mb-1.5">Duration</label>
+                    <CustomDropdown
+                      value={String(videoDuration)}
+                      onChange={(val) => setVideoDuration(Number(val) as 5 | 10)}
+                      options={VIDEO_DURATIONS}
+                    />
+                  </div>
                   <div>
                     <label className="block text-xs font-medium text-zinc-400 mb-1.5">Aspect Ratio</label>
                     <CustomDropdown
-                      value={aspectRatio}
-                      onChange={setAspectRatio}
-                      options={ASPECT_RATIOS.map(r => ({ value: r.id, label: r.label }))}
+                      value={videoAspectRatio}
+                      onChange={setVideoAspectRatio}
+                      options={VIDEO_ASPECT_RATIOS}
                     />
                   </div>
-                )}
-
-                {/* Output Count */}
-                {caps.supports_output_count && (
-                  <div>
-                    <label className="block text-xs font-medium text-zinc-400 mb-1.5">Output Count</label>
-                    <CustomDropdown
-                      value={outputCount}
-                      onChange={setOutputCount}
-                      options={OUTPUT_COUNTS.map(o => ({ value: o.id, label: o.label }))}
-                    />
-                  </div>
-                )}
-
-                {/* Style Preset */}
-                {caps.supports_style_preset && (
-                  <div>
-                    <label className="block text-xs font-medium text-zinc-400 mb-1.5">Style</label>
-                    <CustomDropdown
-                      value={stylePreset}
-                      onChange={setStylePreset}
-                      placeholder="None"
-                      options={[
-                        { value: "", label: "None" },
-                        ...STYLE_PRESETS.map(s => ({ value: s.id, label: s.label }))
-                      ]}
-                    />
-                  </div>
-                )}
-
-                {/* Seed */}
-                {caps.supports_seed && (
-                  <div>
-                    <label className="block text-xs font-medium text-zinc-400 mb-1.5">Seed</label>
-                    <input
-                      type="text"
-                      value={seed}
-                      onChange={(e) => setSeed(e.target.value)}
-                      placeholder="Random"
-                      className="w-full px-3 py-2 bg-zinc-900/80 border border-zinc-700/50 rounded-lg text-zinc-100 placeholder:text-zinc-500 focus:outline-none focus:border-sky-500 text-sm"
-                    />
-                  </div>
-                )}
-              </div>
-
-              {/* Strength Slider (img2img, inpaint) */}
-              {caps.supports_strength && (
-                <div>
-                  <label className="block text-xs font-medium text-zinc-400 mb-1.5">
-                    Strength / Denoise
-                    <span className="text-zinc-500 ml-2 font-normal">({(strength * 100).toFixed(0)}%)</span>
-                  </label>
-                  <Slider
-                    value={strength}
-                    onChange={setStrength}
-                    min={0.1}
-                    max={1}
-                    step={0.05}
-                    showValue={false}
-                  />
-                  <p className="text-xs text-zinc-500 mt-1">
-                    Lower = closer to original, Higher = more transformation
-                  </p>
                 </div>
-              )}
+              ) : (
+                /* Image Parameters */
+                <>
+                  <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+                    {/* Model - Always shown */}
+                    <div>
+                      <label className="block text-xs font-medium text-zinc-400 mb-1.5">Model</label>
+                      <CustomDropdown
+                        value={model}
+                        onChange={setModel}
+                        options={IMAGE_MODELS.map(m => ({
+                          value: m.id,
+                          label: m.label,
+                          description: m.description,
+                        }))}
+                      />
+                    </div>
 
-              {/* Reference Strength (selective-edit) */}
-              {caps.supports_reference_strength && referenceImages.length > 0 && (
-                <div>
-                  <label className="block text-xs font-medium text-zinc-400 mb-1.5">
-                    Reference Strength
-                    <span className="text-zinc-500 ml-2 font-normal">({(referenceStrength * 100).toFixed(0)}%)</span>
-                  </label>
-                  <Slider
-                    value={referenceStrength}
-                    onChange={setReferenceStrength}
-                    min={0.1}
-                    max={1}
-                    step={0.05}
-                    showValue={false}
-                  />
-                </div>
+                    {/* Aspect Ratio */}
+                    {caps.supports_aspect_ratio && (
+                      <div>
+                        <label className="block text-xs font-medium text-zinc-400 mb-1.5">Aspect Ratio</label>
+                        <CustomDropdown
+                          value={aspectRatio}
+                          onChange={setAspectRatio}
+                          options={ASPECT_RATIOS.map(r => ({ value: r.id, label: r.label }))}
+                        />
+                      </div>
+                    )}
+
+                    {/* Output Count */}
+                    {caps.supports_output_count && (
+                      <div>
+                        <label className="block text-xs font-medium text-zinc-400 mb-1.5">Output Count</label>
+                        <CustomDropdown
+                          value={outputCount}
+                          onChange={setOutputCount}
+                          options={OUTPUT_COUNTS.map(o => ({ value: o.id, label: o.label }))}
+                        />
+                      </div>
+                    )}
+
+                    {/* Style Preset */}
+                    {caps.supports_style_preset && (
+                      <div>
+                        <label className="block text-xs font-medium text-zinc-400 mb-1.5">Style</label>
+                        <CustomDropdown
+                          value={stylePreset}
+                          onChange={setStylePreset}
+                          placeholder="None"
+                          options={[
+                            { value: "", label: "None" },
+                            ...STYLE_PRESETS.map(s => ({ value: s.id, label: s.label }))
+                          ]}
+                        />
+                      </div>
+                    )}
+
+                    {/* Seed */}
+                    {caps.supports_seed && (
+                      <div>
+                        <label className="block text-xs font-medium text-zinc-400 mb-1.5">Seed</label>
+                        <input
+                          type="text"
+                          value={seed}
+                          onChange={(e) => setSeed(e.target.value)}
+                          placeholder="Random"
+                          className="w-full px-3 py-2 bg-zinc-900/80 border border-zinc-700/50 rounded-lg text-zinc-100 placeholder:text-zinc-500 focus:outline-none focus:border-sky-500 text-sm"
+                        />
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Strength Slider (img2img, inpaint) */}
+                  {caps.supports_strength && (
+                    <div>
+                      <label className="block text-xs font-medium text-zinc-400 mb-1.5">
+                        Strength / Denoise
+                        <span className="text-zinc-500 ml-2 font-normal">({(strength * 100).toFixed(0)}%)</span>
+                      </label>
+                      <Slider
+                        value={strength}
+                        onChange={setStrength}
+                        min={0.1}
+                        max={1}
+                        step={0.05}
+                        showValue={false}
+                      />
+                      <p className="text-xs text-zinc-500 mt-1">
+                        Lower = closer to original, Higher = more transformation
+                      </p>
+                    </div>
+                  )}
+
+                  {/* Reference Strength (selective-edit) */}
+                  {caps.supports_reference_strength && referenceImages.length > 0 && (
+                    <div>
+                      <label className="block text-xs font-medium text-zinc-400 mb-1.5">
+                        Reference Strength
+                        <span className="text-zinc-500 ml-2 font-normal">({(referenceStrength * 100).toFixed(0)}%)</span>
+                      </label>
+                      <Slider
+                        value={referenceStrength}
+                        onChange={setReferenceStrength}
+                        min={0.1}
+                        max={1}
+                        step={0.05}
+                        showValue={false}
+                      />
+                    </div>
+                  )}
+                </>
               )}
             </div>
 
             {/* ============================================ */}
-            {/* ADVANCED OPTIONS */}
+            {/* ADVANCED OPTIONS (images only) */}
             {/* ============================================ */}
+            {!isVideo && (
             <div>
               <button
                 onClick={() => setShowAdvanced(!showAdvanced)}
@@ -993,6 +1131,7 @@ export function CreatorPage() {
                 </div>
               )}
             </div>
+            )}
 
             {/* Error */}
             {error && (
@@ -1040,7 +1179,11 @@ export function CreatorPage() {
                           )}
                           onClick={() => handleToggleSelection(batch.id, asset.id)}
                         >
-                          <img src={asset.url} alt="Generated" className="w-full h-auto block" />
+                          {asset.isVideo ? (
+                            <video src={asset.url} controls className="w-full h-auto block" />
+                          ) : (
+                            <img src={asset.url} alt="Generated" className="w-full h-auto block" />
+                          )}
                           <div className="absolute inset-0 bg-black/0 group-hover:bg-black/30 transition-all pointer-events-none" />
                           <div className="absolute top-2 left-2 opacity-0 group-hover:opacity-100 transition-opacity flex gap-1">
                             <button

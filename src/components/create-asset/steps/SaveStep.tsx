@@ -4,7 +4,7 @@ import { useNavigate, useSearchParams } from "react-router-dom"
 import { cn } from "@/lib/utils"
 import { useAssetWizardStore, AssetCategory as WizardCategory } from "@/state/assetWizardStore"
 import { useAuth } from "@/contexts/AuthContext"
-import { createGeneratedAsset } from "@/services/assets"
+import { createGeneratedAsset, createAnimationAsset } from "@/services/assets"
 import type { AssetCategory as DBCategory } from "@/types/database"
 
 // Asset categories grouped by type
@@ -64,6 +64,8 @@ export function SaveStep({ onComplete }: SaveStepProps) {
     aiPrompt,
     stylePreset,
     generatedAssets,
+    animationConfig,
+    assetName,
     resetWizard,
     prevStep,
   } = useAssetWizardStore()
@@ -84,8 +86,9 @@ export function SaveStep({ onComplete }: SaveStepProps) {
       (acc, asset, i) => ({
         ...acc,
         [asset.id]: {
-          name: selectedAssets.length === 1 ? "Untitled Asset" : `Asset ${i + 1}`,
-          description: "",
+          // Use assetName from store if available (e.g., from animation generation)
+          name: assetName || (selectedAssets.length === 1 ? "Untitled Asset" : `Asset ${i + 1}`),
+          description: userDescription || "",
         },
       }),
       {}
@@ -127,29 +130,47 @@ export function SaveStep({ onComplete }: SaveStepProps) {
     setSaveProgress({ current: 0, total: selectedAssets.length })
 
     try {
-      for (let i = 0; i < selectedAssets.length; i++) {
-        const asset = selectedAssets[i]
-        setSaveProgress({ current: i + 1, total: selectedAssets.length })
+      // Handle animation assets specially - they use animationConfig instead of URLs
+      if (assetType === "animation" && animationConfig) {
+        setSaveProgress({ current: 1, total: 1 })
 
-        const data = assetData[asset.id]
+        const data = assetData[selectedAssets[0]?.id]
 
-        await createGeneratedAsset({
+        await createAnimationAsset({
           userId: user.id,
-          name: data?.name || `${category} asset`,
-          type: assetType!,
+          projectId: projectId || undefined,
+          name: data?.name || assetName || "Animation",
           category: category as DBCategory,
-          sourceUrl: asset.url,
           userDescription: data?.description || userDescription,
-          aiPrompt: aiPrompt || userDescription,
-          generationModel: assetType === "audio"
-            ? (category === "music" ? "replicate_musicgen" : "elevenlabs")
-            : assetType === "video" ? "kling-v2.1" : "replicate_flux",
-          generationSettings: {
-            style: stylePreset,
-            promptType: promptType,
-          },
-          duration: asset.duration,
+          animationConfig: animationConfig as any,
+          duration: animationConfig.duration,
         })
+      } else {
+        // Standard assets (image, video, audio) with URLs
+        for (let i = 0; i < selectedAssets.length; i++) {
+          const asset = selectedAssets[i]
+          setSaveProgress({ current: i + 1, total: selectedAssets.length })
+
+          const data = assetData[asset.id]
+
+          await createGeneratedAsset({
+            userId: user.id,
+            name: data?.name || `${category} asset`,
+            type: assetType!,
+            category: category as DBCategory,
+            sourceUrl: asset.url,
+            userDescription: data?.description || userDescription,
+            aiPrompt: aiPrompt || userDescription,
+            generationModel: assetType === "audio"
+              ? (category === "music" ? "replicate_musicgen" : "elevenlabs")
+              : assetType === "video" ? "kling-v2.1" : "replicate_flux",
+            generationSettings: {
+              style: stylePreset,
+              promptType: promptType,
+            },
+            duration: asset.duration,
+          })
+        }
       }
 
       resetWizard()
@@ -270,6 +291,12 @@ export function SaveStep({ onComplete }: SaveStepProps) {
                       preload="metadata"
                       muted
                     />
+                  ) : assetType === "animation" && animationConfig ? (
+                    <div className="w-full h-full flex flex-col items-center justify-center bg-emerald-500/10">
+                      <Sparkles className="w-6 h-6 text-emerald-400 mb-1" />
+                      <div className="text-xs text-emerald-400">{animationConfig.duration}s</div>
+                      <div className="text-xs text-zinc-500">{animationConfig.layers.length} layer{animationConfig.layers.length !== 1 ? 's' : ''}</div>
+                    </div>
                   ) : (
                     <div className="w-full h-full flex items-center justify-center">
                       {assetType === "audio" ? (

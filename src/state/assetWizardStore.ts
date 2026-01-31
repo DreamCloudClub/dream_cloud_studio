@@ -1,5 +1,6 @@
 import { create } from "zustand"
 import type { Asset } from "@/types/database"
+import type { AnimationConfig } from "@/remotion/AnimationComposition"
 
 export type AssetType = "image" | "video" | "audio" | "animation"
 
@@ -7,7 +8,8 @@ export type AssetType = "image" | "video" | "audio" | "animation"
 export type ImagePromptType = "text-to-image" | "image-to-image" | "inpaint" | "selective-edit" | "upscale"
 export type VideoPromptType = "text-to-video" | "image-to-video" | "video-to-video" | "extend"
 export type AudioPromptType = "text-to-speech" | "voice-to-voice" | "music-sfx"
-export type PromptType = ImagePromptType | VideoPromptType | AudioPromptType | null
+export type AnimationPromptType = "text-to-animation" | "template"
+export type PromptType = ImagePromptType | VideoPromptType | AudioPromptType | AnimationPromptType | null
 
 // Asset categories for saving
 export type AssetCategory = "scene" | "stage" | "character" | "weather" | "prop" | "effect" | "music" | "sound_effect" | "voice" | "text" | "logo" | "transition" | "lower_third" | "title_card" | "overlay"
@@ -43,12 +45,17 @@ export const AUDIO_PROMPT_TYPES = [
   { id: "music-sfx" as const, label: "Music & SFX", description: "Generate music and sound effects" },
 ]
 
+export const ANIMATION_PROMPT_TYPES = [
+  { id: "text-to-animation" as const, label: "Text to Animation", description: "Describe your animation and AI generates it" },
+  { id: "template" as const, label: "From Template", description: "Start from a pre-built animation template" },
+]
+
 export function getPromptTypesForAssetType(assetType: AssetType | null) {
   switch (assetType) {
     case "image": return IMAGE_PROMPT_TYPES
     case "video": return VIDEO_PROMPT_TYPES
     case "audio": return AUDIO_PROMPT_TYPES
-    case "animation": return [] // Coming soon
+    case "animation": return ANIMATION_PROMPT_TYPES
     default: return []
   }
 }
@@ -58,6 +65,7 @@ export function getDefaultPromptType(assetType: AssetType | null): PromptType {
     case "image": return "text-to-image"
     case "video": return "text-to-video"
     case "audio": return "text-to-speech"
+    case "animation": return "text-to-animation"
     default: return null
   }
 }
@@ -88,6 +96,10 @@ interface AssetWizardState {
     duration?: number  // For video/audio assets
   }[]
 
+  // Animation-specific
+  animationConfig: AnimationConfig | null
+  animationPreviewUrl: string | null  // Rendered preview video URL
+
   // Actions
   setCurrentStep: (step: AssetWizardStep) => void
   nextStep: () => void
@@ -107,6 +119,9 @@ interface AssetWizardState {
   resetWizard: () => void
   initWithType: (type: AssetType) => void
   initWithTypeAndPrompt: (type: AssetType, promptType: PromptType) => void
+  // Animation actions
+  setAnimationConfig: (config: AnimationConfig | null) => void
+  setAnimationPreviewUrl: (url: string | null) => void
 }
 
 const initialState = {
@@ -121,6 +136,8 @@ const initialState = {
   stylePreset: null as string | null,
   referenceAssets: [] as Asset[],
   generatedAssets: [] as AssetWizardState["generatedAssets"],
+  animationConfig: null as AnimationConfig | null,
+  animationPreviewUrl: null as string | null,
 }
 
 export const useAssetWizardStore = create<AssetWizardState>((set, get) => ({
@@ -194,4 +211,8 @@ export const useAssetWizardStore = create<AssetWizardState>((set, get) => ({
     promptType: promptType,
     currentStep: "generate",
   }),
+
+  // Animation actions
+  setAnimationConfig: (config) => set({ animationConfig: config }),
+  setAnimationPreviewUrl: (url) => set({ animationPreviewUrl: url }),
 }))
