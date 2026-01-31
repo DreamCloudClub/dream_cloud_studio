@@ -1996,7 +1996,7 @@ export function BubblePanel({ className, isCollapsed = false, onToggleCollapse }
           <div className="flex items-center gap-3">
             <button
               onClick={handleRefresh}
-              className="w-10 h-10 rounded-lg bg-gradient-to-br from-sky-400 via-sky-500 to-blue-600 flex items-center justify-center shadow-lg shadow-sky-500/20 hover:shadow-sky-500/30 hover:scale-105 transition-all"
+              className="w-11 h-11 rounded-lg bg-gradient-to-br from-sky-400 via-sky-500 to-blue-600 flex items-center justify-center shadow-lg shadow-sky-500/20 hover:shadow-sky-500/30 hover:scale-105 transition-all"
               title="Reset conversation"
             >
               <MessageSquare className="w-5 h-5 text-white" />

@@ -167,8 +167,12 @@ export function TimelinePanel({ currentTime, scale, onTimeChange, onScrubStart }
       : 0
 
     const vTracks: { id: string; label: string; clips: TimelineClipWithAsset[] }[] = []
-    // Always show one empty track above for dropping
-    for (let i = 1; i <= maxVideoTrack + 1; i++) {
+    // During drag: freeze track count to what existed at drag start + 1 (the empty drop target)
+    // After drop: allow new empty track to appear
+    const videoTracksToShow = draggedClipId && dragStartMaxTracks.current
+      ? Math.max(maxVideoTrack, dragStartMaxTracks.current.video + 1)
+      : maxVideoTrack + 1
+    for (let i = 1; i <= videoTracksToShow; i++) {
       const trackId = `video-${i}`
       vTracks.push({
         id: trackId,
@@ -189,7 +193,11 @@ export function TimelinePanel({ currentTime, scale, onTimeChange, onScrubStart }
       : 0
 
     const aTracks: { id: string; label: string; clips: TimelineClipWithAsset[] }[] = []
-    for (let i = 1; i <= maxAudioTrack + 1; i++) {
+    // During drag: freeze track count to what existed at drag start + 1
+    const audioTracksToShow = draggedClipId && dragStartMaxTracks.current
+      ? Math.max(maxAudioTrack, dragStartMaxTracks.current.audio + 1)
+      : maxAudioTrack + 1
+    for (let i = 1; i <= audioTracksToShow; i++) {
       const trackId = `audio-${i}`
       aTracks.push({
         id: trackId,
@@ -212,7 +220,7 @@ export function TimelinePanel({ currentTime, scale, onTimeChange, onScrubStart }
       maxVideoTrackNum: maxVideoTrack,
       maxAudioTrackNum: maxAudioTrack
     }
-  }, [clips])
+  }, [clips, draggedClipId])
 
   if (!project) return null
 
@@ -269,6 +277,22 @@ export function TimelinePanel({ currentTime, scale, onTimeChange, onScrubStart }
   // Snap threshold in seconds
   const SNAP_THRESHOLD = 0.15
 
+  // Check if an asset type is compatible with a track type
+  const isAssetCompatibleWithTrack = (assetType: string | undefined, trackId: string): boolean => {
+    const isVideoTrack = trackId.startsWith("video-")
+    const isAudioTrack = trackId.startsWith("audio-")
+
+    if (isVideoTrack) {
+      // Video tracks accept video, image, animation
+      return assetType === "video" || assetType === "image" || assetType === "animation"
+    }
+    if (isAudioTrack) {
+      // Audio tracks only accept audio
+      return assetType === "audio"
+    }
+    return false
+  }
+
   const handleDragOver = (e: React.DragEvent, trackId: string) => {
     e.preventDefault()
 
@@ -288,6 +312,14 @@ export function TimelinePanel({ currentTime, scale, onTimeChange, onScrubStart }
     // Find the dragged clip
     const draggedClip = clips.find(c => c.id === draggedClipId)
     if (!draggedClip) return
+
+    // Check if clip type is compatible with target track
+    const assetType = draggedClip.asset?.type
+    if (!isAssetCompatibleWithTrack(assetType, trackId)) {
+      e.dataTransfer.dropEffect = "none"
+      setDragOverTrackId(null) // Clear visual feedback for incompatible track
+      return
+    }
 
     const trackElement = e.currentTarget as HTMLElement
     const rect = trackElement.getBoundingClientRect()
@@ -447,6 +479,11 @@ export function TimelinePanel({ currentTime, scale, onTimeChange, onScrubStart }
       if (jsonData) {
         const data = JSON.parse(jsonData)
         if (data.type === "asset" && data.assetId) {
+          // Check if asset type is compatible with target track
+          if (!isAssetCompatibleWithTrack(data.assetType, trackId)) {
+            return // Don't drop incompatible assets
+          }
+
           let startTime: number
 
           if (autoSnapTracks.has(trackId)) {

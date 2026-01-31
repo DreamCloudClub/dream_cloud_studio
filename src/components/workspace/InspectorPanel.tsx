@@ -235,15 +235,9 @@ function GenericPropertiesContent({ activeTab }: GenericPropertiesProps) {
 // ============================================
 
 function PropertiesContent() {
-  const { activeTab } = useWorkspaceStore()
-
-  // Editor tab shows clip properties
-  if (activeTab === "editor") {
-    return <ClipPropertiesContent />
-  }
-
-  // Other tabs show generic properties
-  return <GenericPropertiesContent activeTab={activeTab} />
+  // Single persistent Properties panel for all Workspace tabs
+  // Based on Editor/Clip properties - consistent across the project
+  return <ClipPropertiesContent />
 }
 
 // ============================================
@@ -911,10 +905,10 @@ export function InspectorPanel({
           // Collapsed: just the gear button, clickable to expand
           <button
             onClick={onToggleCollapse}
-            className="w-10 h-10 rounded-lg bg-gradient-to-br from-emerald-400 via-emerald-500 to-green-600 flex items-center justify-center shadow-lg shadow-emerald-500/20 hover:shadow-emerald-500/30 transition-all"
+            className="w-11 h-11 rounded-lg bg-gradient-to-br from-emerald-400 via-emerald-500 to-green-600 flex items-center justify-center shadow-lg shadow-emerald-500/20 hover:shadow-emerald-500/30 transition-all"
             title="Open Control Panel"
           >
-            <Settings className="w-4 h-4 text-white" />
+            <Settings className="w-5 h-5 text-white" />
           </button>
         ) : (
           // Expanded: full header with arrow, text, and gear
@@ -934,13 +928,18 @@ export function InspectorPanel({
               <p className="text-xs text-zinc-500">{subtitle}</p>
             </div>
 
-            {/* Gear - toggles properties panel */}
+            {/* Gear - toggles properties panel (only works when in a project) */}
             <button
-              onClick={() => setShowProperties(!showProperties)}
-              className="w-9 h-9 rounded-lg bg-gradient-to-br from-emerald-400 via-emerald-500 to-green-600 flex items-center justify-center shadow-lg shadow-emerald-500/20"
+              onClick={() => {
+                // Only toggle properties when in a project (no libraryPage prop)
+                if (!libraryPage) {
+                  setShowProperties(!showProperties)
+                }
+              }}
+              className="w-11 h-11 rounded-lg bg-gradient-to-br from-emerald-400 via-emerald-500 to-green-600 flex items-center justify-center shadow-lg shadow-emerald-500/20"
               title={showProperties ? "Hide Properties" : "Show Properties"}
             >
-              <Settings className="w-4 h-4 text-white" />
+              <Settings className="w-5 h-5 text-white" />
             </button>
           </div>
         )}
@@ -1004,10 +1003,10 @@ export function InspectorPanel({
             </div>
             <button
               onClick={() => setShowProperties(false)}
-              className="w-9 h-9 rounded-lg bg-gradient-to-br from-emerald-400 via-emerald-500 to-green-600 flex items-center justify-center shadow-lg shadow-emerald-500/20"
+              className="w-11 h-11 rounded-lg bg-gradient-to-br from-emerald-400 via-emerald-500 to-green-600 flex items-center justify-center shadow-lg shadow-emerald-500/20"
               title="Hide Properties"
             >
-              <Settings className="w-4 h-4 text-white" />
+              <Settings className="w-5 h-5 text-white" />
             </button>
           </div>
 
