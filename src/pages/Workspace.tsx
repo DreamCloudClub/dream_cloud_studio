@@ -1,7 +1,9 @@
-import { useEffect, useState } from "react"
-import { useParams, useNavigate } from "react-router-dom"
-import { ArrowLeft, Loader2 } from "lucide-react"
+import { useEffect } from "react"
+import { useParams, useSearchParams, Link } from "react-router-dom"
+import { Loader2 } from "lucide-react"
+import studioLogo from "@/assets/images/studio_logo.png"
 import { useWorkspaceStore } from "@/state/workspaceStore"
+import { useUIStore } from "@/state/uiStore"
 import { useAuth } from "@/contexts/AuthContext"
 import { BubblePanel } from "@/components/create"
 import { HeaderActions } from "@/components/shared"
@@ -20,11 +22,10 @@ import {
 
 export function Workspace() {
   const { projectId } = useParams<{ projectId: string }>()
-  const navigate = useNavigate()
+  const [searchParams] = useSearchParams()
   const { user, profile, signOut } = useAuth()
-  const { project, isLoading, activeTab, loadProject } = useWorkspaceStore()
-  const [isBubbleCollapsed, setIsBubbleCollapsed] = useState(false)
-  const [isInspectorCollapsed, setIsInspectorCollapsed] = useState(false)
+  const { project, isLoading, activeTab, setActiveTab, loadProject } = useWorkspaceStore()
+  const { isBubbleCollapsed, toggleBubbleCollapsed, isInspectorCollapsed, toggleInspectorCollapsed } = useUIStore()
 
   // Load project on mount
   useEffect(() => {
@@ -33,9 +34,13 @@ export function Workspace() {
     }
   }, [projectId, loadProject])
 
-  const handleBack = () => {
-    navigate("/")
-  }
+  // Handle tab from URL params (e.g., ?tab=assets)
+  useEffect(() => {
+    const tabParam = searchParams.get("tab")
+    if (tabParam && ["brief", "script", "moodboard", "storyboard", "platform", "editor", "assets", "export"].includes(tabParam)) {
+      setActiveTab(tabParam as any)
+    }
+  }, [searchParams, setActiveTab])
 
   // Render the current tab content
   const renderTabContent = () => {
@@ -79,13 +84,12 @@ export function Workspace() {
       <div className="h-screen bg-zinc-950 flex items-center justify-center">
         <div className="text-center">
           <p className="text-zinc-400 mb-4">Project not found</p>
-          <button
-            onClick={handleBack}
-            className="text-sky-400 hover:text-sky-300 inline-flex items-center gap-2"
+          <Link
+            to="/"
+            className="text-sky-400 hover:text-sky-300"
           >
-            <ArrowLeft className="w-4 h-4" />
             Back to Dashboard
-          </button>
+          </Link>
         </div>
       </div>
     )
@@ -94,14 +98,15 @@ export function Workspace() {
   return (
     <div className="h-screen bg-zinc-950 flex flex-col">
       {/* Header */}
-      <header className="h-14 flex items-center justify-between px-4 sm:px-6 border-b border-zinc-800 bg-zinc-900/50 backdrop-blur-sm flex-shrink-0">
-        <button
-          onClick={handleBack}
-          className="flex items-center gap-2 text-zinc-400 hover:text-zinc-200 transition-colors"
-        >
-          <ArrowLeft className="w-4 h-4" />
-          <span className="text-sm font-medium hidden sm:inline">Dashboard</span>
-        </button>
+      <header className="h-14 flex items-center justify-between px-4 sm:px-6 border-b border-zinc-800 bg-zinc-950 flex-shrink-0 relative">
+        <Link to="/" className="flex items-center gap-2 sm:gap-3 hover:opacity-80 transition-opacity">
+          <img
+            src={studioLogo}
+            alt="Dream Cloud Studio"
+            className="w-8 h-8 rounded-lg object-contain flex-shrink-0"
+          />
+          <span className="text-base sm:text-lg font-semibold text-zinc-100 truncate hidden sm:inline">Dream Cloud Studio</span>
+        </Link>
 
         <div className="flex items-center gap-3 absolute left-1/2 -translate-x-1/2">
           <h1 className="text-base font-semibold text-zinc-100 truncate">
@@ -129,7 +134,7 @@ export function Workspace() {
         >
           <BubblePanel
             isCollapsed={isBubbleCollapsed}
-            onToggleCollapse={() => setIsBubbleCollapsed(!isBubbleCollapsed)}
+            onToggleCollapse={toggleBubbleCollapsed}
           />
         </div>
 
@@ -146,7 +151,7 @@ export function Workspace() {
         >
           <InspectorPanel
             isCollapsed={isInspectorCollapsed}
-            onToggleCollapse={() => setIsInspectorCollapsed(!isInspectorCollapsed)}
+            onToggleCollapse={toggleInspectorCollapsed}
           />
         </div>
       </div>

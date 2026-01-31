@@ -15,6 +15,16 @@ import {
   updateExportSettings as updateExportSettingsDb,
   createExportSettings,
   upsertProjectComposition,
+  getNotes,
+  createNote,
+  updateNote as updateNoteDb,
+  deleteNote as deleteNoteDb,
+  updateNoteSortOrder,
+  getScripts,
+  getScriptByProject,
+  upsertScript,
+  updateScript as updateScriptDb,
+  updateScriptSortOrder,
 } from "@/services/projects"
 import { createAsset, updateAsset as updateAssetDb, deleteAsset } from "@/services/assets"
 import {
@@ -28,8 +38,9 @@ import {
   setClipAnimation as setClipAnimationDb,
   appendClip as appendClipDb,
 } from "@/services/timeline"
-import type { Json, Asset } from "@/types/database"
-import type { TimelineClip, ClipAnimation, Timeline } from "@/types/timeline"
+import type { Json, Asset, Note, Script } from "@/types/database"
+import type { TimelineClip, ClipAnimation, Timeline, TimelineClipRow } from "@/types/timeline"
+import { clipFromRow } from "@/types/timeline"
 
 // ============================================
 // WORKSPACE TAB TYPES
@@ -135,24 +146,6 @@ export interface StoryboardCard {
   order: number
 }
 
-export interface ScriptSection {
-  id: string
-  type: "description" | "dialogue" | "action" | "transition"
-  content: string
-  sceneContext?: string
-  isNewScene: boolean
-  characterId?: string
-  characterName?: string
-  order: number
-}
-
-// Simple script data (title, subtitle, content)
-export interface Script {
-  title: string
-  subtitle: string
-  content: string
-}
-
 // ============================================
 // PROJECT TYPES
 // ============================================
@@ -237,8 +230,6 @@ export interface Project {
   assets: ProjectAsset[]
   timeline: Timeline
   storyboardCards: StoryboardCard[]
-  scriptSections: ScriptSection[]
-  script: Script
   exportSettings: ExportSettings
   composition: CompositionData
   createdAt: string
@@ -246,14 +237,10 @@ export interface Project {
 }
 
 // ============================================
-// EDITOR NOTE TYPE
+// EDITOR NOTE TYPE (uses Note from database)
 // ============================================
 
-export interface EditorNote {
-  id: string
-  content: string
-  createdAt: string
-}
+export type EditorNote = Note
 
 // ============================================
 // WORKSPACE STORE
@@ -274,8 +261,8 @@ interface WorkspaceState {
   setActiveTab: (tab: WorkspaceTab) => void
 
   // Control Panel UI state (persists across navigation)
-  controlPanelTab: "properties" | "notes" | "assets"
-  setControlPanelTab: (tab: "properties" | "notes" | "assets") => void
+  controlPanelTab: "notes" | "assets"
+  setControlPanelTab: (tab: "notes" | "assets") => void
 
   // Asset Creation Mode
   assetCreationMode: boolean
@@ -295,13 +282,21 @@ interface WorkspaceState {
   setIsPlaying: (playing: boolean) => void
   setCurrentTime: (time: number) => void
 
-  // Editor - Notes (session-based, not persisted)
+  // Editor - Notes and Scripts (persisted to database)
   editorNotes: EditorNote[]
-  addEditorNote: (content: string) => void
-  deleteEditorNote: (noteId: string) => void
+  allScripts: Script[]
+  currentScript: Script | null
+  loadNotesAndScripts: (userId: string) => Promise<void>
+  addEditorNote: (content: string, userId: string) => Promise<void>
+  updateEditorNote: (noteId: string, content: string) => Promise<void>
+  deleteEditorNote: (noteId: string) => Promise<void>
+  updateCurrentScript: (content: string) => Promise<void>
+  updateScriptById: (scriptId: string, content: string) => Promise<void>
+  reorderPanelItems: (items: { type: 'note' | 'script'; id: string; sortOrder: number }[]) => Promise<void>
 
   // Project actions
   loadProject: (projectId: string) => Promise<void>
+  updateProjectInfo: (data: { name?: string; platform_id?: string | null }) => Promise<void>
   updateBrief: (data: Partial<ProjectBrief>) => Promise<void>
   updateMoodBoard: (data: Partial<MoodBoardData>) => Promise<void>
   addAsset: (asset: Omit<ProjectAsset, "id" | "createdAt">, userId: string) => Promise<void>
@@ -309,10 +304,10 @@ interface WorkspaceState {
   updateAsset: (assetId: string, data: Partial<ProjectAsset>) => Promise<void>
 
   // Timeline actions (core editing operations)
-  addClip: (assetId: string, startTime: number, options?: { duration?: number; inPoint?: number }) => Promise<string>
+  addClip: (assetId: string, startTime: number, options?: { duration?: number; inPoint?: number; trackId?: string }) => Promise<string>
   appendClip: (assetId: string) => Promise<string>
-  moveClip: (clipId: string, startTime: number) => Promise<void>
-  trimClip: (clipId: string, inPoint?: number, duration?: number) => Promise<void>
+  moveClip: (clipId: string, startTime: number, trackId?: string) => Promise<void>
+  trimClip: (clipId: string, inPoint?: number, duration?: number, startTime?: number) => Promise<void>
   splitClip: (clipId: string, splitAt: number) => Promise<string>
   deleteClip: (clipId: string) => Promise<void>
   setClipVolume: (clipId: string, volume: number) => Promise<void>
@@ -322,9 +317,6 @@ interface WorkspaceState {
   addStoryboardCard: (card: Omit<StoryboardCard, "id">) => Promise<void>
   updateStoryboardCard: (cardId: string, data: Partial<StoryboardCard>) => Promise<void>
   removeStoryboardCard: (cardId: string) => Promise<void>
-
-  // Script actions
-  updateScript: (data: Partial<Script>) => Promise<void>
 
   // Settings actions
   updateExportSettings: (settings: Partial<ExportSettings>) => Promise<void>
@@ -339,7 +331,7 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
   isSaving: false,
   saveStatus: "idle",
   activeTab: "editor",
-  controlPanelTab: "properties",
+  controlPanelTab: "assets",
   assetCreationMode: false,
   assetCreationType: null,
   selectedStoryboardCardId: null,
@@ -347,6 +339,8 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
   isPlaying: false,
   currentTime: 0,
   editorNotes: [],
+  allScripts: [],
+  currentScript: null,
 
   // Navigation
   setActiveTab: (tab) => set({ activeTab: tab }),
@@ -386,21 +380,120 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
   setIsPlaying: (playing) => set({ isPlaying: playing }),
   setCurrentTime: (time) => set({ currentTime: time }),
 
-  // Editor Notes (session-based)
-  addEditorNote: (content) => {
-    const newNote: EditorNote = {
-      id: crypto.randomUUID(),
-      content,
-      createdAt: new Date().toISOString(),
+  // Editor Notes and Scripts (persisted to database)
+  loadNotesAndScripts: async (userId) => {
+    try {
+      const [notes, scripts] = await Promise.all([
+        getNotes(userId),
+        getScripts(userId).catch(() => []), // Table may not exist yet
+      ])
+      set({ editorNotes: notes, allScripts: scripts })
+    } catch (error) {
+      console.error("Failed to load notes and scripts:", error)
     }
-    set((state) => ({
-      editorNotes: [newNote, ...state.editorNotes],
-    }))
   },
-  deleteEditorNote: (noteId) => {
-    set((state) => ({
-      editorNotes: state.editorNotes.filter((n) => n.id !== noteId),
-    }))
+  addEditorNote: async (content, userId) => {
+    try {
+      const newNote = await createNote({ user_id: userId, content })
+      set((state) => ({
+        editorNotes: [newNote, ...state.editorNotes],
+      }))
+    } catch (error) {
+      console.error("Failed to add note:", error)
+    }
+  },
+  updateEditorNote: async (noteId, content) => {
+    try {
+      const updatedNote = await updateNoteDb(noteId, content)
+      set((state) => ({
+        editorNotes: state.editorNotes.map((n) =>
+          n.id === noteId ? updatedNote : n
+        ),
+      }))
+    } catch (error) {
+      console.error("Failed to update note:", error)
+    }
+  },
+  deleteEditorNote: async (noteId) => {
+    try {
+      await deleteNoteDb(noteId)
+      set((state) => ({
+        editorNotes: state.editorNotes.filter((n) => n.id !== noteId),
+      }))
+    } catch (error) {
+      console.error("Failed to delete note:", error)
+    }
+  },
+  updateCurrentScript: async (content) => {
+    const { project, allScripts } = get()
+    if (!project) return
+
+    try {
+      const updatedScript = await upsertScript(project.id, project.userId, content)
+
+      // Update currentScript
+      set({ currentScript: updatedScript })
+
+      // Update allScripts list
+      const existingIndex = allScripts.findIndex(s => s.id === updatedScript.id)
+      if (existingIndex >= 0) {
+        set((state) => ({
+          allScripts: state.allScripts.map(s =>
+            s.id === updatedScript.id ? updatedScript : s
+          ),
+        }))
+      } else {
+        set((state) => ({
+          allScripts: [...state.allScripts, updatedScript],
+        }))
+      }
+    } catch (error) {
+      console.error("Failed to update script:", error)
+    }
+  },
+  updateScriptById: async (scriptId, content) => {
+    try {
+      const updatedScript = await updateScriptDb(scriptId, content)
+
+      // Update allScripts list
+      set((state) => ({
+        allScripts: state.allScripts.map(s =>
+          s.id === scriptId ? updatedScript : s
+        ),
+      }))
+
+      // Update currentScript if it's the same one
+      const { currentScript } = get()
+      if (currentScript?.id === scriptId) {
+        set({ currentScript: updatedScript })
+      }
+    } catch (error) {
+      console.error("Failed to update script:", error)
+    }
+  },
+  reorderPanelItems: async (items) => {
+    try {
+      // Update all items in parallel
+      await Promise.all(
+        items.map(item =>
+          item.type === 'note'
+            ? updateNoteSortOrder(item.id, item.sortOrder)
+            : updateScriptSortOrder(item.id, item.sortOrder)
+        )
+      )
+
+      // Reload to get updated sort orders
+      const { project } = get()
+      if (project) {
+        const [notes, scripts] = await Promise.all([
+          getNotes(project.userId),
+          getScripts(project.userId).catch(() => []),
+        ])
+        set({ editorNotes: notes, allScripts: scripts })
+      }
+    } catch (error) {
+      console.error("Failed to reorder items:", error)
+    }
   },
 
   // ============================================
@@ -419,8 +512,11 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
         return
       }
 
-      // Load timeline clips
-      const clips = await getClips(projectId)
+      // Use pre-loaded clips from getProjectWithRelations, load script in parallel
+      // Transform clips from database format (snake_case) to app format (camelCase)
+      const rawClips = (dbProject as any).timeline_clips || []
+      const clips: TimelineClip[] = rawClips.map((row: TimelineClipRow) => clipFromRow(row))
+      const currentScript = await getScriptByProject(projectId).catch(() => null)
 
       // Transform assets
       const assets: ProjectAsset[] = (dbProject.assets || []).map((a: Asset) => ({
@@ -475,21 +571,6 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
           thumbnailUrl: c.thumbnail_url || undefined,
           order: c.sort_order,
         })),
-        scriptSections: (dbProject.script_sections || []).map((s: any) => ({
-          id: s.id,
-          type: s.type || "description",
-          content: s.content || "",
-          sceneContext: s.scene_context || undefined,
-          isNewScene: s.is_new_scene || false,
-          characterId: s.character_id || undefined,
-          characterName: s.character?.name || undefined,
-          order: s.sort_order,
-        })),
-        script: {
-          title: dbProject.brief?.script_title || "",
-          subtitle: dbProject.brief?.script_subtitle || "",
-          content: dbProject.brief?.script_content || "",
-        },
         exportSettings: {
           resolution: (dbProject.export_settings?.resolution || "1080p") as "720p" | "1080p" | "4k",
           format: (dbProject.export_settings?.format || "mp4") as "mp4" | "webm" | "mov",
@@ -517,15 +598,47 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
         updatedAt: dbProject.updated_at,
       }
 
+      // New projects (no platform) go to Platform page, existing projects go to Editor
+      const isNewProject = !project.platform_id
+
       set({
         project,
+        currentScript,
         isLoading: false,
         selectedStoryboardCardId: project.storyboardCards[0]?.id || null,
+        // Reset playhead to start when loading a project
+        currentTime: 0,
+        isPlaying: false,
+        selectedClipId: null,
+        // Set active tab based on project state
+        activeTab: isNewProject ? "platform" : "editor",
       })
     } catch (error) {
       console.error("Error loading project:", error)
       set({ isLoading: false, project: null })
     }
+  },
+
+  // ============================================
+  // PROJECT INFO
+  // ============================================
+
+  updateProjectInfo: async (data) => {
+    const { project } = get()
+    if (!project) return
+
+    // Update database
+    await updateProject(project.id, data)
+
+    // Update local state
+    set({
+      project: {
+        ...project,
+        ...(data.name !== undefined && { name: data.name }),
+        ...(data.platform_id !== undefined && { platform_id: data.platform_id }),
+        updatedAt: new Date().toISOString(),
+      },
+    })
   },
 
   // ============================================
@@ -540,6 +653,8 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
     set({
       project: {
         ...project,
+        // Also update top-level name when brief name changes
+        ...(data.name !== undefined && { name: data.name }),
         brief: updatedBrief,
         updatedAt: new Date().toISOString(),
       },
@@ -720,11 +835,32 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
     const { project } = get()
     if (!project) throw new Error("No project loaded")
 
-    const clip = await addClipDb(project.id, assetId, startTime, options)
+    const { clip, asset } = await addClipDb(project.id, assetId, startTime, options)
+
+    // Check if asset is already in project assets
+    const assetExists = project.assets.some(a => a.id === assetId)
+
+    // Convert database asset to ProjectAsset format
+    const projectAsset: ProjectAsset = {
+      id: asset.id,
+      name: asset.name,
+      type: asset.type as ProjectAsset["type"],
+      category: (asset.category || "scene") as AssetCategory,
+      url: asset.url,
+      localPath: asset.local_path || undefined,
+      storageType: (asset.storage_type || "cloud") as "local" | "cloud",
+      duration: asset.duration || undefined,
+      userDescription: asset.user_description || undefined,
+      aiPrompt: asset.ai_prompt || undefined,
+      generationModel: asset.generation_model || undefined,
+      createdAt: asset.created_at,
+    }
 
     set({
       project: {
         ...project,
+        // Add asset to project if not already there (makes project self-contained)
+        assets: assetExists ? project.assets : [...project.assets, projectAsset],
         timeline: {
           clips: [...project.timeline.clips, clip].sort((a, b) => a.startTime - b.startTime),
         },
@@ -739,11 +875,32 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
     const { project } = get()
     if (!project) throw new Error("No project loaded")
 
-    const clip = await appendClipDb(project.id, assetId)
+    const { clip, asset } = await appendClipDb(project.id, assetId)
+
+    // Check if asset is already in project assets
+    const assetExists = project.assets.some(a => a.id === assetId)
+
+    // Convert database asset to ProjectAsset format
+    const projectAsset: ProjectAsset = {
+      id: asset.id,
+      name: asset.name,
+      type: asset.type as ProjectAsset["type"],
+      category: (asset.category || "scene") as AssetCategory,
+      url: asset.url,
+      localPath: asset.local_path || undefined,
+      storageType: (asset.storage_type || "cloud") as "local" | "cloud",
+      duration: asset.duration || undefined,
+      userDescription: asset.user_description || undefined,
+      aiPrompt: asset.ai_prompt || undefined,
+      generationModel: asset.generation_model || undefined,
+      createdAt: asset.created_at,
+    }
 
     set({
       project: {
         ...project,
+        // Add asset to project if not already there
+        assets: assetExists ? project.assets : [...project.assets, projectAsset],
         timeline: {
           clips: [...project.timeline.clips, clip].sort((a, b) => a.startTime - b.startTime),
         },
@@ -754,7 +911,7 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
     return clip.id
   },
 
-  moveClip: async (clipId, startTime) => {
+  moveClip: async (clipId, startTime, trackId) => {
     const { project } = get()
     if (!project) return
 
@@ -764,7 +921,7 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
         ...project,
         timeline: {
           clips: project.timeline.clips
-            .map((c) => (c.id === clipId ? { ...c, startTime } : c))
+            .map((c) => (c.id === clipId ? { ...c, startTime, ...(trackId && { trackId }) } : c))
             .sort((a, b) => a.startTime - b.startTime),
         },
         updatedAt: new Date().toISOString(),
@@ -772,7 +929,7 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
     })
 
     try {
-      await moveClipDb(clipId, startTime)
+      await moveClipDb(clipId, startTime, trackId)
     } catch (error) {
       console.error("Failed to move clip:", error)
       // Reload to sync state
@@ -780,7 +937,7 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
     }
   },
 
-  trimClip: async (clipId, inPoint, duration) => {
+  trimClip: async (clipId, inPoint, duration, startTime) => {
     const { project } = get()
     if (!project) return
 
@@ -789,22 +946,25 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
       project: {
         ...project,
         timeline: {
-          clips: project.timeline.clips.map((c) =>
-            c.id === clipId
-              ? {
-                  ...c,
-                  inPoint: inPoint ?? c.inPoint,
-                  duration: duration ?? c.duration,
-                }
-              : c
-          ),
+          clips: project.timeline.clips
+            .map((c) =>
+              c.id === clipId
+                ? {
+                    ...c,
+                    inPoint: inPoint ?? c.inPoint,
+                    duration: duration ?? c.duration,
+                    startTime: startTime ?? c.startTime,
+                  }
+                : c
+            )
+            .sort((a, b) => a.startTime - b.startTime),
         },
         updatedAt: new Date().toISOString(),
       },
     })
 
     try {
-      await trimClipDb(clipId, inPoint, duration)
+      await trimClipDb(clipId, inPoint, duration, startTime)
     } catch (error) {
       console.error("Failed to trim clip:", error)
       await get().loadProject(project.id)
@@ -1057,31 +1217,6 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
     }
   },
 
-  updateScript: async (data) => {
-    const { project } = get()
-    if (!project) return
-
-    const updatedScript = { ...project.script, ...data }
-    set({
-      project: {
-        ...project,
-        script: updatedScript,
-        updatedAt: new Date().toISOString(),
-      },
-    })
-
-    try {
-      // Persist to database - store script in project_briefs for now
-      await updateProjectBrief(project.id, {
-        script_title: updatedScript.title,
-        script_subtitle: updatedScript.subtitle,
-        script_content: updatedScript.content,
-      })
-    } catch (error) {
-      console.error("Failed to update script:", error)
-    }
-  },
-
   saveAll: async () => {
     const { project } = get()
     if (!project) return
@@ -1138,6 +1273,8 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
 
 // ============================================
 // HELPER: Get clip with its asset data
+// Assets are now copied to project.assets when clips are added,
+// so the lookup should always succeed
 // ============================================
 
 export function getClipWithAsset(

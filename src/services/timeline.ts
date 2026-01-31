@@ -80,6 +80,7 @@ export async function deleteClip(clipId: string): Promise<void> {
 
 /**
  * Add a clip to the timeline
+ * Returns the clip along with asset data for the caller to handle
  */
 export async function addClip(
   projectId: string,
@@ -90,18 +91,20 @@ export async function addClip(
     inPoint?: number
     trackId?: string
   }
-): Promise<TimelineClip> {
-  // Get asset to determine default duration
+): Promise<{ clip: TimelineClip; asset: Asset }> {
+  // Get full asset data
   const { data: asset, error: assetError } = await supabase
     .from('assets')
-    .select('duration, type')
+    .select('*')
     .eq('id', assetId)
     .single()
 
   if (assetError) throw assetError
 
+  const assetData = asset as Asset
+
   // Default duration: asset duration for video/audio, 5s for images
-  const duration = options?.duration ?? (asset as Asset).duration ?? 5
+  const duration = options?.duration ?? assetData.duration ?? 5
 
   const clip = await createClip({
     project_id: projectId,
@@ -112,7 +115,7 @@ export async function addClip(
     in_point: options?.inPoint ?? 0,
   })
 
-  return clip
+  return { clip, asset: assetData }
 }
 
 /**
@@ -131,22 +134,25 @@ export async function moveClip(
 }
 
 /**
- * Trim a clip (adjust in-point and/or duration)
+ * Trim a clip (adjust in-point, duration, and optionally startTime)
  */
 export async function trimClip(
   clipId: string,
   inPoint?: number,
-  duration?: number
+  duration?: number,
+  startTime?: number
 ): Promise<TimelineClip> {
   const updates: TimelineClipUpdate = {}
   if (inPoint !== undefined) updates.in_point = inPoint
   if (duration !== undefined) updates.duration = duration
+  if (startTime !== undefined) updates.start_time = startTime
   return updateClip(clipId, updates)
 }
 
 /**
  * Split a clip at a given timeline position
  * Returns the new clip (the second half)
+ * Copies embedded asset data to the new clip
  */
 export async function splitClip(
   clipId: string,
@@ -170,7 +176,7 @@ export async function splitClip(
   // Update original clip duration
   const updatedOriginal = await updateClip(clipId, { duration: firstDuration })
 
-  // Create new clip for second half
+  // Create new clip for second half - copy embedded asset
   const newClip = await createClip({
     project_id: original.projectId,
     asset_id: original.assetId,
@@ -181,6 +187,7 @@ export async function splitClip(
     transform: original.transform,
     animation: original.animation,
     volume: original.volume,
+    embedded_asset: original.embeddedAsset,
   })
 
   return { original: updatedOriginal, newClip }
@@ -218,7 +225,7 @@ export async function applyEdit(projectId: string, op: TimelineEditOp): Promise<
   try {
     switch (op.type) {
       case 'add_clip': {
-        const clip = await addClip(projectId, op.assetId, op.startTime, {
+        const { clip } = await addClip(projectId, op.assetId, op.startTime, {
           duration: op.duration,
           inPoint: op.inPoint,
           trackId: op.trackId,
@@ -282,7 +289,7 @@ export async function appendClip(
   projectId: string,
   assetId: string,
   trackId = 'video-main'
-): Promise<TimelineClip> {
+): Promise<{ clip: TimelineClip; asset: Asset }> {
   // Get current clips to find end time
   const clips = await getClips(projectId)
   const trackClips = clips.filter(c => c.trackId === trackId)

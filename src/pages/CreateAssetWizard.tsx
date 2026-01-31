@@ -1,50 +1,70 @@
 import { useEffect } from "react"
-import { useNavigate, useSearchParams } from "react-router-dom"
-import { ArrowLeft } from "lucide-react"
+import { useNavigate, useSearchParams, Link } from "react-router-dom"
 import { useAssetWizardStore } from "@/state/assetWizardStore"
 import { useUIStore } from "@/state/uiStore"
 import { useAuth } from "@/contexts/AuthContext"
-import { BubblePanel } from "@/components/create"
 import { HeaderActions } from "@/components/shared"
+import { BubblePanel } from "@/components/create"
+import { InspectorPanel, WorkspaceNav } from "@/components/workspace"
+import { DashboardNav } from "@/components/dashboard"
+import studioLogo from "@/assets/images/studio_logo.png"
 import {
-  AssetStepTimeline,
   TypeStep,
-  CategoryStep,
-  PromptAndGenerateStep,
-  ReviewStep,
+  PromptTypeStep,
+  SaveStep,
 } from "@/components/create-asset"
 
 export function CreateAssetWizard() {
   const navigate = useNavigate()
   const [searchParams] = useSearchParams()
-  const { isBubbleCollapsed, toggleBubbleCollapsed } = useUIStore()
   const { user, profile, signOut } = useAuth()
+  const { isBubbleCollapsed, toggleBubbleCollapsed, isInspectorCollapsed, toggleInspectorCollapsed } = useUIStore()
 
-  const { currentStep, setUserDescription, resetWizard } = useAssetWizardStore()
+  const { currentStep, assetType, promptType, setUserDescription, initWithType, resetWizard } = useAssetWizardStore()
 
-  // Extract initial prompt from URL params
+  // Get URL params
+  const projectId = searchParams.get("projectId")
+  const initialType = searchParams.get("type") as "image" | "video" | "audio" | "animation" | null
+
+  // Initialize wizard based on URL type param
   useEffect(() => {
+    // If we're on save step, don't reset - we're coming from CreatorPage with generated assets
+    if (currentStep === "save") {
+      return
+    }
+
+    // Extract prompt from URL if provided
     const prompt = searchParams.get("prompt")
     if (prompt) {
       setUserDescription(prompt)
     }
-  }, [searchParams, setUserDescription])
 
-  const handleBack = () => {
-    resetWizard()
-    navigate("/library/assets")
-  }
+    // Initialize with type from URL, or reset to start
+    if (initialType) {
+      initWithType(initialType)
+    } else {
+      resetWizard()
+    }
+  }, [initialType]) // Re-run when type param changes
+
+  // When we reach the generate step, redirect to the CreatorPage
+  useEffect(() => {
+    if (currentStep === "generate" && assetType && promptType) {
+      const url = projectId
+        ? `/create/${assetType}/${promptType}?projectId=${projectId}`
+        : `/create/${assetType}/${promptType}`
+      navigate(url)
+    }
+  }, [currentStep, assetType, promptType, navigate, projectId])
 
   const renderStepContent = () => {
     switch (currentStep) {
       case "type":
         return <TypeStep />
-      case "category":
-        return <CategoryStep />
-      case "prompt":
-        return <PromptAndGenerateStep />
-      case "review":
-        return <ReviewStep />
+      case "promptType":
+        return <PromptTypeStep />
+      case "save":
+        return <SaveStep />
       default:
         return <TypeStep />
     }
@@ -52,19 +72,16 @@ export function CreateAssetWizard() {
 
   return (
     <div className="h-screen bg-zinc-950 flex flex-col">
-      {/* Header */}
-      <header className="h-14 flex items-center justify-between px-4 sm:px-6 border-b border-zinc-800 bg-zinc-900/50 backdrop-blur-sm flex-shrink-0">
-        <button
-          onClick={handleBack}
-          className="flex items-center gap-2 text-zinc-400 hover:text-zinc-200 transition-colors"
-        >
-          <ArrowLeft className="w-4 h-4" />
-          <span className="text-sm font-medium">Back to Assets</span>
-        </button>
-
-        <h1 className="text-lg font-semibold text-zinc-100 absolute left-1/2 -translate-x-1/2">
-          Create New Asset
-        </h1>
+      {/* Primary Header - Dream Cloud Studio + User */}
+      <header className="h-14 border-b border-zinc-800 px-4 sm:px-6 flex items-center justify-between bg-zinc-950 flex-shrink-0">
+        <Link to="/" className="flex items-center gap-2 sm:gap-3 hover:opacity-80 transition-opacity">
+          <img
+            src={studioLogo}
+            alt="Dream Cloud Studio"
+            className="w-8 h-8 rounded-lg object-contain flex-shrink-0"
+          />
+          <h1 className="text-base sm:text-lg font-semibold text-zinc-100 truncate">Dream Cloud Studio</h1>
+        </Link>
 
         <HeaderActions
           userName={profile?.full_name || user?.email?.split("@")[0] || "User"}
@@ -74,7 +91,7 @@ export function CreateAssetWizard() {
         />
       </header>
 
-      {/* Main Content */}
+      {/* Main Content with Panels */}
       <div className="flex-1 flex overflow-hidden">
         {/* Bubble Panel (Left Sidebar) */}
         <div
@@ -90,14 +107,25 @@ export function CreateAssetWizard() {
 
         {/* Step Content */}
         <main className="flex-1 flex flex-col overflow-hidden bg-zinc-950">
-          <div className="flex-1 overflow-y-auto">
-            {renderStepContent()}
-          </div>
+          {renderStepContent()}
         </main>
+
+        {/* Inspector Panel (Right Sidebar) */}
+        <div
+          className={`${
+            isInspectorCollapsed ? "w-16" : "w-80"
+          } flex-shrink-0 hidden md:flex transition-all duration-300 overflow-hidden`}
+        >
+          <InspectorPanel
+            isCollapsed={isInspectorCollapsed}
+            onToggleCollapse={toggleInspectorCollapsed}
+            libraryPage="dashboard"
+          />
+        </div>
       </div>
 
-      {/* Step Timeline */}
-      <AssetStepTimeline />
+      {/* Show appropriate bottom nav based on context */}
+      {projectId ? <WorkspaceNav activeTabOverride="assets" projectId={projectId} /> : <DashboardNav />}
     </div>
   )
 }

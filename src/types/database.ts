@@ -233,6 +233,48 @@ export interface ExportSettings {
   updated_at: string
 }
 
+export interface Note {
+  id: string
+  user_id: string
+  content: string
+  sort_order: number
+  created_at: string
+  updated_at: string
+}
+
+export interface NoteInsert {
+  id?: string
+  user_id: string
+  content: string
+  sort_order?: number
+}
+
+export interface Script {
+  id: string
+  project_id: string
+  user_id: string
+  content: string
+  sort_order: number
+  created_at: string
+  updated_at: string
+}
+
+export interface ScriptInsert {
+  id?: string
+  project_id: string
+  user_id: string
+  content?: string
+  sort_order?: number
+}
+
+export interface ProjectNote {
+  id: string
+  project_id: string
+  content: string
+  created_at: string
+  updated_at: string
+}
+
 export interface UsageTracking {
   id: string
   user_id: string
@@ -448,6 +490,14 @@ export interface ExportSettingsInsert {
   quality?: ExportQuality
 }
 
+export interface ProjectNoteInsert {
+  id?: string
+  project_id: string
+  content: string
+}
+
+export type ProjectNoteUpdate = Partial<Omit<ProjectNote, 'id' | 'project_id' | 'created_at'>>
+
 // Update types (for updating existing records)
 export type ProfileUpdate = Partial<Omit<Profile, 'id' | 'created_at'>>
 export type PlatformUpdate = Partial<Omit<Platform, 'id' | 'user_id' | 'created_at'>>
@@ -474,6 +524,7 @@ export interface ProjectWithRelations extends Project {
   export_settings?: ExportSettings
   composition?: ProjectComposition
   platform?: Platform
+  timeline_clips?: any[] // TimelineClip from timeline types
 }
 
 export interface SceneWithShots extends Scene {

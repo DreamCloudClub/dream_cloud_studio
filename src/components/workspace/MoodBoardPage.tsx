@@ -510,17 +510,17 @@ export function MoodBoardPage() {
   if (!project) return null
 
   return (
-    <div className="h-full overflow-y-auto">
-      <div className="max-w-4xl mx-auto px-6 lg:px-8 py-6 lg:py-8 space-y-8">
-        {/* Header */}
-        <div>
-          <h1 className="text-2xl font-bold text-zinc-100">Visual Direction</h1>
-          <p className="text-zinc-400 mt-1">
-            Set the visual style and reference images for this project.
-          </p>
+    <div className="h-full flex flex-col">
+      {/* Secondary Header */}
+      <div className="h-[72px] border-b border-zinc-800 flex-shrink-0">
+        <div className="h-full max-w-4xl mx-auto px-6 lg:px-8 flex items-center">
+          <h1 className="text-xl font-semibold text-zinc-100">Mood</h1>
         </div>
+      </div>
 
-        {/* Foundation Dropdown */}
+      <div className="flex-1 overflow-y-auto">
+        <div className="max-w-4xl mx-auto px-6 lg:px-8 pt-10 pb-6 space-y-8">
+          {/* Foundation Dropdown */}
         <div>
           <h2 className="text-sm font-medium text-zinc-300 uppercase tracking-wide mb-3">
             Foundation
@@ -654,6 +654,7 @@ export function MoodBoardPage() {
               Custom
             </button>
           </div>
+        </div>
         </div>
       </div>
 

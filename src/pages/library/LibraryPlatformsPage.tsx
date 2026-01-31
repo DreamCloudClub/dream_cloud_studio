@@ -155,66 +155,68 @@ export function LibraryPlatformsPage() {
 
   return (
     <LibraryLayout libraryPage="platforms">
-      <div className="max-w-4xl mx-auto px-6 lg:px-8 py-6 lg:py-8 space-y-6">
-        {/* Header */}
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-          <div>
-            <h1 className="text-2xl font-bold text-zinc-100">All Platforms</h1>
-            <p className="text-zinc-400 mt-1">
-              {platforms.length} platform{platforms.length !== 1 ? "s" : ""}
-            </p>
+      <div className="h-full flex flex-col">
+        {/* Secondary Header */}
+        <div className="h-[72px] border-b border-zinc-800 flex-shrink-0">
+          <div className="h-full max-w-4xl mx-auto px-6 lg:px-8 flex items-center justify-between">
+            <h1 className="text-xl font-semibold text-zinc-100">Platforms</h1>
+
+            <button
+              onClick={handleNewPlatform}
+              className="px-4 py-2 bg-gradient-to-br from-sky-400 via-sky-500 to-blue-600 rounded-xl text-white font-medium text-sm hover:opacity-90 transition-opacity inline-flex items-center gap-2"
+            >
+              <Plus className="w-4 h-4" />
+              New Platform
+            </button>
           </div>
-          <button
-            onClick={handleNewPlatform}
-            className="px-4 py-2 bg-gradient-to-br from-sky-400 via-sky-500 to-blue-600 rounded-xl text-white font-medium text-sm hover:opacity-90 transition-opacity inline-flex items-center gap-2"
-          >
-            <Plus className="w-4 h-4" />
-            New Platform
-          </button>
         </div>
 
-        {/* Search */}
-        <div className="relative">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-zinc-500" />
-          <input
-            type="text"
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            placeholder="Search platforms..."
-            className="w-full pl-10 pr-4 py-2.5 bg-zinc-800/50 border border-zinc-700 rounded-xl text-sm text-zinc-200 placeholder:text-zinc-500 focus:outline-none focus:border-sky-500"
-          />
-        </div>
-
-        {/* Platform Grid */}
-        {isLoading ? (
-          <div className="flex items-center justify-center py-16">
-            <Loader2 className="w-8 h-8 text-sky-400 animate-spin" />
-          </div>
-        ) : filteredPlatforms.length > 0 ? (
-          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-4">
-            {filteredPlatforms.map((platform) => (
-              <PlatformCard
-                key={platform.id}
-                platform={platform}
-                onClick={() => handlePlatformClick(platform.id)}
-                onDelete={() => handleDeleteClick(platform)}
+        {/* Content */}
+        <div className="flex-1 overflow-y-auto">
+          <div className="max-w-4xl mx-auto px-6 lg:px-8 pt-10 pb-6 space-y-6">
+            {/* Search */}
+            <div className="relative">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-zinc-500" />
+              <input
+                type="text"
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                placeholder="Search platforms..."
+                className="w-full pl-10 pr-4 py-2.5 bg-zinc-800/50 border border-zinc-700 rounded-xl text-sm text-zinc-200 placeholder:text-zinc-500 focus:outline-none focus:border-sky-500"
               />
-            ))}
-          </div>
-        ) : (
-          <div className="flex flex-col items-center justify-center py-12 px-6 border border-dashed border-zinc-800 rounded-xl bg-zinc-900/30">
-            <FolderOpen className="w-12 h-12 text-zinc-600 mb-3" />
-            <p className="text-zinc-500 text-sm text-center">
-              {searchQuery
-                ? `No platforms matching "${searchQuery}"`
-                : "No platforms yet"}
-            </p>
-          </div>
-        )}
-      </div>
+            </div>
 
-      {/* Delete Confirmation Modal */}
-      {deleteModal.isOpen && (
+            {/* Platform Grid */}
+            {isLoading ? (
+              <div className="flex items-center justify-center py-16">
+                <Loader2 className="w-8 h-8 text-sky-400 animate-spin" />
+              </div>
+            ) : filteredPlatforms.length > 0 ? (
+              <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-4">
+                {filteredPlatforms.map((platform) => (
+                  <PlatformCard
+                    key={platform.id}
+                    platform={platform}
+                    onClick={() => handlePlatformClick(platform.id)}
+                    onDelete={() => handleDeleteClick(platform)}
+                  />
+                ))}
+              </div>
+            ) : (
+              <div className="flex flex-col items-center justify-center py-12 px-6 border border-dashed border-zinc-800 rounded-xl bg-zinc-900/30">
+                <FolderOpen className="w-12 h-12 text-zinc-600 mb-3" />
+                <p className="text-zinc-500 text-sm text-center">
+                  {searchQuery
+                    ? `No platforms matching "${searchQuery}"`
+                    : "No platforms yet"}
+                </p>
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* Delete Confirmation Modal */}
+        {deleteModal.isOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center">
           {/* Backdrop */}
           <div
@@ -266,7 +268,8 @@ export function LibraryPlatformsPage() {
             </div>
           </div>
         </div>
-      )}
+        )}
+      </div>
     </LibraryLayout>
   )
 }

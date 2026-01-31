@@ -1,4 +1,5 @@
-import { useState, useEffect, useRef } from "react"
+import { useState, useEffect } from "react"
+import { useNavigate } from "react-router-dom"
 import { useAuth } from "@/contexts/AuthContext"
 import {
   Mountain,
@@ -10,7 +11,6 @@ import {
   Music,
   Waves,
   Mic,
-  Plus,
   Play,
   ChevronDown,
   ChevronRight,
@@ -19,24 +19,15 @@ import {
   Upload,
   Wand2,
   FolderOpen,
-  ArrowLeft,
   Loader2,
   Trash2,
   AlertTriangle,
-  Check,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { useWorkspaceStore } from "@/state/workspaceStore"
-import { useAssetWizardStore, ASSET_WIZARD_STEPS } from "@/state/assetWizardStore"
 import { getAssets, deleteAsset } from "@/services/assets"
 import { getAssetDisplayUrl } from "@/services/localStorage"
 import { AssetDetailsModal, UploadAssetModal } from "@/components/library"
-import {
-  TypeStep,
-  CategoryStep,
-  PromptAndGenerateStep,
-  ReviewStep,
-} from "@/components/create-asset"
 import type { Asset, AssetType, AssetCategory, VisualAssetCategory, AudioAssetCategory } from "@/types/database"
 
 // Visual categories for Image and Video assets
@@ -248,147 +239,12 @@ function AssetCard({ asset, onDelete, onViewDetails }: AssetCardProps) {
     </div>
   )
 }
-
-// Asset Creation Wizard embedded in workspace
-function AssetCreationWizard({
-  onBack,
-  onComplete,
-  initialType
-}: {
-  onBack: () => void
-  onComplete: () => void
-  initialType?: "image" | "video" | "audio" | "animation" | null
-}) {
-  const { currentStep, resetWizard, initWithType } = useAssetWizardStore()
-  const hasInitialized = useRef(false)
-
-  // Reset wizard and optionally skip to category step if type is pre-selected
-  useEffect(() => {
-    if (hasInitialized.current) return
-    hasInitialized.current = true
-
-    if (initialType) {
-      // Skip type step - init with type and start at category
-      initWithType(initialType)
-    } else {
-      // Normal flow - start from beginning
-      resetWizard()
-    }
-  }, [resetWizard, initWithType, initialType])
-
-  const handleComplete = () => {
-    onComplete()
-    onBack()
-  }
-
-  const renderStepContent = () => {
-    switch (currentStep) {
-      case "type":
-        return <TypeStep />
-      case "category":
-        return <CategoryStep />
-      case "prompt":
-        return <PromptAndGenerateStep />
-      case "review":
-        return <ReviewStep onComplete={handleComplete} />
-      default:
-        return <TypeStep />
-    }
-  }
-
-  const handleBack = () => {
-    resetWizard()
-    onBack()
-  }
-
-  const currentIndex = ASSET_WIZARD_STEPS.findIndex((s) => s.id === currentStep)
-
-  return (
-    <div className="h-full flex flex-col">
-      {/* Header with Steps */}
-      <div className="px-6 lg:px-8 py-4 border-b border-zinc-800 flex items-center">
-        {/* Back Button - Left */}
-        <button
-          onClick={handleBack}
-          className="flex items-center gap-2 text-zinc-400 hover:text-zinc-200 transition-colors flex-shrink-0"
-        >
-          <ArrowLeft className="w-4 h-4" />
-          <span className="text-sm font-medium">Back to Assets</span>
-        </button>
-
-        {/* Step Timeline - Centered */}
-        <div className="flex-1 flex items-center justify-center gap-1">
-          {ASSET_WIZARD_STEPS.map((step, index) => {
-            const isActive = step.id === currentStep
-            const isCompleted = index < currentIndex
-
-            return (
-              <div key={step.id} className="flex items-center">
-                {/* Step indicator */}
-                <div className="flex items-center gap-2">
-                  <div
-                    className={cn(
-                      "w-7 h-7 rounded-full flex items-center justify-center text-xs font-medium transition-colors",
-                      isActive
-                        ? "bg-sky-500 text-white"
-                        : isCompleted
-                          ? "bg-sky-500/20 text-sky-400"
-                          : "bg-zinc-800 text-zinc-500"
-                    )}
-                  >
-                    {isCompleted ? (
-                      <Check className="w-3.5 h-3.5" />
-                    ) : (
-                      index + 1
-                    )}
-                  </div>
-                  <span
-                    className={cn(
-                      "text-xs font-medium hidden sm:block",
-                      isActive
-                        ? "text-sky-400"
-                        : isCompleted
-                          ? "text-zinc-400"
-                          : "text-zinc-600"
-                    )}
-                  >
-                    {step.label}
-                  </span>
-                </div>
-
-                {/* Connector line */}
-                {index < ASSET_WIZARD_STEPS.length - 1 && (
-                  <div
-                    className={cn(
-                      "w-6 sm:w-10 h-0.5 mx-2",
-                      index < currentIndex ? "bg-sky-500/50" : "bg-zinc-800"
-                    )}
-                  />
-                )}
-              </div>
-            )
-          })}
-        </div>
-
-        {/* Spacer to balance the back button */}
-        <div className="w-[120px] flex-shrink-0" />
-      </div>
-
-      {/* Step Content */}
-      <div className="flex-1 overflow-y-auto">
-        {renderStepContent()}
-      </div>
-    </div>
-  )
-}
-
 export function AssetsPage() {
   const { user } = useAuth()
+  const navigate = useNavigate()
   const { project, assetCreationMode, assetCreationType, clearAssetCreationMode } = useWorkspaceStore()
   const [searchQuery, setSearchQuery] = useState("")
   const [selectedType, setSelectedType] = useState<"all" | AssetType>("all")
-  const [isCreating, setIsCreating] = useState(false)
-  const [creationInitialType, setCreationInitialType] = useState<"image" | "video" | "audio" | "animation" | null>(null)
   const [allUserAssets, setAllUserAssets] = useState<Asset[]>([])
   const [isLoading, setIsLoading] = useState(true)
   const [isUploadModalOpen, setIsUploadModalOpen] = useState(false)
@@ -404,13 +260,15 @@ export function AssetsPage() {
 
   // Check if we should start in creation mode (e.g., from Scene Manager's Generate button)
   useEffect(() => {
-    if (assetCreationMode) {
-      // Capture the type before clearing (so we can skip to category step)
-      setCreationInitialType(assetCreationType)
-      setIsCreating(true)
+    if (assetCreationMode && project?.id) {
       clearAssetCreationMode()
+      // Navigate to standalone asset creation with optional type preset
+      const url = assetCreationType
+        ? `/create/asset?projectId=${project.id}&type=${assetCreationType}`
+        : `/create/asset?projectId=${project.id}`
+      navigate(url)
     }
-  }, [assetCreationMode, assetCreationType, clearAssetCreationMode])
+  }, [assetCreationMode, assetCreationType, clearAssetCreationMode, project?.id, navigate])
 
   // Fetch assets from Supabase
   const fetchAssets = async () => {
@@ -494,36 +352,13 @@ export function AssetsPage() {
     assets: filteredAssets.filter((a) => a.category === category.id),
   }))
 
-  // Reload assets after creating
-  const handleCreationComplete = () => {
-    fetchAssets()
-  }
-
-  // Show creation wizard if in create mode
-  if (isCreating) {
-    return (
-      <AssetCreationWizard
-        onBack={() => {
-          setIsCreating(false)
-          setCreationInitialType(null)
-        }}
-        onComplete={handleCreationComplete}
-        initialType={creationInitialType}
-      />
-    )
-  }
-
   return (
-    <div className="h-full overflow-y-auto">
-      <div className="max-w-4xl mx-auto px-6 lg:px-8 py-6 lg:py-8 space-y-6">
-        {/* Header */}
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-          <div>
-            <h1 className="text-2xl font-bold text-zinc-100">Asset Library</h1>
-            <p className="text-zinc-400 mt-1">
-              Browse all your assets · {allUserAssets.length} total
-            </p>
-          </div>
+    <div className="h-full flex flex-col">
+      {/* Secondary Header */}
+      <div className="h-[72px] border-b border-zinc-800 flex-shrink-0">
+        <div className="h-full max-w-4xl mx-auto px-6 lg:px-8 flex items-center justify-between">
+          <h1 className="text-xl font-semibold text-zinc-100">Assets</h1>
+
           <div className="flex items-center gap-2">
             <button
               onClick={() => setIsUploadModalOpen(true)}
@@ -533,7 +368,7 @@ export function AssetsPage() {
               Upload
             </button>
             <button
-              onClick={() => setIsCreating(true)}
+              onClick={() => navigate(`/create/asset?projectId=${project?.id}`)}
               className="px-4 py-2 bg-gradient-to-br from-sky-400 via-sky-500 to-blue-600 rounded-xl text-white font-medium text-sm hover:opacity-90 transition-opacity inline-flex items-center gap-2"
             >
               <Wand2 className="w-4 h-4" />
@@ -541,8 +376,11 @@ export function AssetsPage() {
             </button>
           </div>
         </div>
+      </div>
 
-        {/* Filters */}
+      <div className="flex-1 overflow-y-auto">
+        <div className="max-w-4xl mx-auto px-6 lg:px-8 pt-10 pb-6 space-y-6">
+          {/* Filters */}
         <div className="flex flex-col sm:flex-row gap-3">
           <div className="relative flex-1">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-zinc-500" />
@@ -607,6 +445,7 @@ export function AssetsPage() {
             </p>
           </div>
         )}
+        </div>
       </div>
 
       {/* Upload Modal */}

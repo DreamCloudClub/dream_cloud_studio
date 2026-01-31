@@ -103,73 +103,76 @@ export function LibraryFoundationsPage() {
 
   return (
     <LibraryLayout libraryPage="foundations">
-      <div className="max-w-4xl mx-auto px-6 lg:px-8 py-6 lg:py-8 space-y-6">
-        {/* Header */}
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-          <div>
-            <h1 className="text-2xl font-bold text-zinc-100">Foundations</h1>
-            <p className="text-zinc-400 mt-1">
-              Visual styles that maintain consistency across your projects
-            </p>
+      <div className="h-full flex flex-col">
+        {/* Secondary Header */}
+        <div className="h-[72px] border-b border-zinc-800 flex-shrink-0">
+          <div className="h-full max-w-4xl mx-auto px-6 lg:px-8 flex items-center justify-between">
+            <h1 className="text-xl font-semibold text-zinc-100">Foundations</h1>
+
+            <button
+              onClick={handleCreateFoundation}
+              className="px-4 py-2 bg-gradient-to-br from-sky-400 via-sky-500 to-blue-600 rounded-xl text-white font-medium text-sm hover:opacity-90 transition-opacity inline-flex items-center gap-2"
+            >
+              <Plus className="w-4 h-4" />
+              Create Foundation
+            </button>
           </div>
-          <button
-            onClick={handleCreateFoundation}
-            className="px-4 py-2 bg-gradient-to-br from-sky-400 via-sky-500 to-blue-600 rounded-xl text-white font-medium text-sm hover:opacity-90 transition-opacity inline-flex items-center gap-2"
-          >
-            <Plus className="w-4 h-4" />
-            Create Foundation
-          </button>
         </div>
 
-        {/* Search */}
-        <div className="relative">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-zinc-500" />
-          <input
-            type="text"
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            placeholder="Search foundations..."
-            className="w-full pl-10 pr-4 py-2.5 bg-zinc-800/50 border border-zinc-700 rounded-xl text-sm text-zinc-200 placeholder:text-zinc-500 focus:outline-none focus:border-sky-500"
-          />
-        </div>
-
-        {/* Foundation List */}
-        {isLoading ? (
-          <div className="flex items-center justify-center py-16">
-            <Loader2 className="w-8 h-8 text-sky-400 animate-spin" />
-          </div>
-        ) : filteredFoundations.length > 0 ? (
-          <div className="space-y-3">
-            {filteredFoundations.map((foundation) => (
-              <FoundationCard
-                key={foundation.id}
-                foundation={foundation}
-                onClick={() => handleFoundationClick(foundation.id)}
+        {/* Content */}
+        <div className="flex-1 overflow-y-auto">
+          <div className="max-w-4xl mx-auto px-6 lg:px-8 pt-10 pb-6 space-y-6">
+            {/* Search */}
+            <div className="relative">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-zinc-500" />
+              <input
+                type="text"
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                placeholder="Search foundations..."
+                className="w-full pl-10 pr-4 py-2.5 bg-zinc-800/50 border border-zinc-700 rounded-xl text-sm text-zinc-200 placeholder:text-zinc-500 focus:outline-none focus:border-sky-500"
               />
-            ))}
-          </div>
-        ) : (
-          <div className="flex flex-col items-center justify-center py-12 px-6 border border-dashed border-zinc-800 rounded-xl bg-zinc-900/30">
-            <FolderOpen className="w-12 h-12 text-zinc-600 mb-3" />
-            <p className="text-zinc-500 text-sm text-center">
-              {searchQuery
-                ? `No foundations matching "${searchQuery}"`
-                : "No foundations yet"}
-            </p>
-          </div>
-        )}
+            </div>
 
-        {/* Info section */}
-        {filteredFoundations.length > 0 && (
-          <div className="mt-8 p-4 bg-zinc-900/50 border border-zinc-800 rounded-xl">
-            <h4 className="text-sm font-medium text-zinc-300 mb-2">What are Foundations?</h4>
-            <p className="text-sm text-zinc-500">
-              Foundations define the visual DNA of your brand - including color palettes, typography preferences,
-              mood references, and style guidelines. When you create a new project, you can apply a foundation
-              to ensure visual consistency across all your content.
-            </p>
+            {/* Foundation List */}
+            {isLoading ? (
+              <div className="flex items-center justify-center py-16">
+                <Loader2 className="w-8 h-8 text-sky-400 animate-spin" />
+              </div>
+            ) : filteredFoundations.length > 0 ? (
+              <div className="space-y-3">
+                {filteredFoundations.map((foundation) => (
+                  <FoundationCard
+                    key={foundation.id}
+                    foundation={foundation}
+                    onClick={() => handleFoundationClick(foundation.id)}
+                  />
+                ))}
+              </div>
+            ) : (
+              <div className="flex flex-col items-center justify-center py-12 px-6 border border-dashed border-zinc-800 rounded-xl bg-zinc-900/30">
+                <FolderOpen className="w-12 h-12 text-zinc-600 mb-3" />
+                <p className="text-zinc-500 text-sm text-center">
+                  {searchQuery
+                    ? `No foundations matching "${searchQuery}"`
+                    : "No foundations yet"}
+                </p>
+              </div>
+            )}
+
+            {/* Info section */}
+            {filteredFoundations.length > 0 && (
+              <div className="mt-8 p-4 bg-zinc-900/50 border border-zinc-800 rounded-xl">
+                <h4 className="text-sm font-medium text-zinc-300 mb-2">What are Foundations?</h4>
+                <p className="text-sm text-zinc-500">
+                  Foundations define the visual DNA of your brand - including color palettes, typography preferences,
+                  mood references, and style guidelines. When you create a new project, you can apply a foundation
+                  to ensure visual consistency across all your content.
+                </p>
+              </div>
+            )}
           </div>
-        )}
+        </div>
       </div>
     </LibraryLayout>
   )

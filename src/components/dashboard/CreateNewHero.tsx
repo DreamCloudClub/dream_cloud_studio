@@ -205,28 +205,34 @@ const instructionCards = [
     id: 2,
     icon: Sparkles,
     title: "Choose Your Path",
-    description: "Select a generation mode — image, video, audio — and let AI handle the rest.",
+    description: "Select a generation mode — Image, Video, Audio, Animation — or let Bubble guide you through the process.",
   },
   {
     id: 3,
     icon: Wand2,
+    title: "Select A Process",
+    description: "Each mode offers different generation processes. Transform text into visuals, animate images, clone voices, and more.",
+  },
+  {
+    id: 4,
+    icon: Cloud,
     title: "AI-Guided Creation",
     description: "Bubble AI will ask clarifying questions and help refine your ideas.",
   },
   {
-    id: 4,
+    id: 5,
     icon: Clapperboard,
     title: "Generate & Iterate",
     description: "Create images, videos, and audio with AI. Regenerate until it's perfect.",
   },
   {
-    id: 5,
+    id: 6,
     icon: Video,
     title: "Assemble & Edit",
     description: "Assemble your assets into a timeline. Refine and polish in the workspace.",
   },
   {
-    id: 6,
+    id: 7,
     icon: Download,
     title: "Export Finished Project",
     description: "Render your final video and export in your preferred format and resolution.",
@@ -291,12 +297,47 @@ function getInfoCardContent(primaryMode: PrimaryMode, subMode: string | null) {
   return null
 }
 
+// Helper to get process flow icons (input -> output)
+function getProcessIcons(primaryMode: PrimaryMode, subMode: string | null): { inputIcon: LucideIcon; outputIcon: LucideIcon } | null {
+  if (primaryMode === "bubble") {
+    return { inputIcon: MessageSquare, outputIcon: Cloud }
+  }
+  if (primaryMode === "animation") {
+    return { inputIcon: Type, outputIcon: Play }
+  }
+
+  // Map sub-modes to their input/output icons
+  const iconMap: Record<string, { inputIcon: LucideIcon; outputIcon: LucideIcon }> = {
+    // Image modes
+    "text-to-image": { inputIcon: Type, outputIcon: Image },
+    "image-to-image": { inputIcon: Image, outputIcon: Image },
+    "inpaint": { inputIcon: Paintbrush, outputIcon: Image },
+    "selective-edit": { inputIcon: ImagePlus, outputIcon: Image },
+    "upscale": { inputIcon: Image, outputIcon: Maximize },
+    // Video modes
+    "text-to-video": { inputIcon: Type, outputIcon: Video },
+    "image-to-video": { inputIcon: Image, outputIcon: Video },
+    "video-to-video": { inputIcon: Video, outputIcon: Video },
+    "extend": { inputIcon: Video, outputIcon: ArrowRight },
+    // Audio modes
+    "text-to-speech": { inputIcon: Type, outputIcon: Volume2 },
+    "voice-to-voice": { inputIcon: Mic2, outputIcon: Volume2 },
+    "music-sfx": { inputIcon: Type, outputIcon: Music },
+  }
+
+  if (subMode && iconMap[subMode]) {
+    return iconMap[subMode]
+  }
+
+  return null
+}
+
 export function CreateNewHero({ onStartWithBubble }: CreateNewHeroProps) {
   const navigate = useNavigate()
   const [carouselIndex, setCarouselIndex] = useState(0)
   const [inputValue, setInputValue] = useState("")
-  const [primaryMode, setPrimaryMode] = useState<PrimaryMode>("image")
-  const [subMode, setSubMode] = useState<string | null>("text-to-image")
+  const [primaryMode, setPrimaryMode] = useState<PrimaryMode>("bubble")
+  const [subMode, setSubMode] = useState<string | null>(null)
   const [isLaunching, setIsLaunching] = useState(false)
 
   const {
@@ -380,6 +421,7 @@ export function CreateNewHero({ onStartWithBubble }: CreateNewHeroProps) {
 
   const currentSubModes = getSubModes(primaryMode)
   const infoCard = getInfoCardContent(primaryMode, subMode)
+  const processIcons = getProcessIcons(primaryMode, subMode)
 
   // Get color for current primary mode
   const currentPrimaryMode = PRIMARY_MODES.find(m => m.id === primaryMode)
@@ -516,16 +558,16 @@ export function CreateNewHero({ onStartWithBubble }: CreateNewHeroProps) {
 
         {/* Info Card with Sub-Mode Icons */}
         {infoCard && (
-          <div className={`rounded-xl border p-5 transition-all ${
-            modeColor === "sky" ? "bg-sky-500/5 border-sky-500/20" :
-            modeColor === "orange" ? "bg-orange-500/5 border-orange-500/20" :
-            modeColor === "red" ? "bg-red-500/5 border-red-500/20" :
-            modeColor === "violet" ? "bg-violet-500/5 border-violet-500/20" :
-            modeColor === "emerald" ? "bg-emerald-500/5 border-emerald-500/20" :
-            "bg-zinc-800/50 border-zinc-700"
+          <div className={`rounded-xl border-2 p-5 transition-all ${
+            modeColor === "sky" ? "bg-sky-500/5 border-sky-500/40" :
+            modeColor === "orange" ? "bg-orange-500/5 border-orange-500/40" :
+            modeColor === "red" ? "bg-red-500/5 border-red-500/40" :
+            modeColor === "violet" ? "bg-violet-500/5 border-violet-500/40" :
+            modeColor === "emerald" ? "bg-emerald-500/5 border-emerald-500/40" :
+            "bg-zinc-800/50 border-zinc-600"
           }`}>
-            {/* Sub-mode icons row - always reserve space */}
-            <div className="h-11 flex justify-center items-center gap-2 mb-4">
+            {/* Sub-mode icons row */}
+            <div className="h-11 flex justify-center items-center gap-2 mb-6">
               {currentSubModes ? (
                 currentSubModes.map((mode) => {
                   const Icon = mode.icon
@@ -555,13 +597,66 @@ export function CreateNewHero({ onStartWithBubble }: CreateNewHeroProps) {
               ) : null}
             </div>
 
+            {/* Process Flow Illustration */}
+            {processIcons && (
+              <div className="flex items-center justify-center gap-5 mb-6">
+                {/* Input Icon */}
+                <div className={`w-20 h-20 rounded-2xl flex items-center justify-center border-2 ${
+                  modeColor === "sky" ? "bg-sky-500/20 border-sky-400" :
+                  modeColor === "orange" ? "bg-orange-500/20 border-orange-400" :
+                  modeColor === "red" ? "bg-red-500/20 border-red-400" :
+                  modeColor === "violet" ? "bg-violet-500/20 border-violet-400" :
+                  modeColor === "emerald" ? "bg-emerald-500/20 border-emerald-400" :
+                  "bg-zinc-800 border-zinc-600"
+                }`}>
+                  <processIcons.inputIcon className={`w-10 h-10 ${
+                    modeColor === "sky" ? "text-sky-300" :
+                    modeColor === "orange" ? "text-orange-300" :
+                    modeColor === "red" ? "text-red-300" :
+                    modeColor === "violet" ? "text-violet-300" :
+                    modeColor === "emerald" ? "text-emerald-300" :
+                    "text-zinc-300"
+                  }`} />
+                </div>
+
+                {/* Arrow */}
+                <ArrowRight className={`w-7 h-7 ${
+                  modeColor === "sky" ? "text-sky-400" :
+                  modeColor === "orange" ? "text-orange-400" :
+                  modeColor === "red" ? "text-red-400" :
+                  modeColor === "violet" ? "text-violet-400" :
+                  modeColor === "emerald" ? "text-emerald-400" :
+                  "text-zinc-500"
+                }`} />
+
+                {/* Output Icon */}
+                <div className={`w-20 h-20 rounded-2xl flex items-center justify-center border-2 ${
+                  modeColor === "sky" ? "bg-sky-500/20 border-sky-400" :
+                  modeColor === "orange" ? "bg-orange-500/20 border-orange-400" :
+                  modeColor === "red" ? "bg-red-500/20 border-red-400" :
+                  modeColor === "violet" ? "bg-violet-500/20 border-violet-400" :
+                  modeColor === "emerald" ? "bg-emerald-500/20 border-emerald-400" :
+                  "bg-zinc-800 border-zinc-600"
+                }`}>
+                  <processIcons.outputIcon className={`w-10 h-10 ${
+                    modeColor === "sky" ? "text-sky-300" :
+                    modeColor === "orange" ? "text-orange-300" :
+                    modeColor === "red" ? "text-red-300" :
+                    modeColor === "violet" ? "text-violet-300" :
+                    modeColor === "emerald" ? "text-emerald-300" :
+                    "text-zinc-300"
+                  }`} />
+                </div>
+              </div>
+            )}
+
             {/* Divider line */}
             <div className={`h-px mb-4 ${
-              modeColor === "sky" ? "bg-sky-500/20" :
-              modeColor === "orange" ? "bg-orange-500/20" :
-              modeColor === "red" ? "bg-red-500/20" :
-              modeColor === "violet" ? "bg-violet-500/20" :
-              modeColor === "emerald" ? "bg-emerald-500/20" :
+              modeColor === "sky" ? "bg-sky-500/30" :
+              modeColor === "orange" ? "bg-orange-500/30" :
+              modeColor === "red" ? "bg-red-500/30" :
+              modeColor === "violet" ? "bg-violet-500/30" :
+              modeColor === "emerald" ? "bg-emerald-500/30" :
               "bg-zinc-700"
             }`} />
 

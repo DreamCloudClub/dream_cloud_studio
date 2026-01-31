@@ -1,0 +1,4 @@
+# Disable JWT verification for this function
+# The function uses its own Anthropic API key stored as a secret
+[functions.anthropic-proxy]
+verify_jwt = false

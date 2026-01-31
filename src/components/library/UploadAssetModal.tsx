@@ -165,15 +165,8 @@ export function UploadAssetModal({ isOpen, onClose, onSuccess }: UploadAssetModa
       {/* Modal */}
       <div className="relative bg-zinc-900 border border-zinc-700 rounded-2xl w-full max-w-lg mx-4 max-h-[90vh] overflow-y-auto">
         {/* Header */}
-        <div className="flex items-center justify-between p-4 border-b border-zinc-800">
-          <h2 className="text-lg font-semibold text-zinc-100">Upload Asset</h2>
-          <button
-            onClick={handleClose}
-            disabled={isUploading}
-            className="p-1 text-zinc-400 hover:text-zinc-200 transition-colors disabled:opacity-50"
-          >
-            <X className="w-5 h-5" />
-          </button>
+        <div className="p-4 border-b border-zinc-800">
+          <h2 className="text-lg font-semibold text-zinc-100 text-center">Upload Asset</h2>
         </div>
 
         {/* Content */}

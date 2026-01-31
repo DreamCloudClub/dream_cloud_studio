@@ -48,13 +48,12 @@ function formatRelativeTime(dateString: string): string {
 export function Dashboard() {
   const navigate = useNavigate()
   const { user, profile, signOut } = useAuth()
-  const { isBubbleCollapsed, toggleBubbleCollapsed, setBubbleCollapsed } = useUIStore()
+  const { isBubbleCollapsed, toggleBubbleCollapsed, setBubbleCollapsed, isInspectorCollapsed, toggleInspectorCollapsed } = useUIStore()
 
   const [projects, setProjects] = useState<ProjectWithThumbnail[]>([])
   const [assets, setAssets] = useState<Asset[]>([])
   const [isLoading, setIsLoading] = useState(true)
   const [selectedAsset, setSelectedAsset] = useState<Asset | null>(null)
-  const [isInspectorCollapsed, setIsInspectorCollapsed] = useState(false)
 
   // Fetch data from Supabase
   useEffect(() => {
@@ -197,7 +196,7 @@ export function Dashboard() {
         >
           <InspectorPanel
             isCollapsed={isInspectorCollapsed}
-            onToggleCollapse={() => setIsInspectorCollapsed(!isInspectorCollapsed)}
+            onToggleCollapse={toggleInspectorCollapsed}
             libraryPage="dashboard"
           />
         </div>

@@ -1,65 +1,71 @@
-import { Check } from "lucide-react"
+import { ChevronRight } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { useFoundationWizardStore, FOUNDATION_WIZARD_STEPS } from "@/state/foundationWizardStore"
 
 export function FoundationStepTimeline() {
-  const { currentStep } = useFoundationWizardStore()
+  const { currentStep, nextStep, name } = useFoundationWizardStore()
 
   const currentIndex = FOUNDATION_WIZARD_STEPS.findIndex((s) => s.id === currentStep)
+  const isLastStep = currentIndex === FOUNDATION_WIZARD_STEPS.length - 1
+
+  // Determine if continue should be enabled based on current step
+  const canContinue = () => {
+    if (currentStep === "basics") {
+      return name.trim().length > 0
+    }
+    return true
+  }
+
+  const handleContinue = () => {
+    if (canContinue() && !isLastStep) {
+      nextStep()
+    }
+  }
 
   return (
     <nav className="bg-zinc-900/80 backdrop-blur-sm border-t border-zinc-800">
-      <div className="flex items-center justify-center gap-1 px-4 py-4">
-        {FOUNDATION_WIZARD_STEPS.map((step, index) => {
-          const isActive = step.id === currentStep
-          const isCompleted = index < currentIndex
+      <div className="h-full px-6 lg:px-8 flex items-center py-4">
+        <div className="w-24" />
 
-          return (
-            <div key={step.id} className="flex items-center">
-              {/* Step indicator */}
-              <div className="flex flex-col items-center">
-                <div
-                  className={cn(
-                    "w-8 h-8 rounded-full flex items-center justify-center text-sm font-medium transition-colors",
-                    isActive
-                      ? "bg-sky-500 text-white"
-                      : isCompleted
-                        ? "bg-sky-500/20 text-sky-400"
-                        : "bg-zinc-800 text-zinc-500"
-                  )}
-                >
-                  {isCompleted ? (
-                    <Check className="w-4 h-4" />
-                  ) : (
-                    index + 1
-                  )}
-                </div>
-                <span
-                  className={cn(
-                    "text-xs mt-1 font-medium",
-                    isActive
-                      ? "text-sky-400"
-                      : isCompleted
-                        ? "text-zinc-400"
-                        : "text-zinc-600"
-                  )}
-                >
-                  {step.label}
-                </span>
-              </div>
+        {/* Step indicator */}
+        <div className="flex-1 flex items-center justify-center gap-2">
+          {FOUNDATION_WIZARD_STEPS.map((step, index) => {
+            const isActive = step.id === currentStep
+            const isCompleted = index < currentIndex
 
-              {/* Connector line */}
-              {index < FOUNDATION_WIZARD_STEPS.length - 1 && (
-                <div
-                  className={cn(
-                    "w-12 h-0.5 mx-2 mb-5",
-                    index < currentIndex ? "bg-sky-500/50" : "bg-zinc-800"
-                  )}
-                />
+            return (
+              <div
+                key={step.id}
+                className={cn(
+                  "w-2 h-2 rounded-full transition-colors",
+                  isActive
+                    ? "bg-sky-400"
+                    : isCompleted
+                      ? "bg-sky-400/50"
+                      : "bg-zinc-700"
+                )}
+              />
+            )
+          })}
+        </div>
+
+        <div className="w-24 flex justify-end">
+          {!isLastStep && (
+            <button
+              onClick={handleContinue}
+              disabled={!canContinue()}
+              className={cn(
+                "flex items-center gap-1 transition-colors",
+                canContinue()
+                  ? "text-sky-400 hover:opacity-80"
+                  : "text-zinc-600 cursor-not-allowed"
               )}
-            </div>
-          )
-        })}
+            >
+              <span className="text-sm font-medium">Continue</span>
+              <ChevronRight className="w-5 h-5" />
+            </button>
+          )}
+        </div>
       </div>
     </nav>
   )

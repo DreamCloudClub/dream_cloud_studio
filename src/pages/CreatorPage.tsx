@@ -1,7 +1,6 @@
 import { useState, useEffect, useRef } from "react"
-import { useNavigate, useParams } from "react-router-dom"
+import { useNavigate, useParams, useSearchParams, Link } from "react-router-dom"
 import {
-  ArrowLeft,
   Sparkles,
   Loader2,
   Image,
@@ -11,6 +10,8 @@ import {
   Wand2,
   ChevronDown,
   ChevronUp,
+  ChevronLeft,
+  ChevronRight,
   X,
   Check,
   Trash2,
@@ -21,8 +22,13 @@ import {
 import { cn } from "@/lib/utils"
 import { useCreatorStore, type AssetType } from "@/state/creatorStore"
 import { useUIStore } from "@/state/uiStore"
+import { useAuth } from "@/contexts/AuthContext"
+import { useAssetWizardStore, type PromptType } from "@/state/assetWizardStore"
 import { BubblePanel } from "@/components/create"
-import { InspectorPanel } from "@/components/workspace"
+import { InspectorPanel, WorkspaceNav } from "@/components/workspace"
+import { HeaderActions } from "@/components/shared"
+import { DashboardNav } from "@/components/dashboard"
+import studioLogo from "@/assets/images/studio_logo.png"
 import { ReferenceModal } from "@/components/create-asset/ReferenceModal"
 import { generateImages } from "@/services/replicate"
 import { getAssetDisplayUrl } from "@/services/localStorage"
@@ -249,6 +255,9 @@ function useAutoGrow(value: string, minRows: number = 3) {
 export function CreatorPage() {
   const navigate = useNavigate()
   const { type, subMode } = useParams<{ type: string; subMode: string }>()
+  const [searchParams] = useSearchParams()
+  const projectId = searchParams.get("projectId")
+  const { user, profile, signOut } = useAuth()
 
   const {
     draft,
@@ -258,8 +267,7 @@ export function CreatorPage() {
     clearDraft,
   } = useCreatorStore()
 
-  const { isBubbleCollapsed, toggleBubbleCollapsed } = useUIStore()
-  const [isInspectorCollapsed, setIsInspectorCollapsed] = useState(false)
+  const { isBubbleCollapsed, toggleBubbleCollapsed, isInspectorCollapsed, toggleInspectorCollapsed } = useUIStore()
 
   // Get mode configuration
   const modeConfig = getModeConfig(subMode)
@@ -321,9 +329,42 @@ export function CreatorPage() {
     }
   }, [draft, originalPrompt])
 
+  // Asset wizard store for save flow
+  const {
+    setAssetType: setWizardAssetType,
+    setPromptType: setWizardPromptType,
+    setGeneratedAssets,
+    setUserDescription: setWizardDescription,
+    setAiPrompt: setWizardPrompt,
+    setCurrentStep,
+  } = useAssetWizardStore()
+
   const handleBack = () => {
     clearDraft()
-    navigate("/")
+    // Go back to step 2 (prompt type selection)
+    setCurrentStep("promptType")
+    // Use browser back to preserve state and avoid full reload
+    navigate(-1)
+  }
+
+  // Get all selected assets from batches
+  const selectedAssets = batches.flatMap(b => b.assets).filter(a => a.selected)
+  const hasSelectedAssets = selectedAssets.length > 0
+
+  const handleSave = () => {
+    if (!hasSelectedAssets) return
+
+    // Transfer data to wizard store
+    setWizardAssetType(type as any)
+    setWizardPromptType(subMode as PromptType)
+    setWizardDescription(description)
+    setWizardPrompt(enhancedPrompt)
+    setGeneratedAssets(selectedAssets)
+    setCurrentStep("save")
+
+    // Navigate to wizard save step (same flow for both contexts)
+    const url = projectId ? `/create/asset?projectId=${projectId}` : "/create/asset"
+    navigate(url)
   }
 
   const handleSelectBaseImage = (asset: Asset) => {
@@ -473,24 +514,23 @@ export function CreatorPage() {
 
   return (
     <div className="h-screen bg-zinc-950 flex flex-col">
-      {/* Header */}
-      <header className="h-14 border-b border-zinc-800 flex items-center px-4 flex-shrink-0">
-        <button
-          onClick={handleBack}
-          className="flex items-center gap-2 text-zinc-400 hover:text-white transition-colors"
-        >
-          <ArrowLeft className="w-4 h-4" />
-          <span className="text-sm">Back</span>
-        </button>
+      {/* Primary Header - Dream Cloud Studio + User */}
+      <header className="h-14 border-b border-zinc-800 px-4 sm:px-6 flex items-center justify-between bg-zinc-950 flex-shrink-0">
+        <Link to="/" className="flex items-center gap-2 sm:gap-3 hover:opacity-80 transition-opacity">
+          <img
+            src={studioLogo}
+            alt="Dream Cloud Studio"
+            className="w-8 h-8 rounded-lg object-contain flex-shrink-0"
+          />
+          <h1 className="text-base sm:text-lg font-semibold text-zinc-100 truncate">Dream Cloud Studio</h1>
+        </Link>
 
-        <div className="flex-1 flex items-center justify-center gap-2">
-          <div className={`w-7 h-7 rounded-lg ${colors.accent} flex items-center justify-center`}>
-            <Icon className="w-3.5 h-3.5 text-white" />
-          </div>
-          <h1 className="text-sm font-semibold text-white">{modeLabel}</h1>
-        </div>
-
-        <div className="w-[80px]" />
+        <HeaderActions
+          userName={profile?.full_name || user?.email?.split("@")[0] || "User"}
+          userEmail={user?.email || ""}
+          userAvatar={profile?.avatar_url}
+          onSignOut={signOut}
+        />
       </header>
 
       {/* Main Layout with Panels */}
@@ -507,8 +547,46 @@ export function CreatorPage() {
           />
         </div>
 
-        {/* Main Content */}
-        <main className="flex-1 overflow-auto py-6">
+        {/* Main Content Area */}
+        <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
+          {/* Secondary Header - Navigation (inside panels) */}
+          <div className="h-[72px] border-b border-zinc-800 bg-zinc-900/50 flex-shrink-0">
+            <div className="h-full px-6 lg:px-8 flex items-center">
+            <div className="w-24">
+              <button
+                onClick={handleBack}
+                className="flex items-center gap-1 text-zinc-400 hover:text-white transition-colors"
+              >
+                <ChevronLeft className="w-5 h-5" />
+                <span className="text-sm font-medium">Back</span>
+              </button>
+            </div>
+
+            <div className="flex-1 flex items-center justify-center gap-2">
+              <Icon className={`w-5 h-5 ${colors.text}`} />
+              <h1 className="text-xl font-semibold text-zinc-100">{modeLabel}</h1>
+            </div>
+
+            <div className="w-24 flex justify-end">
+              <button
+                onClick={handleSave}
+                disabled={!hasSelectedAssets}
+                className={cn(
+                  "flex items-center gap-1 transition-colors",
+                  hasSelectedAssets
+                    ? "text-sky-400 hover:text-sky-300"
+                    : "text-zinc-600 cursor-not-allowed"
+                )}
+              >
+                <span className="text-sm font-medium">Continue</span>
+                <ChevronRight className="w-5 h-5" />
+              </button>
+            </div>
+            </div>
+          </div>
+
+          {/* Main Content */}
+          <main className="flex-1 overflow-auto py-6">
           <div className="max-w-2xl mx-auto px-6 space-y-5">
 
             {/* Loading State */}
@@ -1053,6 +1131,7 @@ export function CreatorPage() {
             </div>
           </div>
         </main>
+        </div>
 
         {/* Control Panel (Right) */}
         <div
@@ -1062,11 +1141,14 @@ export function CreatorPage() {
         >
           <InspectorPanel
             isCollapsed={isInspectorCollapsed}
-            onToggleCollapse={() => setIsInspectorCollapsed(!isInspectorCollapsed)}
+            onToggleCollapse={toggleInspectorCollapsed}
             libraryPage="dashboard"
           />
         </div>
       </div>
+
+      {/* Show appropriate bottom nav based on context */}
+      {projectId ? <WorkspaceNav activeTabOverride="assets" projectId={projectId} /> : <DashboardNav />}
 
       {/* Reference Modal */}
       <ReferenceModal

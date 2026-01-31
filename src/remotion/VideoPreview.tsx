@@ -10,8 +10,8 @@ interface VideoPreviewProps {
   outro?: CompositionProps["outro"]
   textOverlays?: TextOverlayConfig[]
   backgroundColor?: string
-  width?: number
-  height?: number
+  width?: number | string
+  height?: number | string
   autoPlay?: boolean
   loop?: boolean
   controls?: boolean
@@ -67,8 +67,6 @@ export const VideoPreview = forwardRef<PlayerRef, VideoPreviewProps>(function Vi
       style={{
         width,
         height,
-        borderRadius: 8,
-        overflow: "hidden",
       }}
       autoPlay={autoPlay}
       loop={loop}

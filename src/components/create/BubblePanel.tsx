@@ -1991,8 +1991,8 @@ export function BubblePanel({ className, isCollapsed = false, onToggleCollapse }
       )}
     >
       {/* Header */}
-      <div className="p-4 border-b border-zinc-800">
-        <div className="flex items-center justify-between">
+      <div className="h-[72px] px-4 border-b border-zinc-800 flex items-center">
+        <div className="flex-1 flex items-center justify-between">
           <div className="flex items-center gap-3">
             <button
               onClick={handleRefresh}

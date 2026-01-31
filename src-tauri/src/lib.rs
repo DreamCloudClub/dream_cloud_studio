@@ -5,6 +5,9 @@ use std::path::PathBuf;
 use tauri::Manager;
 use uuid::Uuid;
 
+mod video_decoder;
+use video_decoder::*;
+
 /// Result of a file operation
 #[derive(Serialize, Deserialize)]
 pub struct FileResult {
@@ -245,11 +248,17 @@ async fn get_storage_usage() -> Result<u64, String> {
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    // Initialize FFmpeg
+    if let Err(e) = video_decoder::init_ffmpeg() {
+        eprintln!("Warning: Failed to initialize FFmpeg: {}", e);
+    }
+
     tauri::Builder::default()
         .plugin(tauri_plugin_fs::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_shell::init())
         .invoke_handler(tauri::generate_handler![
+            // Asset management commands
             download_asset,
             save_asset_bytes,
             delete_asset,
@@ -260,6 +269,16 @@ pub fn run() {
             list_local_assets,
             copy_asset,
             get_storage_usage,
+            // Video decoder commands
+            cmd_get_video_info,
+            cmd_open_video,
+            cmd_close_video,
+            cmd_get_frame_at_time,
+            cmd_get_frame_at_time_with_quality,
+            cmd_generate_thumbnails,
+            cmd_generate_thumbnails_with_options,
+            cmd_get_first_frame,
+            cmd_get_thumbnail_at_percent,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

@@ -2,21 +2,16 @@ import { useState, useEffect, useRef, useCallback } from "react"
 import { useWorkspaceStore } from "@/state/workspaceStore"
 
 export function ScriptPage() {
-  const { project, updateScript } = useWorkspaceStore()
+  const { project, currentScript, updateCurrentScript } = useWorkspaceStore()
 
-  const [title, setTitle] = useState("")
   const [content, setContent] = useState("")
-
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const saveTimeoutRef = useRef<NodeJS.Timeout | null>(null)
 
-  // Load script from project on mount
+  // Load script content on mount or when currentScript changes
   useEffect(() => {
-    if (project?.script) {
-      setTitle(project.script.title || "")
-      setContent(project.script.content || "")
-    }
-  }, [project?.script])
+    setContent(currentScript?.content || "")
+  }, [currentScript])
 
   // Auto-resize textarea to fit content
   const autoResize = useCallback(() => {
@@ -39,27 +34,24 @@ export function ScriptPage() {
   }, [autoResize])
 
   // Debounced save
-  const saveScript = useCallback(async (newTitle: string, newContent: string) => {
+  const saveScript = useCallback(async (newContent: string) => {
     if (!project?.id) return
     try {
-      await updateScript({ title: newTitle, content: newContent })
+      await updateCurrentScript(newContent)
     } catch (error) {
       console.error("Failed to save script:", error)
     }
-  }, [project?.id, updateScript])
+  }, [project?.id, updateCurrentScript])
 
-  const handleChange = useCallback((field: "title" | "content", value: string) => {
-    if (field === "title") setTitle(value)
-    else setContent(value)
+  const handleChange = useCallback((value: string) => {
+    setContent(value)
 
     if (saveTimeoutRef.current) clearTimeout(saveTimeoutRef.current)
 
     saveTimeoutRef.current = setTimeout(() => {
-      const newTitle = field === "title" ? value : title
-      const newContent = field === "content" ? value : content
-      saveScript(newTitle, newContent)
+      saveScript(value)
     }, 1000)
-  }, [title, content, saveScript])
+  }, [saveScript])
 
   useEffect(() => {
     return () => {
@@ -71,26 +63,21 @@ export function ScriptPage() {
 
   return (
     <div className="h-full flex flex-col overflow-hidden">
+      {/* Secondary Header */}
+      <div className="h-[72px] border-b border-zinc-800 flex-shrink-0">
+        <div className="h-full max-w-3xl mx-auto px-6 lg:px-8 flex items-center">
+          <h1 className="text-xl font-semibold text-zinc-100">Script</h1>
+        </div>
+      </div>
+
       <div className="flex-1 overflow-y-auto">
-        <div className="max-w-3xl mx-auto px-6 lg:px-8 py-6 lg:py-8">
-          {/* Title */}
-          <h1 className="text-2xl font-bold text-zinc-100 mb-1">Script</h1>
-
-          {/* Subtitle / Script Title Input */}
-          <input
-            type="text"
-            value={title}
-            onChange={(e) => handleChange("title", e.target.value)}
-            placeholder="Untitled script..."
-            className="w-full bg-transparent text-zinc-400 text-sm placeholder:text-zinc-600 focus:outline-none mb-6"
-          />
-
+        <div className="max-w-3xl mx-auto px-6 lg:px-8 pt-10 pb-6">
           {/* Script Content */}
           <textarea
             ref={textareaRef}
             value={content}
-            onChange={(e) => handleChange("content", e.target.value)}
-            placeholder="Start writing..."
+            onChange={(e) => handleChange(e.target.value)}
+            placeholder="Start writing your script..."
             className="w-full bg-zinc-900/50 border border-zinc-800 rounded-lg px-4 py-4 text-zinc-200 placeholder:text-zinc-600 focus:outline-none focus:border-zinc-700 transition-colors resize-none leading-relaxed"
             style={{ minHeight: "320px" }}
           />

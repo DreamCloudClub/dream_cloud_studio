@@ -1,5 +1,5 @@
-import { useState, useEffect, useRef } from "react"
-import { User, MapPin, Cloud, Clapperboard, Package, ChevronDown, Check } from "lucide-react"
+import { useState, useEffect, useRef, useCallback } from "react"
+import { ChevronDown, Check } from "lucide-react"
 import { useWorkspaceStore } from "@/state/workspaceStore"
 import { ASPECT_RATIOS } from "@/state/projectWizardStore"
 import { cn } from "@/lib/utils"
@@ -194,63 +194,29 @@ export function BriefPage() {
     handleUpdateBrief({ videoContent: newContent })
   }
 
-  // Check if video content has been filled in
-  const hasContent = videoContent.action || (videoContent.characters?.length ?? 0) > 0 || videoContent.setting
-
-  // Editable content section component
-  const ContentSection = ({
-    icon: Icon,
-    label,
-    field,
-    value,
-    placeholder,
-    isArray = false
-  }: {
-    icon: React.ElementType
-    label: string
-    field: keyof VideoContent
-    value: string | string[]
-    placeholder: string
-    isArray?: boolean
-  }) => {
-    const displayValue = isArray ? (value as string[]).join(", ") : (value as string)
-
-    return (
-      <div className="flex items-start gap-3 p-3 rounded-lg bg-zinc-800/50 hover:bg-zinc-800/70 transition-all">
-        <Icon className="w-4 h-4 mt-2.5 text-sky-400 flex-shrink-0" />
-        <div className="flex-1 min-w-0">
-          <span className="text-xs text-zinc-500 uppercase tracking-wide">{label}</span>
-          <input
-            type="text"
-            value={displayValue}
-            onChange={(e) => {
-              const newValue = isArray
-                ? e.target.value.split(",").map(s => s.trim()).filter(Boolean)
-                : e.target.value
-              handleContentChange(field, newValue)
-            }}
-            placeholder={placeholder}
-            className="w-full bg-transparent text-sm text-zinc-200 placeholder:text-zinc-600 focus:outline-none mt-0.5"
-          />
-        </div>
-      </div>
-    )
-  }
+  // Auto-resize textarea (3 lines min, 10 lines max, then scroll)
+  const autoResizeTextarea = useCallback((textarea: HTMLTextAreaElement | null) => {
+    if (!textarea) return
+    textarea.style.height = 'auto'
+    const lineHeight = 24 // approximate line height
+    const minHeight = lineHeight * 3
+    const maxHeight = lineHeight * 10
+    const newHeight = Math.min(Math.max(textarea.scrollHeight, minHeight), maxHeight)
+    textarea.style.height = `${newHeight}px`
+  }, [])
 
   return (
-    <div className="h-full overflow-y-auto">
-      <div className="max-w-2xl mx-auto p-6 lg:p-8">
-        {/* Header */}
-        <div className="mb-8">
-          <h1 className="text-2xl lg:text-3xl font-bold text-zinc-100 mb-2">
-            Project Brief
-          </h1>
-          <p className="text-zinc-400">
-            Define the core elements of your video project.
-          </p>
+    <div className="h-full flex flex-col">
+      {/* Secondary Header */}
+      <div className="h-[72px] border-b border-zinc-800 flex-shrink-0">
+        <div className="h-full max-w-2xl mx-auto px-6 lg:px-8 flex items-center">
+          <h1 className="text-xl font-semibold text-zinc-100">Brief</h1>
         </div>
+      </div>
 
-        {/* Error Message */}
+      <div className="flex-1 overflow-y-auto">
+        <div className="max-w-2xl mx-auto px-6 lg:px-8 pt-10 pb-6">
+          {/* Error Message */}
         {saveError && (
           <div className="mb-6 p-4 bg-red-500/10 border border-red-500/30 rounded-lg text-red-400 text-sm">
             {saveError}
@@ -277,89 +243,124 @@ export function BriefPage() {
             />
           </div>
 
-          {/* Video Content - Structured */}
+          {/* Action */}
           <div>
             <label className="block text-sm font-medium text-zinc-300 mb-2">
-              Video Content
+              Action
             </label>
-            <div className="bg-zinc-900 border border-zinc-700 rounded-lg p-4 space-y-2">
-              <ContentSection
-                icon={Clapperboard}
-                label="Action"
-                field="action"
-                value={videoContent.action}
-                placeholder="What's happening in this scene?"
+            <textarea
+              value={videoContent.action}
+              onChange={(e) => {
+                handleContentChange("action", e.target.value)
+                autoResizeTextarea(e.target)
+              }}
+              onFocus={(e) => autoResizeTextarea(e.target)}
+              placeholder="What's happening in this scene?"
+              className="w-full px-4 py-3 bg-zinc-900 border border-zinc-700 focus:border-sky-500 rounded-lg text-white placeholder:text-zinc-500 focus:outline-none focus:ring-2 focus:ring-sky-500/20 transition-all resize-none overflow-y-auto"
+              style={{ minHeight: '72px', maxHeight: '240px' }}
+            />
+          </div>
+
+          {/* Characters */}
+          <div>
+            <label className="block text-sm font-medium text-zinc-300 mb-2">
+              Characters
+            </label>
+            <textarea
+              value={videoContent.characters.join(", ")}
+              onChange={(e) => {
+                const chars = e.target.value.split(",").map(s => s.trim()).filter(Boolean)
+                handleContentChange("characters", chars)
+                autoResizeTextarea(e.target)
+              }}
+              onFocus={(e) => autoResizeTextarea(e.target)}
+              placeholder="Who's in it? (comma separated)"
+              className="w-full px-4 py-3 bg-zinc-900 border border-zinc-700 focus:border-sky-500 rounded-lg text-white placeholder:text-zinc-500 focus:outline-none focus:ring-2 focus:ring-sky-500/20 transition-all resize-none overflow-y-auto"
+              style={{ minHeight: '72px', maxHeight: '240px' }}
+            />
+          </div>
+
+          {/* Setting */}
+          <div>
+            <label className="block text-sm font-medium text-zinc-300 mb-2">
+              Setting
+            </label>
+            <textarea
+              value={videoContent.setting}
+              onChange={(e) => {
+                handleContentChange("setting", e.target.value)
+                autoResizeTextarea(e.target)
+              }}
+              onFocus={(e) => autoResizeTextarea(e.target)}
+              placeholder="Where does it take place?"
+              className="w-full px-4 py-3 bg-zinc-900 border border-zinc-700 focus:border-sky-500 rounded-lg text-white placeholder:text-zinc-500 focus:outline-none focus:ring-2 focus:ring-sky-500/20 transition-all resize-none overflow-y-auto"
+              style={{ minHeight: '72px', maxHeight: '240px' }}
+            />
+          </div>
+
+          {/* Time & Weather Row */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            <div>
+              <label className="block text-sm font-medium text-zinc-300 mb-2">
+                Time of Day
+              </label>
+              <input
+                type="text"
+                value={videoContent.timeOfDay}
+                onChange={(e) => handleContentChange("timeOfDay", e.target.value)}
+                placeholder="Morning, night..."
+                className="w-full h-12 px-4 bg-zinc-900 border border-zinc-700 focus:border-sky-500 rounded-lg text-white placeholder:text-zinc-500 focus:outline-none focus:ring-2 focus:ring-sky-500/20 transition-all"
               />
-              <ContentSection
-                icon={User}
-                label="Characters"
-                field="characters"
-                value={videoContent.characters}
-                placeholder="Who's in it? (comma separated)"
-                isArray
-              />
-              <ContentSection
-                icon={MapPin}
-                label="Setting"
-                field="setting"
-                value={videoContent.setting}
-                placeholder="Where does it take place?"
-              />
-              <div className="grid grid-cols-2 gap-2">
-                <div className="flex items-start gap-3 p-3 rounded-lg bg-zinc-800/50 hover:bg-zinc-800/70 transition-all">
-                  <Cloud className="w-4 h-4 mt-2.5 text-sky-400 flex-shrink-0" />
-                  <div className="flex-1 min-w-0">
-                    <span className="text-xs text-zinc-500 uppercase tracking-wide">Time</span>
-                    <input
-                      type="text"
-                      value={videoContent.timeOfDay}
-                      onChange={(e) => handleContentChange("timeOfDay", e.target.value)}
-                      placeholder="Morning, night..."
-                      className="w-full bg-transparent text-sm text-zinc-200 placeholder:text-zinc-600 focus:outline-none mt-0.5"
-                    />
-                  </div>
-                </div>
-                <div className="flex items-start gap-3 p-3 rounded-lg bg-zinc-800/50 hover:bg-zinc-800/70 transition-all">
-                  <Cloud className="w-4 h-4 mt-2.5 text-sky-400 flex-shrink-0" />
-                  <div className="flex-1 min-w-0">
-                    <span className="text-xs text-zinc-500 uppercase tracking-wide">Weather</span>
-                    <input
-                      type="text"
-                      value={videoContent.weather}
-                      onChange={(e) => handleContentChange("weather", e.target.value)}
-                      placeholder="Sunny, rainy..."
-                      className="w-full bg-transparent text-sm text-zinc-200 placeholder:text-zinc-600 focus:outline-none mt-0.5"
-                    />
-                  </div>
-                </div>
-              </div>
-              <ContentSection
-                icon={Package}
-                label="Props"
-                field="props"
-                value={videoContent.props}
-                placeholder="Important objects (comma separated)"
-                isArray
-              />
-              <div className="flex items-start gap-3 p-3 rounded-lg bg-zinc-800/50 hover:bg-zinc-800/70 transition-all">
-                <span className="text-sky-400 mt-2.5">"</span>
-                <div className="flex-1 min-w-0">
-                  <span className="text-xs text-zinc-500 uppercase tracking-wide">Dialogue</span>
-                  <input
-                    type="text"
-                    value={videoContent.dialogue}
-                    onChange={(e) => handleContentChange("dialogue", e.target.value)}
-                    placeholder="Any spoken words or narration"
-                    className="w-full bg-transparent text-sm text-zinc-200 placeholder:text-zinc-600 focus:outline-none mt-0.5 italic"
-                  />
-                </div>
-              </div>
-              {!hasContent && (
-                <p className="text-xs text-zinc-500 text-center pt-2">
-                  Fill in the details of what your video will show
-                </p>
-              )}
             </div>
+            <div>
+              <label className="block text-sm font-medium text-zinc-300 mb-2">
+                Weather
+              </label>
+              <input
+                type="text"
+                value={videoContent.weather}
+                onChange={(e) => handleContentChange("weather", e.target.value)}
+                placeholder="Sunny, rainy..."
+                className="w-full h-12 px-4 bg-zinc-900 border border-zinc-700 focus:border-sky-500 rounded-lg text-white placeholder:text-zinc-500 focus:outline-none focus:ring-2 focus:ring-sky-500/20 transition-all"
+              />
+            </div>
+          </div>
+
+          {/* Props */}
+          <div>
+            <label className="block text-sm font-medium text-zinc-300 mb-2">
+              Props
+            </label>
+            <textarea
+              value={videoContent.props.join(", ")}
+              onChange={(e) => {
+                const props = e.target.value.split(",").map(s => s.trim()).filter(Boolean)
+                handleContentChange("props", props)
+                autoResizeTextarea(e.target)
+              }}
+              onFocus={(e) => autoResizeTextarea(e.target)}
+              placeholder="Important objects (comma separated)"
+              className="w-full px-4 py-3 bg-zinc-900 border border-zinc-700 focus:border-sky-500 rounded-lg text-white placeholder:text-zinc-500 focus:outline-none focus:ring-2 focus:ring-sky-500/20 transition-all resize-none overflow-y-auto"
+              style={{ minHeight: '72px', maxHeight: '240px' }}
+            />
+          </div>
+
+          {/* Dialogue */}
+          <div>
+            <label className="block text-sm font-medium text-zinc-300 mb-2">
+              Dialogue
+            </label>
+            <textarea
+              value={videoContent.dialogue}
+              onChange={(e) => {
+                handleContentChange("dialogue", e.target.value)
+                autoResizeTextarea(e.target)
+              }}
+              onFocus={(e) => autoResizeTextarea(e.target)}
+              placeholder="Any spoken words or narration"
+              className="w-full px-4 py-3 bg-zinc-900 border border-zinc-700 focus:border-sky-500 rounded-lg text-white placeholder:text-zinc-500 focus:outline-none focus:ring-2 focus:ring-sky-500/20 transition-all resize-none overflow-y-auto"
+              style={{ minHeight: '72px', maxHeight: '240px' }}
+            />
           </div>
 
           {/* Target Audience */}
@@ -421,6 +422,7 @@ export function BriefPage() {
               />
             </div>
           </div>
+        </div>
         </div>
       </div>
     </div>

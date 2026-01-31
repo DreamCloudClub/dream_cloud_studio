@@ -1,11 +1,12 @@
 import { useParams, useNavigate } from "react-router-dom"
 import { useEffect } from "react"
-import { ArrowLeft, Edit2, Trash2, Copy, Loader2 } from "lucide-react"
+import { ChevronLeft, Edit2, Trash2, Copy, Loader2 } from "lucide-react"
 import { useFoundationStore } from "@/state/foundationStore"
 import { useUIStore } from "@/state/uiStore"
 import { useAuth } from "@/contexts/AuthContext"
 import { DashboardHeader, DashboardNav } from "@/components/dashboard"
 import { BubblePanel } from "@/components/create"
+import { InspectorPanel } from "@/components/workspace"
 import {
   useFoundationWizardStore,
   STYLE_OPTIONS,
@@ -18,7 +19,7 @@ export function FoundationDetail() {
   const { foundationId } = useParams()
   const navigate = useNavigate()
   const { user } = useAuth()
-  const { isBubbleCollapsed, toggleBubbleCollapsed } = useUIStore()
+  const { isBubbleCollapsed, toggleBubbleCollapsed, isInspectorCollapsed, toggleInspectorCollapsed } = useUIStore()
   const { foundations, isLoading, loadFoundations, removeFoundation, duplicateFoundation } = useFoundationStore()
   const { loadFoundation } = useFoundationWizardStore()
 
@@ -117,18 +118,29 @@ export function FoundationDetail() {
         </div>
 
         {/* Content */}
-        <main className="flex-1 overflow-auto">
-          <div className="max-w-4xl mx-auto px-6 lg:px-8 py-6 lg:py-8">
-            {/* Back Button */}
-            <button
-              onClick={() => navigate("/library/foundations")}
-              className="flex items-center gap-2 text-zinc-400 hover:text-zinc-200 transition-colors mb-6"
-            >
-              <ArrowLeft className="w-4 h-4" />
-              <span className="text-sm">Back to Foundations</span>
-            </button>
+        <main className="flex-1 flex flex-col overflow-hidden">
+          {/* Secondary Header */}
+          <div className="h-[72px] border-b border-zinc-800 flex-shrink-0">
+            <div className="h-full px-6 lg:px-8 flex items-center">
+              <div className="w-24">
+                <button
+                  onClick={() => navigate("/library/foundations")}
+                  className="flex items-center gap-1 text-zinc-400 hover:text-zinc-200 transition-colors"
+                >
+                  <ChevronLeft className="w-5 h-5" />
+                  <span className="text-sm font-medium">Back</span>
+                </button>
+              </div>
+              <h1 className="flex-1 text-center text-xl font-semibold text-zinc-100">
+                {foundation.name}
+              </h1>
+              <div className="w-24" />
+            </div>
+          </div>
 
-            {/* Header */}
+          <div className="flex-1 overflow-y-auto">
+          <div className="max-w-4xl mx-auto px-6 lg:px-8 pt-10 pb-6">
+            {/* Header with actions */}
             <div className="flex items-start justify-between mb-8">
               <div className="flex items-start gap-4">
                 <div className="w-20 h-20 rounded-xl overflow-hidden grid grid-cols-2 grid-rows-2 flex-shrink-0">
@@ -137,9 +149,8 @@ export function FoundationDetail() {
                   ))}
                 </div>
                 <div>
-                  <h1 className="text-2xl font-bold text-zinc-100">{foundation.name}</h1>
                   {foundation.description && (
-                    <p className="text-zinc-400 mt-1">{foundation.description}</p>
+                    <p className="text-zinc-400">{foundation.description}</p>
                   )}
                   <p className="text-sm text-zinc-500 mt-2">
                     Used in {foundation.project_count} project{foundation.project_count !== 1 ? "s" : ""} •
@@ -232,42 +243,22 @@ export function FoundationDetail() {
                 </div>
               </section>
             )}
-
-            {/* Preview */}
-            <section>
-              <h2 className="text-sm font-medium text-zinc-300 mb-3">Preview</h2>
-              <div className="p-6 bg-zinc-900 rounded-xl border border-zinc-800">
-                <div className="flex gap-1 h-16 rounded-lg overflow-hidden mb-4">
-                  {colorPalette.map((color, i) => (
-                    <div key={i} className="flex-1" style={{ backgroundColor: color }} />
-                  ))}
-                </div>
-                <div className="flex flex-wrap gap-2">
-                  {foundation.style && (
-                    <span className="px-3 py-1 bg-zinc-800 rounded-full text-xs text-zinc-300">
-                      {getLabel(STYLE_OPTIONS, foundation.style)}
-                    </span>
-                  )}
-                  {foundation.mood && (
-                    <span className="px-3 py-1 bg-zinc-800 rounded-full text-xs text-zinc-300">
-                      {getLabel(MOOD_OPTIONS, foundation.mood)}
-                    </span>
-                  )}
-                  {foundation.typography && (
-                    <span className="px-3 py-1 bg-zinc-800 rounded-full text-xs text-zinc-300">
-                      {getLabel(TYPOGRAPHY_OPTIONS, foundation.typography)}
-                    </span>
-                  )}
-                  {foundation.tone && (
-                    <span className="px-3 py-1 bg-zinc-800 rounded-full text-xs text-zinc-300">
-                      {getLabel(TONE_OPTIONS, foundation.tone)}
-                    </span>
-                  )}
-                </div>
-              </div>
-            </section>
+          </div>
           </div>
         </main>
+
+        {/* Inspector Panel (Right Sidebar) */}
+        <div
+          className={`${
+            isInspectorCollapsed ? "w-16" : "w-80"
+          } flex-shrink-0 hidden md:flex transition-all duration-300 overflow-hidden`}
+        >
+          <InspectorPanel
+            isCollapsed={isInspectorCollapsed}
+            onToggleCollapse={toggleInspectorCollapsed}
+            libraryPage="foundations"
+          />
+        </div>
       </div>
 
       <DashboardNav />

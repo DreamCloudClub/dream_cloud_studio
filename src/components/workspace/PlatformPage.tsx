@@ -11,7 +11,6 @@ import { cn } from "@/lib/utils"
 import { useWorkspaceStore } from "@/state/workspaceStore"
 import { useAuth } from "@/contexts/AuthContext"
 import { getPlatforms, createPlatform } from "@/services/platforms"
-import { updateProject } from "@/services/projects"
 import type { Platform } from "@/types/database"
 
 // Custom Dropdown for Platforms
@@ -235,7 +234,7 @@ function CreatePlatformModal({ isOpen, onClose, onSave, isSaving }: CreatePlatfo
 
 export function PlatformPage() {
   const { user } = useAuth()
-  const { project } = useWorkspaceStore()
+  const { project, updateProjectInfo } = useWorkspaceStore()
 
   const [platforms, setPlatforms] = useState<Platform[]>([])
   const [selectedPlatform, setSelectedPlatform] = useState<Platform | null>(null)
@@ -268,9 +267,7 @@ export function PlatformPage() {
 
   const handleSelectPlatform = async (platform: Platform) => {
     setSelectedPlatform(platform)
-    if (project) {
-      await updateProject(project.id, { platform_id: platform.id })
-    }
+    await updateProjectInfo({ platform_id: platform.id })
   }
 
   const handleCreatePlatform = async (name: string, description: string) => {
@@ -284,9 +281,7 @@ export function PlatformPage() {
       })
       setPlatforms((prev) => [newPlatform, ...prev])
       setSelectedPlatform(newPlatform)
-      if (project) {
-        await updateProject(project.id, { platform_id: newPlatform.id })
-      }
+      await updateProjectInfo({ platform_id: newPlatform.id })
       setShowModal(false)
     } catch (error) {
       console.error("Error creating platform:", error)
@@ -298,17 +293,17 @@ export function PlatformPage() {
   if (!project) return null
 
   return (
-    <div className="h-full overflow-y-auto">
-      <div className="max-w-2xl mx-auto px-6 lg:px-8 py-6 lg:py-8 space-y-6">
-        {/* Header */}
-        <div>
-          <h1 className="text-2xl font-bold text-zinc-100">Platform</h1>
-          <p className="text-zinc-400 mt-1">
-            Select or create a platform for this project.
-          </p>
+    <div className="h-full flex flex-col">
+      {/* Secondary Header */}
+      <div className="h-[72px] border-b border-zinc-800 flex-shrink-0">
+        <div className="h-full max-w-2xl mx-auto px-6 lg:px-8 flex items-center">
+          <h1 className="text-xl font-semibold text-zinc-100">Platform</h1>
         </div>
+      </div>
 
-        {/* Create New Button */}
+      <div className="flex-1 overflow-y-auto">
+        <div className="max-w-2xl mx-auto px-6 lg:px-8 pt-10 pb-6 space-y-6">
+          {/* Create New Button */}
         <button
           onClick={() => setShowModal(true)}
           className="w-full p-4 bg-zinc-900 border-2 border-dashed border-zinc-700 hover:border-sky-500 rounded-xl flex items-center justify-center gap-2 text-zinc-400 hover:text-sky-400 transition-all"
@@ -324,6 +319,7 @@ export function PlatformPage() {
           onSelect={handleSelectPlatform}
           isLoading={isLoading}
         />
+        </div>
       </div>
 
       {/* Create Modal */}

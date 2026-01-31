@@ -1,7 +1,8 @@
-import { useState, useEffect } from "react"
+import { useState, useEffect, useRef, useCallback } from "react"
 import {
   ChevronRight,
   ChevronDown,
+  ChevronLeft,
   Settings,
   SlidersHorizontal,
   StickyNote,
@@ -20,6 +21,8 @@ import {
   Download,
   FolderOpen,
   Loader2,
+  Pencil,
+  Save,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
 import {
@@ -29,6 +32,7 @@ import {
   getClipsWithAssets,
 } from "@/state/workspaceStore"
 import { useLibraryStore, type LibraryAsset } from "@/state/libraryStore"
+import { useUIStore } from "@/state/uiStore"
 import { useAuth } from "@/contexts/AuthContext"
 import { getAssetDisplayUrl } from "@/services/localStorage"
 import type { PanDirection } from "@/remotion/components"
@@ -36,8 +40,8 @@ import type { PanDirection } from "@/remotion/components"
 // Library page types for non-workspace contexts
 export type LibraryPageType = "dashboard" | "platforms" | "projects" | "assets" | "foundations"
 
-// Control Panel tab types - standardized across entire app
-type ControlPanelTab = "properties" | "notes" | "assets"
+// Control Panel tab types - just Notes and Assets now
+type ControlPanelTab = "notes" | "assets"
 
 // Available pan direction options for images
 const PAN_OPTIONS: { value: PanDirection; label: string; description: string }[] = [
@@ -243,129 +247,318 @@ function PropertiesContent() {
 }
 
 // ============================================
-// NOTES TAB - Notes + Scripts combined
+// NOTES TAB - List and Edit views (Notes + Scripts)
 // ============================================
 
-interface NoteCardProps {
-  note: { id: string; content: string; createdAt: string }
-  onDelete: (id: string) => void
+type PanelItemType = 'note' | 'script'
+
+interface PanelItem {
+  id: string
+  type: PanelItemType
+  content: string
+  created_at: string
+  sort_order: number
+  project_name?: string // For scripts, to show which project
 }
 
-function NoteCard({ note, onDelete }: NoteCardProps) {
+interface ItemCardProps {
+  item: PanelItem
+  onEdit: (id: string, type: PanelItemType) => void
+  onDelete?: (id: string) => void // Optional - scripts can't be deleted from here
+}
+
+function ItemCard({ item, onEdit, onDelete }: ItemCardProps) {
   const formatDate = (dateStr: string) => {
     const date = new Date(dateStr)
     return date.toLocaleDateString("en-US", {
       month: "short",
       day: "numeric",
-      hour: "numeric",
-      minute: "2-digit",
     })
   }
 
+  // Get first 5 lines as excerpt
+  const lines = item.content.split("\n").slice(0, 5)
+  // Pad to 5 lines if needed
+  while (lines.length < 5) {
+    lines.push("")
+  }
+  const excerpt = lines.join("\n")
+
+  const isScript = item.type === 'script'
+
   return (
-    <div className="group p-2.5 bg-zinc-800/50 border border-zinc-700/50 rounded-lg">
-      <p className="text-xs text-zinc-300 whitespace-pre-wrap line-clamp-4">{note.content}</p>
-      <div className="flex items-center justify-between mt-2 pt-2 border-t border-zinc-700/50">
-        <span className="text-[10px] text-zinc-500">{formatDate(note.createdAt)}</span>
-        <button
-          onClick={() => onDelete(note.id)}
-          className="p-1 text-zinc-500 hover:text-red-400 opacity-0 group-hover:opacity-100 transition-all"
-          title="Delete note"
-        >
-          <Trash2 className="w-3 h-3" />
-        </button>
+    <div className={cn(
+      "p-2.5 border rounded-lg",
+      isScript
+        ? "bg-amber-900/20 border-amber-700/30"
+        : "bg-zinc-800/50 border-zinc-700/50"
+    )}>
+      {/* Header: type + date on left, edit/trash on right */}
+      <div className="flex items-center justify-between mb-2">
+        <div className="flex items-center gap-2">
+          <span className={cn(
+            "text-[9px] font-medium uppercase tracking-wider px-1.5 py-0.5 rounded",
+            isScript
+              ? "bg-amber-500/20 text-amber-400"
+              : "bg-sky-500/20 text-sky-400"
+          )}>
+            {isScript ? 'Script' : 'Note'}
+          </span>
+          <span className="text-[10px] text-zinc-500">{formatDate(item.created_at)}</span>
+        </div>
+        <div className="flex items-center gap-1">
+          <button
+            onClick={() => onEdit(item.id, item.type)}
+            className="p-1 text-zinc-500 hover:text-sky-400 transition-colors"
+            title={isScript ? "View script" : "Edit note"}
+          >
+            <Pencil className="w-3 h-3" />
+          </button>
+          {onDelete && !isScript && (
+            <button
+              onClick={() => onDelete(item.id)}
+              className="p-1 text-zinc-500 hover:text-red-400 transition-colors"
+              title="Delete note"
+            >
+              <Trash2 className="w-3 h-3" />
+            </button>
+          )}
+        </div>
       </div>
+      {/* Fixed height excerpt - 5 lines */}
+      <p className="text-xs text-zinc-300 whitespace-pre-wrap leading-[1.4]" style={{ height: "84px" }}>
+        {excerpt}
+      </p>
+    </div>
+  )
+}
+
+// Edit view for adding or editing a note/script
+interface NoteEditViewProps {
+  note: { id: string; content: string } | null // null = new note
+  onSave: (content: string) => void
+  onDelete: () => void
+  onBack: () => void
+  isScript?: boolean
+}
+
+function NoteEditView({ note, onSave, onDelete, onBack, isScript = false }: NoteEditViewProps) {
+  const [content, setContent] = useState(note?.content || "")
+  const textareaRef = useRef<HTMLTextAreaElement>(null)
+
+  // Auto-resize textarea (no limit)
+  const resizeTextarea = useCallback(() => {
+    const textarea = textareaRef.current
+    if (!textarea) return
+    textarea.style.height = "auto"
+    textarea.style.height = `${textarea.scrollHeight}px`
+  }, [])
+
+  useEffect(() => {
+    resizeTextarea()
+  }, [content, resizeTextarea])
+
+  // Focus textarea on mount
+  useEffect(() => {
+    textareaRef.current?.focus()
+  }, [])
+
+  const handleSave = () => {
+    if (!content.trim()) return
+    onSave(content.trim())
+  }
+
+  return (
+    <div className="space-y-3">
+      {/* Header: back on left, type badge + save/delete on right */}
+      <div className="flex items-center justify-between">
+        <button
+          onClick={onBack}
+          className="flex items-center gap-1 text-xs text-zinc-400 hover:text-zinc-200 transition-colors"
+        >
+          <ChevronLeft className="w-4 h-4" />
+          Back
+        </button>
+        <div className="flex items-center gap-2">
+          {isScript && (
+            <span className="text-[9px] font-medium uppercase tracking-wider px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-400">
+              Script
+            </span>
+          )}
+          {note && !isScript && (
+            <button
+              onClick={onDelete}
+              className="p-1.5 text-zinc-500 hover:text-red-400 transition-colors"
+              title="Delete note"
+            >
+              <Trash2 className="w-4 h-4" />
+            </button>
+          )}
+          <button
+            onClick={handleSave}
+            disabled={!content.trim()}
+            className="flex items-center gap-1 px-2.5 py-1 bg-sky-500 hover:bg-sky-600 disabled:bg-zinc-700 disabled:text-zinc-500 text-white text-xs font-medium rounded-lg transition-colors"
+          >
+            <Save className="w-3 h-3" />
+            Save
+          </button>
+        </div>
+      </div>
+
+      {/* Textarea */}
+      <textarea
+        ref={textareaRef}
+        value={content}
+        onChange={(e) => setContent(e.target.value)}
+        placeholder={isScript ? "Write your script..." : "Write your note..."}
+        className={cn(
+          "w-full px-3 py-2.5 border rounded-lg text-xs text-zinc-200 placeholder:text-zinc-500 focus:outline-none resize-none",
+          isScript
+            ? "bg-amber-900/20 border-amber-700/30 focus:border-amber-500"
+            : "bg-zinc-800/50 border-zinc-700 focus:border-sky-500"
+        )}
+        style={{ minHeight: "200px" }}
+      />
     </div>
   )
 }
 
 function NotesContent() {
-  const { project, editorNotes, addEditorNote, deleteEditorNote } = useWorkspaceStore()
-  const [newNote, setNewNote] = useState("")
+  const { editorNotes, allScripts, loadNotesAndScripts, addEditorNote, updateEditorNote, deleteEditorNote, updateScriptById } = useWorkspaceStore()
+  const { user } = useAuth()
+  const [editingNoteId, setEditingNoteId] = useState<string | null>(null)
+  const [editingScriptId, setEditingScriptId] = useState<string | null>(null)
+  const [isAddingNote, setIsAddingNote] = useState(false)
 
-  const handleAddNote = () => {
-    if (!newNote.trim()) return
-    addEditorNote(newNote.trim())
-    setNewNote("")
+  // Load notes and scripts from database on mount
+  useEffect(() => {
+    if (user?.id) {
+      loadNotesAndScripts(user.id)
+    }
+  }, [user?.id, loadNotesAndScripts])
+
+  // Combine notes and scripts into panel items
+  const panelItems: PanelItem[] = [
+    ...editorNotes.map(n => ({
+      id: n.id,
+      type: 'note' as PanelItemType,
+      content: n.content,
+      created_at: n.created_at,
+      sort_order: n.sort_order,
+    })),
+    ...allScripts.map(s => ({
+      id: s.id,
+      type: 'script' as PanelItemType,
+      content: s.content,
+      created_at: s.created_at,
+      sort_order: s.sort_order,
+    })),
+  ].sort((a, b) => a.sort_order - b.sort_order)
+
+  const editingNote = editingNoteId ? editorNotes.find(n => n.id === editingNoteId) : null
+  const editingScript = editingScriptId ? allScripts.find(s => s.id === editingScriptId) : null
+
+  const handleSaveNew = (content: string) => {
+    if (!user?.id) return
+    addEditorNote(content, user.id)
+    setIsAddingNote(false)
   }
 
-  const handleKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
-      e.preventDefault()
-      handleAddNote()
+  const handleSaveNoteEdit = (content: string) => {
+    if (!editingNoteId) return
+    updateEditorNote(editingNoteId, content)
+    setEditingNoteId(null)
+  }
+
+  const handleDeleteNote = () => {
+    if (!editingNoteId) return
+    deleteEditorNote(editingNoteId)
+    setEditingNoteId(null)
+  }
+
+  const handleSaveScriptEdit = (content: string) => {
+    if (!editingScriptId) return
+    updateScriptById(editingScriptId, content)
+    setEditingScriptId(null)
+  }
+
+  const handleEditItem = (id: string, type: PanelItemType) => {
+    if (type === 'note') {
+      setEditingNoteId(id)
+    } else {
+      setEditingScriptId(id)
     }
   }
 
-  // Get script sections if available
-  const scriptSections = project?.scriptSections || []
+  // Edit view for new note
+  if (isAddingNote) {
+    return (
+      <NoteEditView
+        note={null}
+        onSave={handleSaveNew}
+        onDelete={() => {}}
+        onBack={() => setIsAddingNote(false)}
+      />
+    )
+  }
 
+  // Edit view for existing note
+  if (editingNote) {
+    return (
+      <NoteEditView
+        note={editingNote}
+        onSave={handleSaveNoteEdit}
+        onDelete={handleDeleteNote}
+        onBack={() => setEditingNoteId(null)}
+      />
+    )
+  }
+
+  // Edit view for script
+  if (editingScript) {
+    return (
+      <NoteEditView
+        note={editingScript}
+        onSave={handleSaveScriptEdit}
+        onDelete={() => setEditingScriptId(null)}
+        onBack={() => setEditingScriptId(null)}
+        isScript
+      />
+    )
+  }
+
+  // List view
   return (
     <div className="space-y-3">
-      {/* Add Note Input */}
-      <div className="space-y-2">
-        <textarea
-          value={newNote}
-          onChange={(e) => setNewNote(e.target.value)}
-          onKeyDown={handleKeyDown}
-          placeholder="Add a note... (⌘+Enter)"
-          className="w-full px-2.5 py-2 bg-zinc-800/50 border border-zinc-700 rounded-lg text-xs text-zinc-200 placeholder:text-zinc-500 focus:outline-none focus:border-sky-500 resize-none"
-          rows={2}
-        />
-        <button
-          onClick={handleAddNote}
-          disabled={!newNote.trim()}
-          className="w-full px-2.5 py-1.5 bg-sky-500 hover:bg-sky-600 disabled:bg-zinc-700 disabled:text-zinc-500 text-white text-xs font-medium rounded-lg transition-colors flex items-center justify-center gap-1.5"
-        >
-          <Plus className="w-3 h-3" />
-          Add Note
-        </button>
-      </div>
+      {/* Add Note Button */}
+      <button
+        onClick={() => setIsAddingNote(true)}
+        className="w-full px-2.5 py-2 bg-sky-500 hover:bg-sky-600 text-white text-xs font-medium rounded-lg transition-colors flex items-center justify-center gap-1.5"
+      >
+        <Plus className="w-3.5 h-3.5" />
+        Add Note
+      </button>
 
-      {/* Notes List */}
-      {editorNotes.length > 0 && (
+      {/* Combined Notes + Scripts List */}
+      {panelItems.length > 0 && (
         <div className="space-y-2">
-          <h4 className="text-[10px] font-medium text-zinc-500 uppercase tracking-wider">Notes</h4>
-          {editorNotes.map((note) => (
-            <NoteCard key={note.id} note={note} onDelete={deleteEditorNote} />
+          {panelItems.map((item) => (
+            <ItemCard
+              key={`${item.type}-${item.id}`}
+              item={item}
+              onEdit={handleEditItem}
+              onDelete={item.type === 'note' ? deleteEditorNote : undefined}
+            />
           ))}
         </div>
       )}
 
-      {/* Script Sections (read-only, from project) */}
-      {scriptSections.length > 0 && (
-        <div className="space-y-2 pt-2 border-t border-zinc-800">
-          <h4 className="text-[10px] font-medium text-zinc-500 uppercase tracking-wider flex items-center gap-1.5">
-            <ScrollText className="w-3 h-3" />
-            Script
-          </h4>
-          {scriptSections
-            .sort((a, b) => a.order - b.order)
-            .map((section) => (
-              <div
-                key={section.id}
-                className="p-2.5 bg-zinc-800/30 border border-zinc-700/30 rounded-lg"
-              >
-                {section.isNewScene && (
-                  <div className="text-[9px] font-medium text-sky-400 uppercase tracking-wider mb-1">
-                    Scene
-                  </div>
-                )}
-                {section.characterName && (
-                  <div className="text-[10px] font-medium text-orange-400 mb-1">
-                    {section.characterName}
-                  </div>
-                )}
-                <p className="text-xs text-zinc-400 whitespace-pre-wrap">{section.content}</p>
-              </div>
-            ))}
-        </div>
-      )}
-
       {/* Empty state */}
-      {editorNotes.length === 0 && scriptSections.length === 0 && (
-        <div className="text-center py-4 text-zinc-500">
-          <StickyNote className="w-5 h-5 mx-auto mb-1.5 opacity-50" />
-          <p className="text-[10px]">No notes yet</p>
+      {panelItems.length === 0 && (
+        <div className="text-center py-6 text-zinc-500">
+          <StickyNote className="w-6 h-6 mx-auto mb-2 opacity-50" />
+          <p className="text-xs">No notes or scripts yet</p>
+          <p className="text-[10px] mt-1">Click "Add Note" to get started</p>
         </div>
       )}
     </div>
@@ -393,6 +586,7 @@ interface AssetThumbnailCardProps {
 
 function AssetThumbnailCard({ asset, onDragStart, onClick }: AssetThumbnailCardProps) {
   const [thumbnailError, setThumbnailError] = useState(false)
+  const [videoDuration, setVideoDuration] = useState<number | null>(asset.duration || null)
   const isVideo = asset.type === "video"
   const isAudio = asset.type === "audio"
   // Convert LibraryAsset fields to match getAssetDisplayUrl expected format
@@ -406,6 +600,13 @@ function AssetThumbnailCard({ asset, onDragStart, onClick }: AssetThumbnailCardP
     const mins = Math.floor(seconds / 60)
     const secs = Math.floor(seconds % 60)
     return mins > 0 ? `${mins}:${secs.toString().padStart(2, "0")}` : `${secs}s`
+  }
+
+  const handleVideoMetadata = (e: React.SyntheticEvent<HTMLVideoElement>) => {
+    const video = e.currentTarget
+    if (video.duration && !isNaN(video.duration) && isFinite(video.duration)) {
+      setVideoDuration(video.duration)
+    }
   }
 
   const renderThumbnail = () => {
@@ -436,6 +637,7 @@ function AssetThumbnailCard({ asset, onDragStart, onClick }: AssetThumbnailCardP
             preload="metadata"
             muted
             playsInline
+            onLoadedMetadata={handleVideoMetadata}
             onError={() => setThumbnailError(true)}
           />
           <div className="absolute inset-0 flex items-center justify-center bg-black/20">
@@ -475,8 +677,10 @@ function AssetThumbnailCard({ asset, onDragStart, onClick }: AssetThumbnailCardP
         <p className="text-[11px] font-medium text-zinc-200 truncate group-hover:text-sky-400 transition-colors">
           {asset.name}
         </p>
-        {asset.duration && (
-          <p className="text-[10px] text-zinc-500 mt-0.5">{formatDuration(asset.duration)}</p>
+        {(isVideo ? videoDuration : asset.duration) && (
+          <p className="text-[10px] text-zinc-500 mt-0.5">
+            {formatDuration(isVideo ? videoDuration! : asset.duration!)}
+          </p>
         )}
       </div>
     </div>
@@ -634,11 +838,10 @@ function AssetsContent() {
 }
 
 // ============================================
-// CONTROL PANEL TABS - Global, 3 tabs only
+// CONTROL PANEL TABS - Notes & Assets only
 // ============================================
 
 const CONTROL_PANEL_TABS: { id: ControlPanelTab; label: string; icon: React.ElementType }[] = [
-  { id: "properties", label: "Properties", icon: SlidersHorizontal },
   { id: "notes", label: "Notes", icon: StickyNote },
   { id: "assets", label: "Assets", icon: Layers },
 ]
@@ -680,66 +883,65 @@ export function InspectorPanel({
   libraryPage,
 }: InspectorPanelProps) {
   const { activeTab, controlPanelTab, setControlPanelTab } = useWorkspaceStore()
+  const { setInspectorCollapsed } = useUIStore()
+  const [showProperties, setShowProperties] = useState(false)
 
-  // Determine subtitle
-  const isLibraryMode = !!libraryPage
-  const subtitle = isLibraryMode
-    ? LIBRARY_CONFIG[libraryPage!]?.subtitle || "Control Panel"
-    : WORKSPACE_SUBTITLES[activeTab] || "Control Panel"
+  // Subtitle is always "Project Tools"
+  const subtitle = "Project Tools"
 
   // Render control panel tab content
   const renderControlPanelTabContent = () => {
     switch (controlPanelTab) {
-      case "properties":
-        return <PropertiesContent />
       case "notes":
         return <NotesContent />
       case "assets":
         return <AssetsContent />
       default:
-        return <PropertiesContent />
+        return <NotesContent />
     }
   }
 
   // Always render full width (w-80) - parent container handles clipping during animation
   // ml-auto keeps content anchored to the right edge
   return (
-    <div className="w-80 h-full bg-zinc-900 border-l border-zinc-800 flex flex-col ml-auto">
+    <div className="w-80 h-full bg-zinc-900 border-l border-zinc-800 flex flex-col ml-auto relative">
       {/* Panel Header */}
-      <div className={`border-b border-zinc-800 ${isCollapsed ? "py-3 flex justify-center" : "px-3 py-2"}`}>
+      <div className={`border-b border-zinc-800 ${isCollapsed ? "py-3 flex justify-center" : "h-[72px] px-4 flex items-center"}`}>
         {isCollapsed ? (
           // Collapsed: just the gear button, clickable to expand
           <button
             onClick={onToggleCollapse}
-            className="w-10 h-10 rounded-lg bg-gradient-to-br from-emerald-400 via-emerald-500 to-green-600 flex items-center justify-center shadow-lg shadow-emerald-500/20 hover:shadow-emerald-500/30 transition-all hover:scale-105"
+            className="w-10 h-10 rounded-lg bg-gradient-to-br from-emerald-400 via-emerald-500 to-green-600 flex items-center justify-center shadow-lg shadow-emerald-500/20 hover:shadow-emerald-500/30 transition-all"
             title="Open Control Panel"
           >
             <Settings className="w-4 h-4 text-white" />
           </button>
         ) : (
           // Expanded: full header with arrow, text, and gear
-          <div className="flex items-center justify-between">
-            {/* Collapse arrow - inner edge (left) */}
-            {onToggleCollapse && (
-              <button
-                onClick={onToggleCollapse}
-                className="w-7 h-7 rounded-lg bg-zinc-800 hover:bg-zinc-700 flex items-center justify-center text-zinc-400 hover:text-zinc-200 transition-colors"
-                title="Collapse panel"
-              >
-                <ChevronRight className="w-3.5 h-3.5" />
-              </button>
-            )}
+          <div className="flex-1 flex items-center justify-between">
+            {/* Close button - just closes the panel */}
+            <button
+              onClick={() => setInspectorCollapsed(true)}
+              className="w-8 h-8 rounded-lg bg-zinc-800 hover:bg-zinc-700 flex items-center justify-center text-zinc-400 hover:text-zinc-200 transition-colors"
+              title="Close panel"
+            >
+              <ChevronRight className="w-4 h-4" />
+            </button>
 
             {/* Text (left-aligned) */}
-            <div className="flex-1 ml-2">
-              <h3 className="text-xs font-semibold text-zinc-100">Control Panel</h3>
-              <p className="text-[10px] text-zinc-500">{subtitle}</p>
+            <div className="flex-1 ml-3">
+              <h3 className="text-sm font-semibold text-zinc-100">Control Panel</h3>
+              <p className="text-xs text-zinc-500">{subtitle}</p>
             </div>
 
-            {/* Gear - outer edge (right) */}
-            <div className="w-9 h-9 rounded-lg bg-gradient-to-br from-emerald-400 via-emerald-500 to-green-600 flex items-center justify-center shadow-lg shadow-emerald-500/20">
+            {/* Gear - toggles properties panel */}
+            <button
+              onClick={() => setShowProperties(!showProperties)}
+              className="w-9 h-9 rounded-lg bg-gradient-to-br from-emerald-400 via-emerald-500 to-green-600 flex items-center justify-center shadow-lg shadow-emerald-500/20"
+              title={showProperties ? "Hide Properties" : "Show Properties"}
+            >
               <Settings className="w-4 h-4 text-white" />
-            </div>
+            </button>
           </div>
         )}
       </div>
@@ -747,31 +949,71 @@ export function InspectorPanel({
       {/* Panel Content - hidden when collapsed */}
       {!isCollapsed && (
         <div className="flex-1 flex flex-col overflow-hidden">
-          {/* Tab Toggle - Compact */}
-          <div className="flex border-b border-zinc-800">
-            {CONTROL_PANEL_TABS.map((tab) => {
-              const Icon = tab.icon
-              return (
-                <button
-                  key={tab.id}
-                  onClick={() => setControlPanelTab(tab.id)}
-                  className={cn(
-                    "flex-1 flex items-center justify-center gap-1.5 px-2 py-1.5 text-[10px] font-medium transition-colors border-b-2 -mb-[2px]",
-                    controlPanelTab === tab.id
-                      ? "text-sky-400 border-sky-500"
-                      : "text-zinc-500 border-transparent hover:text-zinc-300"
-                  )}
-                >
-                  <Icon className="w-3.5 h-3.5" />
-                  <span>{tab.label}</span>
-                </button>
-              )
-            })}
+          {/* Tab Toggle - Bold Buttons */}
+          <div className="p-2 border-b border-zinc-800">
+            <div className="flex gap-2">
+              {CONTROL_PANEL_TABS.map((tab) => {
+                const Icon = tab.icon
+                const isActive = controlPanelTab === tab.id
+                const isAssets = tab.id === "assets"
+                return (
+                  <button
+                    key={tab.id}
+                    onClick={() => setControlPanelTab(tab.id)}
+                    className={cn(
+                      "flex-1 flex items-center justify-center gap-2 px-3 py-2.5 rounded-xl font-semibold text-sm transition-all",
+                      isActive
+                        ? isAssets
+                          ? "bg-gradient-to-br from-orange-400/20 via-orange-500/20 to-amber-600/20 text-orange-400 shadow-inner"
+                          : "bg-gradient-to-br from-sky-400/20 via-sky-500/20 to-blue-600/20 text-sky-400 shadow-inner"
+                        : isAssets
+                          ? "bg-zinc-800/50 text-zinc-400 hover:text-orange-400"
+                          : "bg-zinc-800/50 text-zinc-400 hover:text-sky-400"
+                    )}
+                  >
+                    <Icon className="w-4 h-4" />
+                    <span>{tab.label}</span>
+                  </button>
+                )
+              })}
+            </div>
           </div>
 
           {/* Tab Content */}
           <div className="flex-1 overflow-y-auto p-3 scrollbar-hide [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]">
             {renderControlPanelTabContent()}
+          </div>
+        </div>
+      )}
+
+      {/* Secret Properties Panel - slides out from right */}
+      {!isCollapsed && showProperties && (
+        <div className="absolute inset-0 bg-zinc-900 flex flex-col">
+          {/* Properties Header */}
+          <div className="h-[72px] px-4 flex items-center border-b border-zinc-800">
+            <button
+              onClick={() => setInspectorCollapsed(true)}
+              className="w-8 h-8 rounded-lg bg-zinc-800 hover:bg-zinc-700 flex items-center justify-center text-zinc-400 hover:text-zinc-200 transition-colors"
+              title="Close panel"
+            >
+              <ChevronRight className="w-4 h-4" />
+            </button>
+            <div className="flex-1 ml-3">
+              <h3 className="text-sm font-semibold text-zinc-100">Properties</h3>
+              <p className="text-xs text-zinc-500">{subtitle}</p>
+            </div>
+            <button
+              onClick={() => setShowProperties(false)}
+              className="w-9 h-9 rounded-lg bg-gradient-to-br from-emerald-400 via-emerald-500 to-green-600 flex items-center justify-center shadow-lg shadow-emerald-500/20"
+              title="Hide Properties"
+            >
+              <Settings className="w-4 h-4 text-white" />
+            </button>
+          </div>
+
+          {/* Properties Content */}
+          <div className="flex-1 overflow-y-auto p-3 scrollbar-hide [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]">
+            <PropertiesContent />
           </div>
         </div>
       )}

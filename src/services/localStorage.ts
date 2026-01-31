@@ -341,23 +341,30 @@ export function isLocalPath(path: string): boolean {
 
 /**
  * Get the display URL for an asset (handles both local and cloud)
+ * Supports both snake_case (database) and camelCase (frontend) property names
  */
 export function getAssetDisplayUrl(asset: {
   url?: string | null
   local_path?: string | null
+  localPath?: string | null
   storage_type?: string
+  storageType?: string
 }): string {
-  if (asset.storage_type === 'local' && asset.local_path) {
-    return localPathToUrl(asset.local_path)
+  // Support both snake_case and camelCase
+  const localPath = asset.local_path ?? asset.localPath
+  const storageType = asset.storage_type ?? asset.storageType
+
+  if (storageType === 'local' && localPath) {
+    return localPathToUrl(localPath)
   }
 
   if (asset.url) {
     return asset.url
   }
 
-  // Fallback to local_path even if storage_type isn't set
-  if (asset.local_path) {
-    return localPathToUrl(asset.local_path)
+  // Fallback to localPath even if storageType isn't set
+  if (localPath) {
+    return localPathToUrl(localPath)
   }
 
   return ''

@@ -2,17 +2,65 @@ import { create } from "zustand"
 import type { Asset } from "@/types/database"
 
 export type AssetType = "image" | "video" | "audio" | "animation"
-// Visual categories (for image/video) + Audio categories (for audio) + Animation categories
+
+// Prompt types for each asset type
+export type ImagePromptType = "text-to-image" | "image-to-image" | "inpaint" | "selective-edit" | "upscale"
+export type VideoPromptType = "text-to-video" | "image-to-video" | "video-to-video" | "extend"
+export type AudioPromptType = "text-to-speech" | "voice-to-voice" | "music-sfx"
+export type PromptType = ImagePromptType | VideoPromptType | AudioPromptType | null
+
+// Asset categories for saving
 export type AssetCategory = "scene" | "stage" | "character" | "weather" | "prop" | "effect" | "music" | "sound_effect" | "voice" | "text" | "logo" | "transition" | "lower_third" | "title_card" | "overlay"
 
-export type AssetWizardStep = "type" | "category" | "prompt" | "review"
+export type AssetWizardStep = "type" | "promptType" | "generate" | "save"
 
 export const ASSET_WIZARD_STEPS: { id: AssetWizardStep; label: string }[] = [
-  { id: "type", label: "Type" },
-  { id: "category", label: "Category" },
-  { id: "prompt", label: "Create" },
-  { id: "review", label: "Save" },
+  { id: "type", label: "Asset Type" },
+  { id: "promptType", label: "Prompt Type" },
+  { id: "generate", label: "Generate" },
+  { id: "save", label: "Save" },
 ]
+
+// Prompt type options for each asset type
+export const IMAGE_PROMPT_TYPES = [
+  { id: "text-to-image" as const, label: "Text to Image", description: "Generate images from text descriptions" },
+  { id: "image-to-image" as const, label: "Image to Image", description: "Transform existing images with text guidance" },
+  { id: "inpaint" as const, label: "Inpaint", description: "Selectively edit regions of an image" },
+  { id: "selective-edit" as const, label: "Multi-Reference", description: "Compose images from multiple references" },
+  { id: "upscale" as const, label: "Upscale", description: "Increase resolution with AI enhancement" },
+]
+
+export const VIDEO_PROMPT_TYPES = [
+  { id: "text-to-video" as const, label: "Text to Video", description: "Generate video from text descriptions" },
+  { id: "image-to-video" as const, label: "Image to Video", description: "Animate static images into video" },
+  { id: "video-to-video" as const, label: "Video to Video", description: "Transform videos with style transfer" },
+  { id: "extend" as const, label: "Extend Video", description: "Generate additional frames to extend clips" },
+]
+
+export const AUDIO_PROMPT_TYPES = [
+  { id: "text-to-speech" as const, label: "Text to Speech", description: "Convert text into natural speech" },
+  { id: "voice-to-voice" as const, label: "Voice Conversion", description: "Transform voice to different speaker" },
+  { id: "music-sfx" as const, label: "Music & SFX", description: "Generate music and sound effects" },
+]
+
+export function getPromptTypesForAssetType(assetType: AssetType | null) {
+  switch (assetType) {
+    case "image": return IMAGE_PROMPT_TYPES
+    case "video": return VIDEO_PROMPT_TYPES
+    case "audio": return AUDIO_PROMPT_TYPES
+    case "animation": return [] // Coming soon
+    default: return []
+  }
+}
+
+export function getDefaultPromptType(assetType: AssetType | null): PromptType {
+  switch (assetType) {
+    case "image": return "text-to-image"
+    case "video": return "text-to-video"
+    case "audio": return "text-to-speech"
+    default: return null
+  }
+}
 
 interface AssetWizardState {
   // Current step
@@ -20,6 +68,7 @@ interface AssetWizardState {
 
   // Asset data
   assetType: AssetType | null
+  promptType: PromptType
   category: AssetCategory | null
   assetName: string
   userDescription: string  // Human-readable description of what user wants
@@ -44,6 +93,7 @@ interface AssetWizardState {
   nextStep: () => void
   prevStep: () => void
   setAssetType: (type: AssetType) => void
+  setPromptType: (promptType: PromptType) => void
   setCategory: (category: AssetCategory) => void
   setAssetName: (name: string) => void
   setUserDescription: (desc: string) => void
@@ -56,19 +106,21 @@ interface AssetWizardState {
   toggleAssetSelection: (id: string) => void
   resetWizard: () => void
   initWithType: (type: AssetType) => void
+  initWithTypeAndPrompt: (type: AssetType, promptType: PromptType) => void
 }
 
 const initialState = {
   currentStep: "type" as AssetWizardStep,
-  assetType: null,
-  category: null,
+  assetType: "image" as AssetType | null,
+  promptType: null as PromptType,
+  category: null as AssetCategory | null,
   assetName: "",
   userDescription: "",
   aiPrompt: "",
   negativePrompt: "",
-  stylePreset: null,
+  stylePreset: null as string | null,
   referenceAssets: [] as Asset[],
-  generatedAssets: [],
+  generatedAssets: [] as AssetWizardState["generatedAssets"],
 }
 
 export const useAssetWizardStore = create<AssetWizardState>((set, get) => ({
@@ -92,7 +144,8 @@ export const useAssetWizardStore = create<AssetWizardState>((set, get) => ({
     }
   },
 
-  setAssetType: (type) => set({ assetType: type }),
+  setAssetType: (type) => set({ assetType: type, promptType: getDefaultPromptType(type) }),
+  setPromptType: (promptType) => set({ promptType }),
   setCategory: (category) => set({ category }),
   setAssetName: (name) => set({ assetName: name }),
   setUserDescription: (desc) => set({ userDescription: desc }),
@@ -126,10 +179,19 @@ export const useAssetWizardStore = create<AssetWizardState>((set, get) => ({
 
   resetWizard: () => set(initialState),
 
-  // Initialize wizard with a pre-selected type, starting at category step
+  // Initialize wizard with a pre-selected type, starting at promptType step
   initWithType: (type) => set({
     ...initialState,
     assetType: type,
-    currentStep: "category",
+    promptType: getDefaultPromptType(type),
+    currentStep: "promptType",
+  }),
+
+  // Initialize wizard with type and prompt type, starting at generate step
+  initWithTypeAndPrompt: (type, promptType) => set({
+    ...initialState,
+    assetType: type,
+    promptType: promptType,
+    currentStep: "generate",
   }),
 }))

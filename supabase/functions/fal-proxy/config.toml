@@ -1,0 +1,4 @@
+# Disable JWT verification for this function
+# The function uses its own FAL.ai API key stored as a secret
+[functions.fal-proxy]
+verify_jwt = false

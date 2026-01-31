@@ -1,11 +1,8 @@
 // Claude API service for Dream Cloud Studio
 // This powers the "Bubble" AI assistant in the project wizard
+// API calls are proxied through Supabase edge functions for security
 
-const ANTHROPIC_API_KEY = import.meta.env.VITE_ANTHROPIC_API_KEY
-
-if (!ANTHROPIC_API_KEY) {
-  console.warn('Missing VITE_ANTHROPIC_API_KEY - Claude features will not work')
-}
+import { anthropicProxy } from '../lib/api-proxy'
 
 export interface Message {
   role: 'user' | 'assistant'
@@ -1782,10 +1779,6 @@ export async function sendMessage(
   previousAssistantContent?: Array<{ type: string; [key: string]: unknown }>,
   toolResults?: ToolResult[]
 ): Promise<BubbleResponse> {
-  if (!ANTHROPIC_API_KEY) {
-    throw new Error('Anthropic API key not configured')
-  }
-
   const systemPrompt = SYSTEM_PROMPT + buildContextMessage(context)
 
   // Build API messages - convert simple messages to API format
@@ -1812,29 +1805,14 @@ export async function sendMessage(
     })
   }
 
-  const response = await fetch('https://api.anthropic.com/v1/messages', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'x-api-key': ANTHROPIC_API_KEY,
-      'anthropic-version': '2023-06-01',
-      'anthropic-dangerous-direct-browser-access': 'true',
-    },
-    body: JSON.stringify({
-      model: 'claude-sonnet-4-20250514',
-      max_tokens: 1024,
-      system: systemPrompt,
-      tools: TOOLS,
-      messages: apiMessages,
-    }),
-  })
-
-  if (!response.ok) {
-    const error = await response.json().catch(() => ({}))
-    throw new Error(error.error?.message || `API request failed: ${response.status}`)
-  }
-
-  const data = await response.json()
+  // Call the Anthropic API via edge function proxy
+  const data = await anthropicProxy.sendMessage({
+    model: 'claude-sonnet-4-20250514',
+    max_tokens: 1024,
+    system: systemPrompt,
+    tools: TOOLS,
+    messages: apiMessages,
+  }) as { content: Array<{ type: string; text?: string; id?: string; name?: string; input?: Record<string, unknown> }>; stop_reason: string }
 
   // Extract text and tool calls from response
   let message = ''
@@ -1842,12 +1820,12 @@ export async function sendMessage(
 
   for (const block of data.content) {
     if (block.type === 'text') {
-      message += block.text
+      message += block.text || ''
     } else if (block.type === 'tool_use') {
       toolCalls.push({
-        id: block.id,
-        name: block.name,
-        input: block.input
+        id: block.id!,
+        name: block.name!,
+        input: block.input!
       })
     }
   }
@@ -1905,10 +1883,6 @@ IMPORTANT: Respond ONLY with the JSON object, no other text. The JSON must be va
  * Takes user's rough idea and creates structured form data.
  */
 export async function generateAssetDraft(params: DraftGenerationParams): Promise<AssetDraft> {
-  if (!ANTHROPIC_API_KEY) {
-    throw new Error('Anthropic API key not configured')
-  }
-
   const { userPrompt, assetType, subMode } = params
 
   const userMessage = `User wants to create: "${userPrompt}"
@@ -1917,34 +1891,17 @@ Generation mode: ${subMode}
 
 Generate a structured draft for this asset.`
 
-  const response = await fetch('https://api.anthropic.com/v1/messages', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'x-api-key': ANTHROPIC_API_KEY,
-      'anthropic-version': '2023-06-01',
-      'anthropic-dangerous-direct-browser-access': 'true',
-    },
-    body: JSON.stringify({
-      model: 'claude-sonnet-4-20250514',
-      max_tokens: 512,
-      system: DRAFT_SYSTEM_PROMPT,
-      messages: [{ role: 'user', content: userMessage }],
-    }),
-  })
-
-  if (!response.ok) {
-    const error = await response.json().catch(() => ({}))
-    throw new Error(error.error?.message || `API request failed: ${response.status}`)
-  }
-
-  const data = await response.json()
+  // Call the Anthropic API via edge function proxy
+  const data = await anthropicProxy.generateDraft({
+    system: DRAFT_SYSTEM_PROMPT,
+    userMessage,
+  }) as { content: Array<{ type: string; text?: string }> }
 
   // Extract text from response
   let responseText = ''
   for (const block of data.content) {
     if (block.type === 'text') {
-      responseText += block.text
+      responseText += block.text || ''
     }
   }
 

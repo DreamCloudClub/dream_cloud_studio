@@ -39,6 +39,32 @@ body {
   background-color: #09090b;
 }
 
+/* Timeline scrollbar - always visible */
+.timeline-scroll {
+  scrollbar-width: thin !important; /* Firefox */
+  scrollbar-color: #52525b #27272a !important; /* Firefox: thumb track */
+  -ms-overflow-style: auto !important; /* IE and Edge */
+}
+
+.timeline-scroll::-webkit-scrollbar {
+  display: block !important; /* Override global hide */
+  height: 8px;
+}
+
+.timeline-scroll::-webkit-scrollbar-track {
+  background: #27272a;
+  border-radius: 4px;
+}
+
+.timeline-scroll::-webkit-scrollbar-thumb {
+  background: #52525b;
+  border-radius: 4px;
+}
+
+.timeline-scroll::-webkit-scrollbar-thumb:hover {
+  background: #71717a;
+}
+
 /* Responsive container utilities */
 @layer utilities {
   .container-fluid {

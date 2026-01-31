@@ -206,23 +206,25 @@ export function LibraryProjectsPage() {
 
   return (
     <LibraryLayout libraryPage="projects">
-      <div className="max-w-4xl mx-auto px-6 lg:px-8 py-6 lg:py-8 space-y-8">
-        {/* Header */}
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-          <div>
-            <h1 className="text-2xl font-bold text-zinc-100">All Projects</h1>
-            <p className="text-zinc-400 mt-1">
-              {projects.length} project{projects.length !== 1 ? "s" : ""}
-            </p>
+      <div className="h-full flex flex-col">
+        {/* Secondary Header */}
+        <div className="h-[72px] border-b border-zinc-800 flex-shrink-0">
+          <div className="h-full max-w-4xl mx-auto px-6 lg:px-8 flex items-center justify-between">
+            <h1 className="text-xl font-semibold text-zinc-100">Projects</h1>
+
+            <button
+              onClick={handleNewProject}
+              className="px-4 py-2 bg-gradient-to-br from-sky-400 via-sky-500 to-blue-600 rounded-xl text-white font-medium text-sm hover:opacity-90 transition-opacity inline-flex items-center gap-2"
+            >
+              <Plus className="w-4 h-4" />
+              New Project
+            </button>
           </div>
-          <button
-            onClick={handleNewProject}
-            className="px-4 py-2 bg-gradient-to-br from-sky-400 via-sky-500 to-blue-600 rounded-xl text-white font-medium text-sm hover:opacity-90 transition-opacity inline-flex items-center gap-2"
-          >
-            <Plus className="w-4 h-4" />
-            New Project
-          </button>
         </div>
+
+        {/* Content */}
+        <div className="flex-1 overflow-y-auto">
+          <div className="max-w-4xl mx-auto px-6 lg:px-8 pt-10 pb-6 space-y-6">
 
         {/* Filters */}
         <div className="flex flex-col sm:flex-row gap-3">
@@ -370,62 +372,64 @@ export function LibraryProjectsPage() {
             </p>
           </div>
         )}
-      </div>
-
-      {/* Delete Confirmation Modal */}
-      {deleteModal.isOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center">
-          {/* Backdrop */}
-          <div
-            className="absolute inset-0 bg-black/70 backdrop-blur-sm"
-            onClick={handleDeleteCancel}
-          />
-
-          {/* Modal */}
-          <div className="relative bg-zinc-900 border border-zinc-700 rounded-2xl p-6 max-w-md w-full mx-4 shadow-2xl">
-            <div className="flex items-start gap-4">
-              <div className="w-12 h-12 rounded-full bg-orange-500/20 flex items-center justify-center flex-shrink-0">
-                <AlertTriangle className="w-6 h-6 text-orange-400" />
-              </div>
-              <div className="flex-1">
-                <h3 className="text-lg font-semibold text-zinc-100">
-                  Delete Project
-                </h3>
-                <p className="text-sm text-zinc-400 mt-1">
-                  Are you sure you want to delete <span className="text-zinc-200 font-medium">"{deleteModal.project?.name}"</span>? This action cannot be undone.
-                </p>
-              </div>
-            </div>
-
-            <div className="flex gap-3 mt-6 justify-end">
-              <button
-                onClick={handleDeleteCancel}
-                disabled={isDeleting}
-                className="px-4 py-2 text-sm font-medium text-zinc-300 hover:text-white bg-zinc-800 hover:bg-zinc-700 rounded-lg transition-colors disabled:opacity-50"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={handleDeleteConfirm}
-                disabled={isDeleting}
-                className="px-4 py-2 text-sm font-medium text-white bg-orange-500 hover:bg-orange-600 rounded-lg transition-colors disabled:opacity-50 inline-flex items-center gap-2"
-              >
-                {isDeleting ? (
-                  <>
-                    <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-                    Deleting...
-                  </>
-                ) : (
-                  <>
-                    <Trash2 className="w-4 h-4" />
-                    Delete
-                  </>
-                )}
-              </button>
-            </div>
           </div>
         </div>
-      )}
+
+        {/* Delete Confirmation Modal */}
+        {deleteModal.isOpen && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center">
+            {/* Backdrop */}
+            <div
+              className="absolute inset-0 bg-black/70 backdrop-blur-sm"
+              onClick={handleDeleteCancel}
+            />
+
+            {/* Modal */}
+            <div className="relative bg-zinc-900 border border-zinc-700 rounded-2xl p-6 max-w-md w-full mx-4 shadow-2xl">
+              <div className="flex items-start gap-4">
+                <div className="w-12 h-12 rounded-full bg-orange-500/20 flex items-center justify-center flex-shrink-0">
+                  <AlertTriangle className="w-6 h-6 text-orange-400" />
+                </div>
+                <div className="flex-1">
+                  <h3 className="text-lg font-semibold text-zinc-100">
+                    Delete Project
+                  </h3>
+                  <p className="text-sm text-zinc-400 mt-1">
+                    Are you sure you want to delete <span className="text-zinc-200 font-medium">"{deleteModal.project?.name}"</span>? This action cannot be undone.
+                  </p>
+                </div>
+              </div>
+
+              <div className="flex gap-3 mt-6 justify-end">
+                <button
+                  onClick={handleDeleteCancel}
+                  disabled={isDeleting}
+                  className="px-4 py-2 text-sm font-medium text-zinc-300 hover:text-white bg-zinc-800 hover:bg-zinc-700 rounded-lg transition-colors disabled:opacity-50"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={handleDeleteConfirm}
+                  disabled={isDeleting}
+                  className="px-4 py-2 text-sm font-medium text-white bg-orange-500 hover:bg-orange-600 rounded-lg transition-colors disabled:opacity-50 inline-flex items-center gap-2"
+                >
+                  {isDeleting ? (
+                    <>
+                      <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                      Deleting...
+                    </>
+                  ) : (
+                    <>
+                      <Trash2 className="w-4 h-4" />
+                      Delete
+                    </>
+                  )}
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
     </LibraryLayout>
   )
 }

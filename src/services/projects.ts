@@ -15,12 +15,6 @@ import type {
   StoryboardCard,
   StoryboardCardInsert,
   StoryboardCardUpdate,
-  Scene,
-  SceneInsert,
-  SceneUpdate,
-  Shot,
-  ShotInsert,
-  ShotUpdate,
   ExportSettings,
   ExportSettingsInsert,
   ExportSettingsUpdate,
@@ -28,8 +22,11 @@ import type {
   ProjectCompositionInsert,
   ProjectCompositionUpdate,
   ProjectWithRelations,
-  SceneWithShots,
   Platform,
+  Note,
+  NoteInsert,
+  Script,
+  ScriptInsert,
 } from '@/types/database'
 
 // ============================================
@@ -52,111 +49,37 @@ export interface ProjectWithThumbnail extends Project {
 }
 
 export async function getCompletedProjects(userId: string): Promise<ProjectWithThumbnail[]> {
+  // Simple query without scene/shot joins (those tables may not exist)
   const { data, error } = await supabase
     .from('projects')
-    .select(`
-      *,
-      scenes (
-        id,
-        sort_order,
-        shots (
-          id,
-          sort_order,
-          image_asset_id,
-          video_asset_id,
-          image_asset:assets!shots_image_asset_id_fkey (
-            url,
-            local_path,
-            storage_type
-          ),
-          video_asset:assets!shots_video_asset_id_fkey (
-            url,
-            local_path,
-            storage_type
-          )
-        )
-      )
-    `)
+    .select('*')
     .eq('user_id', userId)
     .in('status', ['completed', 'in_progress'])
     .order('updated_at', { ascending: false })
 
   if (error) throw error
 
-  // Extract thumbnail from first scene's first shot (prefer image, fallback to video)
-  return (data || []).map(project => {
-    const scenes = (project.scenes || []).sort((a: any, b: any) => a.sort_order - b.sort_order)
-    const firstScene = scenes[0]
-    const shots = firstScene?.shots?.sort((a: any, b: any) => a.sort_order - b.sort_order) || []
-
-    // Find first shot with an asset (image or video)
-    let thumbnail_url: string | null = null
-    for (const shot of shots) {
-      const asset = shot.image_asset || shot.video_asset
-      if (asset) {
-        thumbnail_url = asset.storage_type === 'local' ? asset.local_path : asset.url
-        break
-      }
-    }
-
-    // Remove nested data, just return project with thumbnail
-    const { scenes: _, ...projectData } = project
-    return { ...projectData, thumbnail_url } as ProjectWithThumbnail
-  })
+  // Return projects without thumbnail for now
+  return (data || []).map(project => ({
+    ...project,
+    thumbnail_url: null,
+  })) as ProjectWithThumbnail[]
 }
 
 export async function getDraftProjects(userId: string): Promise<ProjectWithThumbnail[]> {
   const { data, error } = await supabase
     .from('projects')
-    .select(`
-      *,
-      scenes (
-        id,
-        sort_order,
-        shots (
-          id,
-          sort_order,
-          image_asset_id,
-          video_asset_id,
-          image_asset:assets!shots_image_asset_id_fkey (
-            url,
-            local_path,
-            storage_type
-          ),
-          video_asset:assets!shots_video_asset_id_fkey (
-            url,
-            local_path,
-            storage_type
-          )
-        )
-      )
-    `)
+    .select('*')
     .eq('user_id', userId)
     .eq('status', 'draft')
     .order('updated_at', { ascending: false })
 
   if (error) throw error
 
-  // Extract thumbnail from first scene's first shot (prefer image, fallback to video)
-  return (data || []).map(project => {
-    const scenes = (project.scenes || []).sort((a: any, b: any) => a.sort_order - b.sort_order)
-    const firstScene = scenes[0]
-    const shots = firstScene?.shots?.sort((a: any, b: any) => a.sort_order - b.sort_order) || []
-
-    // Find first shot with an asset (image or video)
-    let thumbnail_url: string | null = null
-    for (const shot of shots) {
-      const asset = shot.image_asset || shot.video_asset
-      if (asset) {
-        thumbnail_url = asset.storage_type === 'local' ? asset.local_path : asset.url
-        break
-      }
-    }
-
-    // Remove nested data, just return project with thumbnail
-    const { scenes: _, ...projectData } = project
-    return { ...projectData, thumbnail_url } as ProjectWithThumbnail
-  })
+  return (data || []).map(project => ({
+    ...project,
+    thumbnail_url: null,
+  })) as ProjectWithThumbnail[]
 }
 
 export async function createDraftProject(userId: string, platformId?: string): Promise<Project> {
@@ -217,7 +140,7 @@ export async function getProject(projectId: string): Promise<Project | null> {
 }
 
 export async function getProjectWithRelations(projectId: string): Promise<ProjectWithRelations | null> {
-  // Fetch project with platform
+  // Fetch project first to check if it exists and get platform_id
   const { data: projectData, error: projectError } = await supabase
     .from('projects')
     .select('*')
@@ -231,71 +154,38 @@ export async function getProjectWithRelations(projectId: string): Promise<Projec
 
   const project = projectData as Project
 
-  // Fetch platform if exists
-  let platform: Platform | undefined
-  if (project.platform_id) {
-    const { data: platformData } = await supabase
-      .from('platforms')
-      .select('*')
-      .eq('id', project.platform_id)
-      .single()
-    platform = platformData as Platform
-  }
-
-  // Fetch related data in parallel
+  // Fetch ALL related data in parallel (including platform)
   // Use maybeSingle() for optional records to avoid 406 errors when they don't exist
   const [
+    platformResult,
     briefResult,
     moodBoardResult,
     storyboardResult,
     cardsResult,
-    scriptSectionsResult,
-    scenesResult,
     assetsResult,
     exportResult,
     compositionResult,
+    timelineClipsResult,
   ] = await Promise.all([
+    project.platform_id
+      ? supabase.from('platforms').select('*').eq('id', project.platform_id).maybeSingle()
+      : Promise.resolve({ data: null, error: null }),
     supabase.from('project_briefs').select('*').eq('project_id', projectId).maybeSingle(),
     supabase.from('mood_boards').select('*').eq('project_id', projectId).maybeSingle(),
     supabase.from('storyboards').select('*').eq('project_id', projectId).maybeSingle(),
     supabase.from('storyboard_cards').select('*').eq('project_id', projectId).order('sort_order'),
-    supabase.from('script_sections').select('*').eq('project_id', projectId).order('sort_order'),
-    supabase.from('scenes').select('*').eq('project_id', projectId).order('sort_order'),
     supabase.from('assets').select('*').eq('project_id', projectId).order('created_at', { ascending: false }),
     supabase.from('export_settings').select('*').eq('project_id', projectId).maybeSingle(),
     supabase.from('project_compositions').select('*').eq('project_id', projectId).maybeSingle(),
+    supabase.from('timeline_clips').select('*').eq('project_id', projectId).order('start_time'),
   ])
 
-  // Fetch shots for each scene
-  const scenes: SceneWithShots[] = []
-  const allShots: Shot[] = []
-  if (scenesResult.data) {
-    for (const scene of scenesResult.data) {
-      const { data: shots, error: shotsError } = await supabase
-        .from('shots')
-        .select('*')
-        .eq('scene_id', scene.id)
-        .order('sort_order')
+  const platform = platformResult.data as Platform | undefined
 
-      if (shotsError) {
-        console.error('Error fetching shots:', shotsError)
-      }
-
-      const sceneShots = (shots || []) as Shot[]
-      allShots.push(...sceneShots)
-      scenes.push({
-        ...(scene as Scene),
-        shots: sceneShots,
-      })
-    }
-  }
-
-  // Collect all linked asset IDs from shots
+  // Collect asset IDs from timeline clips
   const linkedAssetIds = new Set<string>()
-  for (const shot of allShots) {
-    if (shot.image_asset_id) linkedAssetIds.add(shot.image_asset_id)
-    if (shot.video_asset_id) linkedAssetIds.add(shot.video_asset_id)
-    if (shot.audio_asset_id) linkedAssetIds.add(shot.audio_asset_id)
+  for (const clip of timelineClipsResult.data || []) {
+    if (clip.asset_id) linkedAssetIds.add(clip.asset_id)
   }
 
   // Fetch linked assets that might not be in the project's assets
@@ -323,11 +213,10 @@ export async function getProjectWithRelations(projectId: string): Promise<Projec
     mood_board: moodBoardResult.data as MoodBoard | undefined,
     storyboard: storyboardResult.data as Storyboard | undefined,
     storyboard_cards: (cardsResult.data || []) as StoryboardCard[],
-    script_sections: (scriptSectionsResult.data || []) as any[],
-    scenes,
     assets: allAssets as any[],
     export_settings: exportResult.data as ExportSettings | undefined,
     composition: compositionResult.data as ProjectComposition | undefined,
+    timeline_clips: (timelineClipsResult.data || []) as any[],
   }
 }
 
@@ -545,145 +434,6 @@ export async function reorderStoryboardCards(projectId: string, cardIds: string[
 }
 
 // ============================================
-// SCENES
-// ============================================
-
-export async function getScenes(projectId: string): Promise<Scene[]> {
-  const { data, error } = await supabase
-    .from('scenes')
-    .select('*')
-    .eq('project_id', projectId)
-    .order('sort_order')
-
-  if (error) throw error
-  return data as Scene[]
-}
-
-export async function getScenesWithShots(projectId: string): Promise<SceneWithShots[]> {
-  const { data: scenes, error: scenesError } = await supabase
-    .from('scenes')
-    .select('*')
-    .eq('project_id', projectId)
-    .order('sort_order')
-
-  if (scenesError) throw scenesError
-
-  const result: SceneWithShots[] = []
-  for (const scene of scenes || []) {
-    const { data: shots, error: shotsError } = await supabase
-      .from('shots')
-      .select('*')
-      .eq('scene_id', scene.id)
-      .order('sort_order')
-
-    if (shotsError) throw shotsError
-    result.push({ ...(scene as Scene), shots: (shots || []) as Shot[] })
-  }
-
-  return result
-}
-
-export async function createScene(scene: SceneInsert): Promise<Scene> {
-  const { data, error } = await supabase
-    .from('scenes')
-    .insert(scene)
-    .select()
-    .single()
-
-  if (error) throw error
-  return data as Scene
-}
-
-export async function updateScene(sceneId: string, updates: SceneUpdate): Promise<Scene> {
-  const { data, error } = await supabase
-    .from('scenes')
-    .update(updates)
-    .eq('id', sceneId)
-    .select()
-    .single()
-
-  if (error) throw error
-  return data as Scene
-}
-
-export async function deleteScene(sceneId: string): Promise<void> {
-  const { error } = await supabase
-    .from('scenes')
-    .delete()
-    .eq('id', sceneId)
-
-  if (error) throw error
-}
-
-export async function reorderScenes(projectId: string, sceneIds: string[]): Promise<void> {
-  for (let i = 0; i < sceneIds.length; i++) {
-    const { error } = await supabase
-      .from('scenes')
-      .update({ sort_order: i })
-      .eq('id', sceneIds[i])
-
-    if (error) throw error
-  }
-}
-
-// ============================================
-// SHOTS
-// ============================================
-
-export async function getShots(sceneId: string): Promise<Shot[]> {
-  const { data, error } = await supabase
-    .from('shots')
-    .select('*')
-    .eq('scene_id', sceneId)
-    .order('sort_order')
-
-  if (error) throw error
-  return data as Shot[]
-}
-
-export async function createShot(shot: ShotInsert): Promise<Shot> {
-  const { data, error } = await supabase
-    .from('shots')
-    .insert(shot)
-    .select()
-    .single()
-
-  if (error) throw error
-  return data as Shot
-}
-
-export async function updateShot(shotId: string, updates: ShotUpdate): Promise<Shot> {
-  const { data, error } = await supabase
-    .from('shots')
-    .update(updates)
-    .eq('id', shotId)
-    .select()
-    .single()
-
-  if (error) throw error
-  return data as Shot
-}
-
-export async function deleteShot(shotId: string): Promise<void> {
-  const { error } = await supabase
-    .from('shots')
-    .delete()
-    .eq('id', shotId)
-
-  if (error) throw error
-}
-
-export async function reorderShots(sceneId: string, shotIds: string[]): Promise<void> {
-  for (let i = 0; i < shotIds.length; i++) {
-    const { error } = await supabase
-      .from('shots')
-      .update({ sort_order: i })
-      .eq('id', shotIds[i])
-
-    if (error) throw error
-  }
-}
-// ============================================
 // EXPORT SETTINGS
 // ============================================
 
@@ -735,7 +485,6 @@ export interface CreateFullProjectInput {
   brief: Omit<ProjectBriefInsert, 'project_id'>
   moodBoard?: Omit<MoodBoardInsert, 'project_id'>
   storyboard?: Omit<StoryboardInsert, 'project_id'>
-  scenes?: Array<Omit<SceneInsert, 'project_id'> & { shots?: Omit<ShotInsert, 'scene_id'>[] }>
 }
 
 export async function createFullProject(input: CreateFullProjectInput): Promise<ProjectWithRelations> {
@@ -770,35 +519,6 @@ export async function createFullProject(input: CreateFullProjectInput): Promise<
     })
   }
 
-  // Create scenes and shots if provided
-  const scenes: SceneWithShots[] = []
-  if (input.scenes) {
-    for (let i = 0; i < input.scenes.length; i++) {
-      const sceneInput = input.scenes[i]
-      const { shots: shotInputs, ...sceneData } = sceneInput
-
-      const scene = await createScene({
-        ...sceneData,
-        project_id: project.id,
-        sort_order: i,
-      })
-
-      const shots: Shot[] = []
-      if (shotInputs) {
-        for (let j = 0; j < shotInputs.length; j++) {
-          const shot = await createShot({
-            ...shotInputs[j],
-            scene_id: scene.id,
-            sort_order: j,
-          })
-          shots.push(shot)
-        }
-      }
-
-      scenes.push({ ...scene, shots })
-    }
-  }
-
   // Create default export settings
   const exportSettings = await createExportSettings({
     project_id: project.id,
@@ -809,7 +529,6 @@ export async function createFullProject(input: CreateFullProjectInput): Promise<
     brief,
     mood_board: moodBoard,
     storyboard,
-    scenes,
     export_settings: exportSettings,
   }
 }
@@ -893,4 +612,128 @@ export async function getAllProjects(userId: string): Promise<Project[]> {
 
   if (error) throw error
   return data as Project[]
+}
+
+// ============================================
+// NOTES
+// ============================================
+
+export async function getNotes(userId: string): Promise<Note[]> {
+  const { data, error } = await supabase
+    .from('notes')
+    .select('*')
+    .eq('user_id', userId)
+    .order('created_at', { ascending: false })
+
+  if (error) throw error
+  return data as Note[]
+}
+
+export async function createNote(note: NoteInsert): Promise<Note> {
+  const { data, error } = await supabase
+    .from('notes')
+    .insert(note)
+    .select()
+    .single()
+
+  if (error) throw error
+  return data as Note
+}
+
+export async function updateNote(noteId: string, content: string): Promise<Note> {
+  const { data, error } = await supabase
+    .from('notes')
+    .update({ content, updated_at: new Date().toISOString() })
+    .eq('id', noteId)
+    .select()
+    .single()
+
+  if (error) throw error
+  return data as Note
+}
+
+export async function deleteNote(noteId: string): Promise<void> {
+  const { error } = await supabase
+    .from('notes')
+    .delete()
+    .eq('id', noteId)
+
+  if (error) throw error
+}
+
+export async function updateNoteSortOrder(noteId: string, sortOrder: number): Promise<void> {
+  const { error } = await supabase
+    .from('notes')
+    .update({ sort_order: sortOrder })
+    .eq('id', noteId)
+
+  if (error) throw error
+}
+
+// ============================================
+// SCRIPTS
+// ============================================
+
+export async function getScripts(userId: string): Promise<Script[]> {
+  const { data, error } = await supabase
+    .from('scripts')
+    .select('*')
+    .eq('user_id', userId)
+    .order('sort_order', { ascending: true })
+
+  if (error) throw error
+  return data as Script[]
+}
+
+export async function getScriptByProject(projectId: string): Promise<Script | null> {
+  const { data, error } = await supabase
+    .from('scripts')
+    .select('*')
+    .eq('project_id', projectId)
+    .maybeSingle()
+
+  if (error) throw error
+  return data as Script | null
+}
+
+export async function createScript(script: ScriptInsert): Promise<Script> {
+  const { data, error } = await supabase
+    .from('scripts')
+    .insert(script)
+    .select()
+    .single()
+
+  if (error) throw error
+  return data as Script
+}
+
+export async function updateScript(scriptId: string, content: string): Promise<Script> {
+  const { data, error } = await supabase
+    .from('scripts')
+    .update({ content, updated_at: new Date().toISOString() })
+    .eq('id', scriptId)
+    .select()
+    .single()
+
+  if (error) throw error
+  return data as Script
+}
+
+export async function upsertScript(projectId: string, userId: string, content: string): Promise<Script> {
+  const existing = await getScriptByProject(projectId)
+
+  if (existing) {
+    return updateScript(existing.id, content)
+  } else {
+    return createScript({ project_id: projectId, user_id: userId, content })
+  }
+}
+
+export async function updateScriptSortOrder(scriptId: string, sortOrder: number): Promise<void> {
+  const { error } = await supabase
+    .from('scripts')
+    .update({ sort_order: sortOrder })
+    .eq('id', scriptId)
+
+  if (error) throw error
 }

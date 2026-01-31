@@ -1,6 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from "react"
 import {
-  X,
   Save,
   Trash2,
   Image,
@@ -260,23 +259,11 @@ export function AssetDetailsModal({
       {/* Modal */}
       <div className="relative bg-zinc-900 border border-zinc-700 rounded-2xl w-full max-w-2xl mx-4 max-h-[90vh] overflow-y-auto">
         {/* Header */}
-        <div className="flex items-center justify-between p-4 border-b border-zinc-800 sticky top-0 bg-zinc-900 z-10">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-lg bg-sky-500/20 flex items-center justify-center">
-              <TypeIcon className="w-5 h-5 text-sky-400" />
-            </div>
-            <div>
-              <h2 className="text-lg font-semibold text-zinc-100">Asset Details</h2>
-              <p className="text-xs text-zinc-500 capitalize">{asset.type}</p>
-            </div>
+        <div className="p-4 border-b border-zinc-800 sticky top-0 bg-zinc-900 z-10">
+          <div className="flex items-center justify-center gap-2">
+            <TypeIcon className="w-5 h-5 text-sky-400" />
+            <h2 className="text-lg font-semibold text-zinc-100">Asset Details</h2>
           </div>
-          <button
-            onClick={handleClose}
-            disabled={isSaving || isDeleting}
-            className="p-1 text-zinc-400 hover:text-zinc-200 transition-colors disabled:opacity-50"
-          >
-            <X className="w-5 h-5" />
-          </button>
         </div>
 
         {/* Content */}

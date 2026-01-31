@@ -1,21 +1,8 @@
 // fal.ai Generation Service
+// API calls are proxied through Supabase edge functions for security
 // Docs: https://fal.ai/docs
 
-const FAL_API_URL = "https://queue.fal.run"
-
-async function getApiKey(): Promise<string> {
-  const key = import.meta.env.VITE_FAL_API_KEY
-  if (!key) {
-    throw new Error("VITE_FAL_API_KEY is not set in environment variables")
-  }
-  return key
-}
-
-interface FalQueueResponse {
-  request_id: string
-  status: "IN_QUEUE" | "IN_PROGRESS" | "COMPLETED" | "FAILED"
-  response_url?: string
-}
+import { falProxy } from '../lib/api-proxy'
 
 interface FalStatusResponse {
   status: "IN_QUEUE" | "IN_PROGRESS" | "COMPLETED" | "FAILED"
@@ -27,53 +14,18 @@ async function submitRequest(
   model: string,
   input: Record<string, unknown>
 ): Promise<string> {
-  const key = await getApiKey()
-
-  const response = await fetch(`${FAL_API_URL}/${model}`, {
-    method: "POST",
-    headers: {
-      "Authorization": `Key ${key}`,
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify(input),
-  })
-
-  if (!response.ok) {
-    const error = await response.json()
-    throw new Error(error.detail || error.message || "Failed to submit request")
-  }
-
-  const data: FalQueueResponse = await response.json()
+  const data = await falProxy.submit({ model, input })
   return data.request_id
 }
 
 async function pollStatus(model: string, requestId: string): Promise<unknown> {
-  const key = await getApiKey()
-
   while (true) {
-    const response = await fetch(
-      `${FAL_API_URL}/${model}/requests/${requestId}/status`,
-      {
-        headers: {
-          "Authorization": `Key ${key}`,
-        },
-      }
-    )
-
-    if (!response.ok) {
-      throw new Error("Failed to fetch status")
-    }
-
-    const status: FalStatusResponse = await response.json()
+    const status = await falProxy.status({ model, requestId }) as FalStatusResponse
 
     if (status.status === "COMPLETED" && status.response_url) {
-      // Fetch the actual result
-      const resultResponse = await fetch(status.response_url, {
-        headers: {
-          "Authorization": `Key ${key}`,
-        },
-      })
-      return resultResponse.json()
+      // Fetch the actual result via the proxy
+      const result = await falProxy.result({ responseUrl: status.response_url })
+      return result
     }
 
     if (status.status === "FAILED") {

@@ -19,6 +19,18 @@ export interface ClipAnimation {
   endPosition?: { x: number; y: number }
 }
 
+// Embedded asset snapshot - stored with clip for persistence
+export interface EmbeddedAsset {
+  id: string
+  name: string
+  type: 'image' | 'video' | 'audio' | 'animation'
+  category?: string
+  url: string | null
+  localPath?: string | null
+  storageType: 'local' | 'cloud'
+  duration?: number
+}
+
 // A clip placed on the timeline
 export interface TimelineClip {
   id: string
@@ -30,6 +42,9 @@ export interface TimelineClip {
   startTime: number     // when clip starts on timeline (seconds)
   duration: number      // how long it plays (seconds)
   inPoint: number       // where to start within asset (seconds)
+
+  // Embedded asset data - self-contained, doesn't need external lookup
+  embeddedAsset?: EmbeddedAsset
 
   // Optional properties
   transform?: ClipTransform
@@ -60,6 +75,7 @@ export interface TimelineClipRow {
   transform: ClipTransform | null
   animation: ClipAnimation | null
   volume: number
+  embedded_asset: EmbeddedAsset | null
   created_at: string
   updated_at: string
 }
@@ -75,6 +91,7 @@ export interface TimelineClipInsert {
   transform?: ClipTransform
   animation?: ClipAnimation
   volume?: number
+  embedded_asset?: EmbeddedAsset
 }
 
 export interface TimelineClipUpdate {
@@ -85,6 +102,7 @@ export interface TimelineClipUpdate {
   transform?: ClipTransform
   animation?: ClipAnimation
   volume?: number
+  embedded_asset?: EmbeddedAsset
 }
 
 // ============================================
@@ -156,6 +174,7 @@ export function clipFromRow(row: TimelineClipRow): TimelineClip {
     transform: row.transform || undefined,
     animation: row.animation || undefined,
     volume: row.volume,
+    embeddedAsset: row.embedded_asset || undefined,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   }
@@ -173,6 +192,7 @@ export function clipToInsert(clip: Omit<TimelineClip, 'id' | 'createdAt' | 'upda
     transform: clip.transform,
     animation: clip.animation,
     volume: clip.volume,
+    embedded_asset: clip.embeddedAsset,
   }
 }
 

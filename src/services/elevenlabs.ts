@@ -1,15 +1,8 @@
 // ElevenLabs Generation Service
+// API calls are proxied through Supabase edge functions for security
 // Docs: https://elevenlabs.io/docs/api-reference
 
-const ELEVENLABS_API_URL = "https://api.elevenlabs.io/v1"
-
-function getApiKey(): string {
-  const key = import.meta.env.VITE_ELEVENLABS_API_KEY
-  if (!key) {
-    throw new Error("VITE_ELEVENLABS_API_KEY is not set in environment variables")
-  }
-  return key
-}
+import { elevenlabsProxy } from '../lib/api-proxy'
 
 // ============================================
 // TYPES
@@ -36,21 +29,8 @@ export interface VoiceSettings {
 // ============================================
 
 export async function getVoices(): Promise<Voice[]> {
-  const key = getApiKey()
-
-  const response = await fetch(`${ELEVENLABS_API_URL}/voices`, {
-    headers: {
-      "xi-api-key": key,
-    },
-  })
-
-  if (!response.ok) {
-    const error = await response.json()
-    throw new Error(error.detail?.message || error.message || "Failed to fetch voices")
-  }
-
-  const data = await response.json()
-  return data.voices
+  const data = await elevenlabsProxy.listVoices()
+  return data.voices as Voice[]
 }
 
 // Popular default voices for quick access
@@ -88,51 +68,24 @@ export async function generateVoice(options: GenerateVoiceOptions): Promise<stri
     voiceSettings = {},
   } = options
 
-  const key = getApiKey()
-
-  const settings: VoiceSettings = {
-    stability: voiceSettings.stability ?? 0.5,
-    similarity_boost: voiceSettings.similarity_boost ?? 0.75,
-    style: voiceSettings.style ?? 0,
-    use_speaker_boost: voiceSettings.use_speaker_boost ?? true,
-  }
-
-  const response = await fetch(
-    `${ELEVENLABS_API_URL}/text-to-speech/${voiceId}`,
-    {
-      method: "POST",
-      headers: {
-        "xi-api-key": key,
-        "Content-Type": "application/json",
-        Accept: "audio/mpeg",
-      },
-      body: JSON.stringify({
-        text,
-        model_id: modelId,
-        voice_settings: settings,
-      }),
-    }
-  )
-
-  if (!response.ok) {
-    const error = await response.json().catch(() => ({}))
-    throw new Error(
-      error.detail?.message || error.message || "Failed to generate voice"
-    )
-  }
-
-  // Convert audio blob to data URL
-  const audioBlob = await response.blob()
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader()
-    reader.onloadend = () => resolve(reader.result as string)
-    reader.onerror = reject
-    reader.readAsDataURL(audioBlob)
+  const data = await elevenlabsProxy.generateVoice({
+    text,
+    voiceId,
+    modelId,
+    voiceSettings: {
+      stability: voiceSettings.stability ?? 0.5,
+      similarity_boost: voiceSettings.similarity_boost ?? 0.75,
+      style: voiceSettings.style ?? 0,
+      use_speaker_boost: voiceSettings.use_speaker_boost ?? true,
+    },
   })
+
+  return data.audioDataUrl
 }
 
 // ============================================
 // TEXT-TO-SPEECH WITH STREAMING
+// Note: Streaming is handled by the edge function, returns complete audio
 // ============================================
 
 export interface StreamVoiceOptions extends GenerateVoiceOptions {
@@ -140,70 +93,29 @@ export interface StreamVoiceOptions extends GenerateVoiceOptions {
 }
 
 export async function streamVoice(options: StreamVoiceOptions): Promise<string> {
+  // For now, streaming goes through the same endpoint
+  // The edge function returns the complete audio as base64
+  // Real streaming would require WebSocket or Server-Sent Events
   const {
     text,
     voiceId = DEFAULT_VOICES.rachel,
     modelId = "eleven_multilingual_v2",
     voiceSettings = {},
-    onAudioChunk,
   } = options
 
-  const key = getApiKey()
-
-  const settings: VoiceSettings = {
-    stability: voiceSettings.stability ?? 0.5,
-    similarity_boost: voiceSettings.similarity_boost ?? 0.75,
-    style: voiceSettings.style ?? 0,
-    use_speaker_boost: voiceSettings.use_speaker_boost ?? true,
-  }
-
-  const response = await fetch(
-    `${ELEVENLABS_API_URL}/text-to-speech/${voiceId}/stream`,
-    {
-      method: "POST",
-      headers: {
-        "xi-api-key": key,
-        "Content-Type": "application/json",
-        Accept: "audio/mpeg",
-      },
-      body: JSON.stringify({
-        text,
-        model_id: modelId,
-        voice_settings: settings,
-      }),
-    }
-  )
-
-  if (!response.ok) {
-    const error = await response.json().catch(() => ({}))
-    throw new Error(
-      error.detail?.message || error.message || "Failed to stream voice"
-    )
-  }
-
-  const reader = response.body?.getReader()
-  if (!reader) {
-    throw new Error("No response body")
-  }
-
-  const chunks: Uint8Array[] = []
-
-  while (true) {
-    const { done, value } = await reader.read()
-    if (done) break
-
-    chunks.push(value)
-    onAudioChunk?.(value)
-  }
-
-  // Combine chunks into a single blob and return as data URL
-  const audioBlob = new Blob(chunks as BlobPart[], { type: "audio/mpeg" })
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader()
-    reader.onloadend = () => resolve(reader.result as string)
-    reader.onerror = reject
-    reader.readAsDataURL(audioBlob)
+  const data = await elevenlabsProxy.generateVoice({
+    text,
+    voiceId,
+    modelId,
+    voiceSettings: {
+      stability: voiceSettings.stability ?? 0.5,
+      similarity_boost: voiceSettings.similarity_boost ?? 0.75,
+      style: voiceSettings.style ?? 0,
+      use_speaker_boost: voiceSettings.use_speaker_boost ?? true,
+    },
   })
+
+  return data.audioDataUrl
 }
 
 // ============================================
@@ -221,46 +133,18 @@ export async function generateSoundEffect(
 ): Promise<string> {
   const { text, duration_seconds, prompt_influence = 0.3 } = options
 
-  const key = getApiKey()
-
-  const body: Record<string, unknown> = {
+  const data = await elevenlabsProxy.generateSoundEffect({
     text,
+    duration_seconds,
     prompt_influence,
-  }
-
-  if (duration_seconds) {
-    body.duration_seconds = duration_seconds
-  }
-
-  const response = await fetch(`${ELEVENLABS_API_URL}/sound-generation`, {
-    method: "POST",
-    headers: {
-      "xi-api-key": key,
-      "Content-Type": "application/json",
-      Accept: "audio/mpeg",
-    },
-    body: JSON.stringify(body),
   })
 
-  if (!response.ok) {
-    const error = await response.json().catch(() => ({}))
-    throw new Error(
-      error.detail?.message || error.message || "Failed to generate sound effect"
-    )
-  }
-
-  // Convert audio blob to data URL
-  const audioBlob = await response.blob()
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader()
-    reader.onloadend = () => resolve(reader.result as string)
-    reader.onerror = reject
-    reader.readAsDataURL(audioBlob)
-  })
+  return data.audioDataUrl
 }
 
 // ============================================
 // VOICE CLONING (requires professional tier)
+// Note: This would need a separate edge function endpoint for file upload
 // ============================================
 
 export interface CloneVoiceOptions {
@@ -270,42 +154,13 @@ export interface CloneVoiceOptions {
   labels?: Record<string, string>
 }
 
-export async function cloneVoice(options: CloneVoiceOptions): Promise<Voice> {
-  const { name, files, description, labels } = options
-
-  const key = getApiKey()
-
-  const formData = new FormData()
-  formData.append("name", name)
-
-  if (description) {
-    formData.append("description", description)
-  }
-
-  if (labels) {
-    formData.append("labels", JSON.stringify(labels))
-  }
-
-  files.forEach((file) => {
-    formData.append("files", file)
-  })
-
-  const response = await fetch(`${ELEVENLABS_API_URL}/voices/add`, {
-    method: "POST",
-    headers: {
-      "xi-api-key": key,
-    },
-    body: formData,
-  })
-
-  if (!response.ok) {
-    const error = await response.json().catch(() => ({}))
-    throw new Error(
-      error.detail?.message || error.message || "Failed to clone voice"
-    )
-  }
-
-  return response.json()
+export async function cloneVoice(_options: CloneVoiceOptions): Promise<Voice> {
+  // Voice cloning requires file upload which is more complex
+  // For now, throw an error indicating it's not yet supported via proxy
+  throw new Error(
+    "Voice cloning via proxy is not yet implemented. " +
+    "This feature requires file upload support in the edge function."
+  )
 }
 
 // ============================================
@@ -335,22 +190,8 @@ export interface UserInfo {
 }
 
 export async function getUserInfo(): Promise<UserInfo> {
-  const key = getApiKey()
-
-  const response = await fetch(`${ELEVENLABS_API_URL}/user`, {
-    headers: {
-      "xi-api-key": key,
-    },
-  })
-
-  if (!response.ok) {
-    const error = await response.json().catch(() => ({}))
-    throw new Error(
-      error.detail?.message || error.message || "Failed to fetch user info"
-    )
-  }
-
-  return response.json()
+  const data = await elevenlabsProxy.getUserInfo()
+  return data as UserInfo
 }
 
 // ============================================

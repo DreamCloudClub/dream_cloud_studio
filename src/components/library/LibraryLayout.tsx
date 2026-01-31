@@ -1,4 +1,3 @@
-import { useState } from "react"
 import { DashboardHeader, DashboardNav } from "@/components/dashboard"
 import { BubblePanel } from "@/components/create"
 import { InspectorPanel, LibraryPageType } from "@/components/workspace"
@@ -11,9 +10,8 @@ interface LibraryLayoutProps {
 }
 
 export function LibraryLayout({ children, libraryPage }: LibraryLayoutProps) {
-  const { isBubbleCollapsed, toggleBubbleCollapsed } = useUIStore()
+  const { isBubbleCollapsed, toggleBubbleCollapsed, isInspectorCollapsed, toggleInspectorCollapsed } = useUIStore()
   const { user, profile, signOut } = useAuth()
-  const [isInspectorCollapsed, setIsInspectorCollapsed] = useState(false)
 
   return (
     <div className="h-screen bg-zinc-950 flex flex-col">
@@ -51,7 +49,7 @@ export function LibraryLayout({ children, libraryPage }: LibraryLayoutProps) {
         >
           <InspectorPanel
             isCollapsed={isInspectorCollapsed}
-            onToggleCollapse={() => setIsInspectorCollapsed(!isInspectorCollapsed)}
+            onToggleCollapse={toggleInspectorCollapsed}
             libraryPage={libraryPage}
           />
         </div>
