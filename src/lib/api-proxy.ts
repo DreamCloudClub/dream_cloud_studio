@@ -85,6 +85,12 @@ export const elevenlabsProxy = {
     prompt_influence?: number
   }) => callEdgeFunction<{ audioDataUrl: string }>('elevenlabs-proxy', 'generate_sound_effect', params),
 
+  generateMusic: (params: {
+    prompt: string
+    duration_ms?: number
+    force_instrumental?: boolean
+  }) => callEdgeFunction<{ audioDataUrl: string }>('elevenlabs-proxy', 'generate_music', params),
+
   getUserInfo: () =>
     callEdgeFunction<{
       subscription: {

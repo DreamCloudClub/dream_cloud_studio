@@ -10,6 +10,8 @@ import { PlatformDetail } from "@/pages/PlatformDetail"
 import { PlatformEdit } from "@/pages/PlatformEdit"
 import { CreatePlatform } from "@/pages/CreatePlatform"
 import { CreatorPage } from "@/pages/CreatorPage"
+import { AnimationLibrary } from "@/pages/AnimationLibrary"
+import { AnimationEditor } from "@/pages/AnimationEditor"
 import { DevTools } from "@/pages/DevTools"
 import { Profile } from "@/pages/Profile"
 import Login from "@/pages/Login"
@@ -70,6 +72,11 @@ function AppRoutes() {
       <Route path="/create/platform" element={<ProtectedRoute><CreatePlatform /></ProtectedRoute>} />
       <Route path="/create/:type/:subMode" element={<ProtectedRoute><CreatorPage /></ProtectedRoute>} />
       <Route path="/create/:type" element={<ProtectedRoute><CreatorPage /></ProtectedRoute>} />
+
+      {/* Animation routes */}
+      <Route path="/animations" element={<ProtectedRoute><AnimationLibrary /></ProtectedRoute>} />
+      <Route path="/animations/new" element={<ProtectedRoute><AnimationEditor /></ProtectedRoute>} />
+      <Route path="/animations/:id" element={<ProtectedRoute><AnimationEditor /></ProtectedRoute>} />
       <Route path="/project/:projectId" element={<ProtectedRoute><Workspace /></ProtectedRoute>} />
       <Route path="/foundation/:foundationId" element={<ProtectedRoute><FoundationDetail /></ProtectedRoute>} />
 

@@ -88,7 +88,8 @@ export interface GenerateImageOptions {
   width?: number
   height?: number
   numOutputs?: number
-  model?: "flux-pro" | "sdxl" | "gpt"
+  model?: "flux-pro" | "flux-kontext" | "sdxl" | "gpt"
+  strength?: number  // For img2img: 0-1, where higher = more transformation
 }
 
 export async function generateImages(options: GenerateImageOptions): Promise<string[]> {
@@ -101,6 +102,7 @@ export async function generateImages(options: GenerateImageOptions): Promise<str
     height = 768,
     numOutputs = 4,
     model = "flux-pro",
+    strength = 0.75,
   } = options
 
   // Build the full prompt with style
@@ -125,56 +127,24 @@ export async function generateImages(options: GenerateImageOptions): Promise<str
   }
   const aspectRatioStr = getAspectRatioString(width, height)
 
-  // If we have multiple reference images OR model is explicitly "gpt", use GPT-image-1.5
-  // GPT-image-1.5 supports multiple input images for compositing (character + scene)
-  if (allReferenceUrls.length > 1 || model === "gpt") {
-    console.log("Using GPT-image-1.5 for multi-reference composition...")
-    console.log(`Reference images: ${allReferenceUrls.length}`)
-
-    try {
-      const input: Record<string, unknown> = {
-        prompt: fullPrompt,
-        input_images: allReferenceUrls,
-        input_fidelity: "high",  // Match style and features closely
-        quality: "high",
-        aspect_ratio: aspectRatioStr,
-        number_of_images: numOutputs,
-        output_format: "png",
-      }
-
-      const prediction = await createPrediction(GPT_IMAGE_15_VERSION, input)
-      const output = await pollPrediction(prediction.id)
-
-      // GPT-image-1.5 returns an array of image URIs
-      if (Array.isArray(output) && output.length > 0) {
-        return output as string[]
-      }
-      if (typeof output === "string") {
-        return [output]
-      }
-
-      console.log("GPT-image-1.5 returned unexpected output:", output)
-    } catch (error) {
-      console.error("GPT-image-1.5 failed:", error)
-    }
-
-    console.log("GPT-image-1.5 failed, falling back...")
-  }
-
-  // If we have a single reference image, use FLUX Kontext Pro for character consistency
-  if (allReferenceUrls.length === 1) {
-    console.log("Using FLUX Kontext Pro for character consistency...")
-    console.log("Reference image:", allReferenceUrls[0].substring(0, 100) + "...")
+  // ============================================
+  // FLUX Kontext Pro - Image-to-image with single reference
+  // ============================================
+  if (model === "flux-kontext" && allReferenceUrls.length >= 1) {
+    console.log("Using FLUX Kontext Pro for image-to-image...")
+    console.log(`Reference image: ${allReferenceUrls[0].substring(0, 100)}...`)
+    console.log(`Strength: ${strength}`)
 
     const images: string[] = []
 
     for (let i = 0; i < numOutputs; i++) {
       try {
-        console.log(`Generating image ${i + 1} of ${numOutputs} with reference...`)
+        console.log(`Generating image ${i + 1} of ${numOutputs} with FLUX Kontext Pro...`)
 
         const input: Record<string, unknown> = {
-          prompt: `${fullPrompt}. Keep the character/subject from the reference image consistent.`,
+          prompt: fullPrompt,
           input_image: allReferenceUrls[0],
+          strength: strength,  // 0-1: how much to transform
           aspect_ratio: aspectRatioStr,
           output_format: "png",
           safety_tolerance: 2,
@@ -202,10 +172,88 @@ export async function generateImages(options: GenerateImageOptions): Promise<str
       return images
     }
 
-    console.log("FLUX Kontext Pro failed, falling back to standard generation...")
+    throw new Error("FLUX Kontext Pro generation failed")
   }
 
-  // FLUX 1.1 Pro - Best quality image generation (no reference)
+  // ============================================
+  // GPT Image - Multi-reference or explicit selection
+  // ============================================
+  if (model === "gpt" || allReferenceUrls.length > 1) {
+    console.log("Using GPT-image-1.5 for multi-reference composition...")
+    console.log(`Reference images: ${allReferenceUrls.length}`)
+
+    try {
+      // Map strength to input_fidelity: lower strength = high fidelity (preserve more)
+      const inputFidelity = strength <= 0.5 ? "high" : "low"
+
+      const input: Record<string, unknown> = {
+        prompt: fullPrompt,
+        input_images: allReferenceUrls.length > 0 ? allReferenceUrls : undefined,
+        input_fidelity: inputFidelity,
+        quality: "high",
+        aspect_ratio: aspectRatioStr,
+        number_of_images: numOutputs,
+        output_format: "png",
+      }
+
+      const prediction = await createPrediction(GPT_IMAGE_15_VERSION, input)
+      const output = await pollPrediction(prediction.id)
+
+      // GPT-image-1.5 returns an array of image URIs
+      if (Array.isArray(output) && output.length > 0) {
+        return output as string[]
+      }
+      if (typeof output === "string") {
+        return [output]
+      }
+
+      console.log("GPT-image-1.5 returned unexpected output:", output)
+    } catch (error) {
+      console.error("GPT-image-1.5 failed:", error)
+    }
+
+    throw new Error("GPT Image generation failed")
+  }
+
+  // ============================================
+  // SDXL - With optional img2img support
+  // ============================================
+  if (model === "sdxl") {
+    console.log("Generating with SDXL...")
+
+    const input: Record<string, unknown> = {
+      prompt: fullPrompt,
+      negative_prompt: options.negativePrompt || "blurry, low quality, distorted, ugly, bad anatomy, deformed",
+      width,
+      height,
+      num_outputs: numOutputs,
+      num_inference_steps: 50,
+      guidance_scale: 7.5,
+      scheduler: "K_EULER_ANCESTRAL",
+      refine: "expert_ensemble_refiner",
+      high_noise_frac: 0.8,
+    }
+
+    // Add img2img parameters if reference provided
+    if (allReferenceUrls.length === 1) {
+      input.image = allReferenceUrls[0]
+      input.prompt_strength = strength  // SDXL uses prompt_strength for img2img
+      console.log(`SDXL img2img with strength: ${strength}`)
+    }
+
+    const prediction = await createPrediction(SDXL_VERSION, input)
+    const output = await pollPrediction(prediction.id) as string[]
+
+    if (!output || output.length === 0) {
+      throw new Error("No images generated")
+    }
+
+    return output
+  }
+
+  // ============================================
+  // FLUX 1.1 Pro - Text-to-image only (no reference)
+  // ============================================
   if (model === "flux-pro") {
     console.log("Generating with FLUX 1.1 Pro...")
 

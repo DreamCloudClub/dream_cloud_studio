@@ -12,6 +12,9 @@ import {
   TypeStep,
   PromptTypeStep,
   AnimationGenerateStep,
+  VoiceGenerateStep,
+  VoiceConversionStep,
+  MusicSfxGenerateStep,
   SaveStep,
 } from "@/components/create-asset"
 
@@ -29,6 +32,13 @@ export function CreateAssetWizard() {
 
   // Initialize wizard based on URL type param
   useEffect(() => {
+    // Animation has its own dedicated creation page - redirect there
+    if (initialType === "animation") {
+      const url = projectId ? `/animations/new?projectId=${projectId}` : "/animations/new"
+      navigate(url)
+      return
+    }
+
     // If we're on save step, don't reset - we're coming from CreatorPage with generated assets
     if (currentStep === "save") {
       return
@@ -46,12 +56,16 @@ export function CreateAssetWizard() {
     } else {
       resetWizard()
     }
-  }, [initialType]) // Re-run when type param changes
+  }, [initialType, navigate]) // Re-run when type param changes
 
-  // When we reach the generate step, redirect to the CreatorPage (except for animation)
+  // When we reach the generate step, redirect to the CreatorPage (except for animation and audio)
   useEffect(() => {
     // Animation uses AnimationGenerateStep directly in wizard, not CreatorPage
     if (assetType === "animation") {
+      return
+    }
+    // Audio types use their own generate steps directly in wizard
+    if (assetType === "audio") {
       return
     }
     if (currentStep === "generate" && assetType && promptType) {
@@ -72,6 +86,18 @@ export function CreateAssetWizard() {
         // Animation uses its own generate step within the wizard
         if (assetType === "animation") {
           return <AnimationGenerateStep />
+        }
+        // Audio types use their own generate steps within the wizard
+        if (assetType === "audio") {
+          if (promptType === "text-to-speech") {
+            return <VoiceGenerateStep />
+          }
+          if (promptType === "voice-to-voice") {
+            return <VoiceConversionStep />
+          }
+          if (promptType === "music-sfx") {
+            return <MusicSfxGenerateStep />
+          }
         }
         // Other asset types redirect to CreatorPage (handled by useEffect)
         return null

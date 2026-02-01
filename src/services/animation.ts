@@ -8,8 +8,6 @@ const ANTHROPIC_API_KEY = import.meta.env.VITE_ANTHROPIC_API_KEY
 export interface GenerateAnimationParams {
   prompt: string
   category: string  // text, logo, transition, lower_third, title_card, overlay
-  duration?: number
-  backgroundColor?: string
 }
 
 export interface GenerateAnimationResult {
@@ -72,18 +70,17 @@ IMPORTANT: Respond ONLY with valid JSON. No markdown, no explanation, just the J
  * Generate an AnimationConfig from a text prompt using Claude
  */
 export async function generateAnimation(params: GenerateAnimationParams): Promise<GenerateAnimationResult> {
-  const { prompt, category, duration = 4, backgroundColor = "#000000" } = params
+  const { prompt, category } = params
 
   if (!ANTHROPIC_API_KEY) {
     // Return a default animation if no API key
-    return getDefaultAnimation(prompt, category, duration, backgroundColor)
+    return getDefaultAnimation(prompt, category)
   }
 
   const userPrompt = `Create a ${category} animation based on this description:
 "${prompt}"
 
-Duration: ${duration} seconds
-Background: ${backgroundColor}
+The user may have included duration, colors, or other details in their description - use those if specified. Otherwise, choose appropriate defaults (typically 3-5 seconds, dark background for most animations).
 
 Generate the AnimationConfig JSON.`
 
@@ -122,9 +119,9 @@ Generate the AnimationConfig JSON.`
 
     // Validate and ensure required fields
     const config: AnimationConfig = {
-      duration: result.config?.duration || duration,
+      duration: result.config?.duration || 4,
       layers: result.config?.layers || [],
-      background: result.config?.background || { color: backgroundColor },
+      background: result.config?.background || { color: '#000000' },
     }
 
     return {
@@ -134,7 +131,7 @@ Generate the AnimationConfig JSON.`
     }
   } catch (error) {
     console.error('Error generating animation:', error)
-    return getDefaultAnimation(prompt, category, duration, backgroundColor)
+    return getDefaultAnimation(prompt, category)
   }
 }
 
@@ -143,19 +140,20 @@ Generate the AnimationConfig JSON.`
  */
 function getDefaultAnimation(
   prompt: string,
-  category: string,
-  duration: number,
-  backgroundColor: string
+  category: string
 ): GenerateAnimationResult {
   const layers: AnimationLayer[] = []
+  let duration = 4
+  let backgroundColor = '#000000'
 
   switch (category) {
     case 'title_card':
+      duration = 4
       layers.push({
         type: 'text',
         content: prompt.slice(0, 50) || 'Title',
         animation: 'fadeIn',
-        timing: [0, duration - 0.5],
+        timing: [0, 3.5],
         position: { x: 50, y: 50 },
         style: {
           fontSize: 72,
@@ -166,11 +164,13 @@ function getDefaultAnimation(
       break
 
     case 'lower_third':
+      duration = 5
+      backgroundColor = 'transparent'
       layers.push({
         type: 'text',
         content: prompt.slice(0, 30) || 'Name',
         animation: 'slideUp',
-        timing: [0, duration - 0.5],
+        timing: [0, 4.5],
         position: { x: 15, y: 80 },
         style: {
           fontSize: 32,
@@ -182,11 +182,13 @@ function getDefaultAnimation(
       break
 
     case 'transition':
+      duration = 1
+      backgroundColor = 'transparent'
       layers.push({
         type: 'shape',
         content: 'rectangle',
         animation: 'slideLeft',
-        timing: [0, duration],
+        timing: [0, 1],
         position: { x: 50, y: 50 },
         style: {
           width: 2000,
@@ -197,11 +199,12 @@ function getDefaultAnimation(
       break
 
     case 'logo':
+      duration = 3
       layers.push({
         type: 'text',
         content: prompt.slice(0, 20) || 'LOGO',
         animation: 'scale',
-        timing: [0, duration - 0.5],
+        timing: [0, 2.5],
         position: { x: 50, y: 50 },
         style: {
           fontSize: 96,
@@ -214,11 +217,12 @@ function getDefaultAnimation(
     case 'overlay':
     case 'text':
     default:
+      duration = 4
       layers.push({
         type: 'text',
         content: prompt.slice(0, 100) || 'Text',
         animation: 'fadeIn',
-        timing: [0, duration - 0.5],
+        timing: [0, 3.5],
         position: { x: 50, y: 50 },
         style: {
           fontSize: 48,

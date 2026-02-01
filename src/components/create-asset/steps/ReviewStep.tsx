@@ -208,6 +208,7 @@ export function ReviewStep({ onComplete }: ReviewStepProps) {
             Add to Project
           </button>
           <button
+            data-save-button
             onClick={handleSaveToLibrary}
             disabled={isSaving}
             className={cn(

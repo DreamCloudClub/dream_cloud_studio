@@ -19,9 +19,16 @@ serve(async (req) => {
 
   try {
     const FAL_API_KEY = Deno.env.get("FAL_API_KEY")
+
+    // Debug: Log key presence and format (masked for security)
     if (!FAL_API_KEY) {
+      console.error("FAL_API_KEY is NOT set in environment")
       throw new Error("FAL_API_KEY not configured in edge function secrets")
     }
+
+    const keyLength = FAL_API_KEY.length
+    const maskedKey = FAL_API_KEY.substring(0, 4) + "..." + FAL_API_KEY.substring(keyLength - 4)
+    console.log(`FAL_API_KEY is set: ${maskedKey} (length: ${keyLength})`)
 
     const { action, ...params } = await req.json()
 
@@ -29,6 +36,10 @@ serve(async (req) => {
       case "submit": {
         // Submit a new generation job to FAL queue
         const { model, input } = params
+
+        console.log(`FAL.ai submit request - Model: ${model}`)
+        console.log(`FAL.ai URL: ${FAL_API_URL}/${model}`)
+        console.log(`FAL.ai input:`, JSON.stringify(input))
 
         const response = await fetch(`${FAL_API_URL}/${model}`, {
           method: "POST",
@@ -39,9 +50,19 @@ serve(async (req) => {
           body: JSON.stringify(input),
         })
 
+        console.log(`FAL.ai response status: ${response.status}`)
+
         if (!response.ok) {
-          const error = await response.json()
-          throw new Error(error.detail || error.message || "Failed to submit request")
+          const errorText = await response.text()
+          console.log(`FAL.ai error response: ${errorText}`)
+          let errorMessage = "Failed to submit request"
+          try {
+            const errorJson = JSON.parse(errorText)
+            errorMessage = errorJson.detail || errorJson.message || errorJson.error || errorText
+          } catch {
+            errorMessage = errorText || `HTTP ${response.status}`
+          }
+          throw new Error(`FAL.ai error: ${errorMessage}`)
         }
 
         const data = await response.json()

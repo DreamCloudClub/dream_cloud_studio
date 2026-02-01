@@ -16,6 +16,7 @@ import {
   PlatformPage,
   EditorPage,
   AssetsPage,
+  AnimationsPage,
   ExportPage,
   InspectorPanel,
 } from "@/components/workspace"
@@ -37,7 +38,7 @@ export function Workspace() {
   // Handle tab from URL params (e.g., ?tab=assets)
   useEffect(() => {
     const tabParam = searchParams.get("tab")
-    if (tabParam && ["brief", "script", "moodboard", "storyboard", "platform", "editor", "assets", "export"].includes(tabParam)) {
+    if (tabParam && ["brief", "script", "moodboard", "storyboard", "platform", "editor", "assets", "animations", "export"].includes(tabParam)) {
       setActiveTab(tabParam as any)
     }
   }, [searchParams, setActiveTab])
@@ -59,6 +60,8 @@ export function Workspace() {
         return <EditorPage />
       case "assets":
         return <AssetsPage />
+      case "animations":
+        return <AnimationsPage />
       case "export":
         return <ExportPage />
       default:

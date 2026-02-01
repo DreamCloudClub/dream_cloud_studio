@@ -10,6 +10,7 @@ import { useAuth } from "@/contexts/AuthContext"
 import { sendMessage, getInitialGreeting, type BubbleContext, type Message, type ToolCall, type ToolResult } from "@/services/claude"
 import {
   createDraftProject,
+  createBlankProject,
   updateProject,
   getProjectBrief,
   createProjectBrief,
@@ -87,7 +88,19 @@ export function BubblePanel({ className, isCollapsed = false, onToggleCollapse }
   const isInWorkspace = location.pathname.startsWith("/project/")
   const isInAssetCreator = location.pathname.startsWith("/create/asset")
   const isInFoundationCreator = location.pathname.startsWith("/create/foundation")
-  const isInCreateWizard = location.pathname.startsWith("/create/") && !isInAssetCreator && !isInFoundationCreator
+  const isInPlatformCreator = location.pathname.startsWith("/create/platform")
+  // Animation pages - both standalone and workspace tab
+  const isInAnimationEditor = location.pathname.startsWith("/animations/") || (isInWorkspace && activeTab === "animations")
+  const isInAnimationLibrary = location.pathname === "/animations"
+  const isInWorkspaceAnimations = isInWorkspace && activeTab === "animations"
+
+  // Creator page routes: /create/image/..., /create/video/..., /create/audio/...
+  const isInCreatorPage = location.pathname.match(/^\/create\/(image|video|audio)\//) !== null
+  const creatorPageMatch = location.pathname.match(/^\/create\/(image|video|audio)\/(.+)$/)
+  const creatorType = creatorPageMatch?.[1] // 'image', 'video', or 'audio'
+  const creatorSubMode = creatorPageMatch?.[2] // 'text-to-image', 'image-to-video', etc.
+
+  const isInCreateWizard = location.pathname.startsWith("/create/") && !isInAssetCreator && !isInFoundationCreator && !isInPlatformCreator && !isInCreatorPage
   const isInLibraryAssets = location.pathname === "/library/assets"
   const isInLibraryProjects = location.pathname === "/library/projects"
   const isInLibrary = isInLibraryAssets || isInLibraryProjects
@@ -169,12 +182,15 @@ export function BubblePanel({ className, isCollapsed = false, onToggleCollapse }
     userDescription: wizardUserDescription,
     aiPrompt: wizardAiPrompt,
     stylePreset: wizardStylePreset,
+    animationConfig: wizardAnimationConfig,
+    cachedBatches: wizardCachedBatches,
     setAssetType: setWizardAssetType,
     setCategory: setWizardCategory,
     setAssetName: setWizardAssetName,
     setUserDescription: setWizardUserDescription,
     setAiPrompt: setWizardAiPrompt,
     setStylePreset: setWizardStylePreset,
+    setAnimationConfig: setWizardAnimationConfig,
     nextStep: nextAssetStep,
   } = useAssetWizardStore()
 
@@ -225,8 +241,18 @@ export function BubblePanel({ className, isCollapsed = false, onToggleCollapse }
   // Determine current context step for greeting
   const getContextStep = (): string => {
     if (isOnDashboard) return 'home'
+    // Check workspace animations before general workspace
+    if (isInWorkspaceAnimations) return 'animation-editor'
     if (isInWorkspace) return 'workspace'
-    if (isInAssetCreator) return `asset-${assetWizardStep}`
+    if (isInAnimationEditor) return 'animation-editor'
+    if (isInAnimationLibrary) return 'animation-library'
+    if (isInAssetCreator) {
+      // For animation on generate step, use special step name
+      if (wizardAssetType === 'animation' && assetWizardStep === 'generate') {
+        return 'asset-generate'
+      }
+      return `asset-${assetWizardStep}`
+    }
     if (isInFoundationCreator) return `foundation-${foundationWizardStep}`
     if (isInCreateWizard) return currentStep
     return 'home'
@@ -242,6 +268,34 @@ export function BubblePanel({ className, isCollapsed = false, onToggleCollapse }
 
   // Build context for Claude - adapts based on where we are
   const buildContext = (): BubbleContext => {
+    // Workspace animations tab - treat as animation editor context
+    if (isInWorkspaceAnimations) {
+      return {
+        currentStep: 'animation-editor',
+        currentRoute: location.pathname,
+        assetWizard: {
+          type: 'animation',
+          category: undefined,
+          name: undefined,
+          userDescription: undefined,
+          aiPrompt: undefined,
+          style: undefined,
+          animationConfig: wizardAnimationConfig ? {
+            duration: wizardAnimationConfig.duration,
+            layerCount: wizardAnimationConfig.layers.length,
+            layerTypes: wizardAnimationConfig.layers.map(l => l.type),
+            hasBackground: !!(wizardAnimationConfig.background?.color || wizardAnimationConfig.background?.gradient),
+          } : undefined,
+        },
+        // Include workspace context for project reference
+        workspace: workspaceProject ? {
+          activeTab,
+          projectId: workspaceProject.id,
+          projectName: workspaceProject.name,
+        } : undefined,
+      }
+    }
+
     // Workspace context (existing project)
     if (isInWorkspace && workspaceProject) {
       // Count assets by type
@@ -305,10 +359,66 @@ export function BubblePanel({ className, isCollapsed = false, onToggleCollapse }
       }
     }
 
+    // Animation Editor context
+    if (isInAnimationEditor) {
+      return {
+        currentStep: 'animation-editor',
+        currentRoute: location.pathname,
+        assetWizard: {
+          type: 'animation',
+          category: undefined,
+          name: undefined,
+          userDescription: undefined,
+          aiPrompt: undefined,
+          style: undefined,
+          animationConfig: wizardAnimationConfig ? {
+            duration: wizardAnimationConfig.duration,
+            layerCount: wizardAnimationConfig.layers.length,
+            layerTypes: wizardAnimationConfig.layers.map(l => l.type),
+            hasBackground: !!(wizardAnimationConfig.background?.color || wizardAnimationConfig.background?.gradient),
+          } : undefined,
+        },
+      }
+    }
+
+    // Animation Library context
+    if (isInAnimationLibrary) {
+      return {
+        currentStep: 'animation-library',
+        currentRoute: location.pathname,
+      }
+    }
+
+    // Creator Page context (text-to-image, image-to-video, etc.)
+    if (isInCreatorPage && creatorSubMode) {
+      // Map subMode to step name: "text-to-image" -> "creator-text-to-image"
+      const stepName = `creator-${creatorSubMode}`
+      const batchCount = Array.isArray(wizardCachedBatches) ? wizardCachedBatches.length : 0
+      return {
+        currentStep: stepName,
+        currentRoute: location.pathname,
+        assetWizard: {
+          type: creatorType === 'audio' ? 'audio' : creatorType === 'video' ? 'video' : 'image',
+          category: undefined,
+          name: wizardAssetName || undefined,
+          userDescription: wizardUserDescription || undefined,
+          aiPrompt: wizardAiPrompt || undefined,
+          style: wizardStylePreset || undefined,
+          hasGeneratedImages: batchCount > 0,
+          batchCount,
+        },
+      }
+    }
+
     // Asset Creator context (single page)
     if (isInAssetCreator) {
+      // For animation type on generate step, use special step name
+      const stepName = wizardAssetType === 'animation' && assetWizardStep === 'generate'
+        ? 'asset-generate'
+        : `asset-${assetWizardStep}`
+
       return {
-        currentStep: 'asset-creator',
+        currentStep: stepName,
         currentRoute: location.pathname,
         assetWizard: {
           type: wizardAssetType || undefined,
@@ -317,6 +427,13 @@ export function BubblePanel({ className, isCollapsed = false, onToggleCollapse }
           userDescription: wizardUserDescription || undefined,
           aiPrompt: wizardAiPrompt || undefined,
           style: wizardStylePreset || undefined,
+          // Animation-specific context
+          animationConfig: wizardAnimationConfig ? {
+            duration: wizardAnimationConfig.duration,
+            layerCount: wizardAnimationConfig.layers.length,
+            layerTypes: wizardAnimationConfig.layers.map(l => l.type),
+            hasBackground: !!(wizardAnimationConfig.background?.color || wizardAnimationConfig.background?.gradient),
+          } : undefined,
         },
       }
     }
@@ -446,6 +563,20 @@ export function BubblePanel({ className, isCollapsed = false, onToggleCollapse }
 
       try {
         switch (tool.name) {
+          case 'create_new_project': {
+            if (!user) {
+              resultContent = 'Error: User must be logged in to create a project'
+              break
+            }
+            if (tool.input.confirm === true) {
+              const project = await createBlankProject(user.id)
+              navigate(`/project/${project.id}`)
+              resultContent = `Created new project and opened workspace. You are now on the Platform tab. Ask the user if they want to use a new or existing platform.`
+            } else {
+              resultContent = 'Project creation cancelled.'
+            }
+            break
+          }
           case 'navigate': {
             const route = tool.input.route as string
             navigate(route)
@@ -1232,6 +1363,137 @@ export function BubblePanel({ className, isCollapsed = false, onToggleCollapse }
             break
           }
           // ============================================
+          // ANIMATION TOOLS (for Remotion animation creation)
+          // ============================================
+          case 'set_animation_config': {
+            const duration = (tool.input.duration as number) || 4
+            const background = tool.input.background as { color?: string; gradient?: string } | undefined
+            const layers = tool.input.layers as Array<{
+              type: 'text' | 'shape' | 'image'
+              content: string
+              animation: 'fadeIn' | 'fadeOut' | 'slideUp' | 'slideDown' | 'slideLeft' | 'slideRight' | 'scale' | 'typewriter'
+              timing: [number, number]
+              position?: { x: number; y: number }
+              style?: Record<string, unknown>
+            }>
+
+            const config = {
+              duration,
+              layers: layers.map(l => ({
+                type: l.type,
+                content: l.content,
+                animation: l.animation,
+                timing: l.timing as [number, number],
+                position: l.position || { x: 50, y: 50 },
+                style: l.style || {},
+              })),
+              background: background || { color: '#000000' },
+            }
+
+            setWizardAnimationConfig(config)
+            resultContent = `Created animation with ${layers.length} layer(s), ${duration}s duration`
+            break
+          }
+          case 'add_animation_layer': {
+            const currentConfig = useAssetWizardStore.getState().animationConfig
+            if (!currentConfig) {
+              resultContent = 'Error: No animation exists yet. Use set_animation_config first.'
+              break
+            }
+
+            const newLayer = {
+              type: tool.input.type as 'text' | 'shape' | 'image',
+              content: tool.input.content as string,
+              animation: tool.input.animation as 'fadeIn' | 'fadeOut' | 'slideUp' | 'slideDown' | 'slideLeft' | 'slideRight' | 'scale' | 'typewriter',
+              timing: tool.input.timing as [number, number],
+              position: (tool.input.position as { x: number; y: number }) || { x: 50, y: 50 },
+              style: (tool.input.style as Record<string, unknown>) || {},
+            }
+
+            setWizardAnimationConfig({
+              ...currentConfig,
+              layers: [...currentConfig.layers, newLayer],
+            })
+            resultContent = `Added ${newLayer.type} layer: "${newLayer.content.slice(0, 30)}${newLayer.content.length > 30 ? '...' : ''}"`
+            break
+          }
+          case 'update_animation_layer': {
+            const currentConfig = useAssetWizardStore.getState().animationConfig
+            if (!currentConfig) {
+              resultContent = 'Error: No animation exists yet.'
+              break
+            }
+
+            const layerIndex = tool.input.layerIndex as number
+            if (layerIndex < 0 || layerIndex >= currentConfig.layers.length) {
+              resultContent = `Error: Layer index ${layerIndex} is out of range (0-${currentConfig.layers.length - 1})`
+              break
+            }
+
+            const updatedLayers = [...currentConfig.layers]
+            const layer = { ...updatedLayers[layerIndex] }
+
+            if (tool.input.content !== undefined) layer.content = tool.input.content as string
+            if (tool.input.animation !== undefined) layer.animation = tool.input.animation as typeof layer.animation
+            if (tool.input.timing !== undefined) layer.timing = tool.input.timing as [number, number]
+            if (tool.input.position !== undefined) layer.position = tool.input.position as { x: number; y: number }
+            if (tool.input.style !== undefined) {
+              layer.style = { ...(layer.style || {}), ...(tool.input.style as Record<string, unknown>) }
+            }
+
+            updatedLayers[layerIndex] = layer
+            setWizardAnimationConfig({ ...currentConfig, layers: updatedLayers })
+            resultContent = `Updated layer ${layerIndex}`
+            break
+          }
+          case 'remove_animation_layer': {
+            const currentConfig = useAssetWizardStore.getState().animationConfig
+            if (!currentConfig) {
+              resultContent = 'Error: No animation exists yet.'
+              break
+            }
+
+            const layerIndex = tool.input.layerIndex as number
+            if (layerIndex < 0 || layerIndex >= currentConfig.layers.length) {
+              resultContent = `Error: Layer index ${layerIndex} is out of range`
+              break
+            }
+
+            const updatedLayers = currentConfig.layers.filter((_, i) => i !== layerIndex)
+            setWizardAnimationConfig({ ...currentConfig, layers: updatedLayers })
+            resultContent = `Removed layer ${layerIndex}. ${updatedLayers.length} layer(s) remaining.`
+            break
+          }
+          case 'update_animation_properties': {
+            const currentConfig = useAssetWizardStore.getState().animationConfig
+            if (!currentConfig) {
+              resultContent = 'Error: No animation exists yet.'
+              break
+            }
+
+            const updates: Record<string, unknown> = {}
+            const updatedFields: string[] = []
+
+            if (tool.input.duration !== undefined) {
+              updates.duration = tool.input.duration as number
+              updatedFields.push(`duration: ${tool.input.duration}s`)
+            }
+
+            if (tool.input.backgroundGradient) {
+              updates.background = { gradient: tool.input.backgroundGradient as string }
+              updatedFields.push('background gradient')
+            } else if (tool.input.backgroundColor) {
+              updates.background = { color: tool.input.backgroundColor as string }
+              updatedFields.push('background color')
+            }
+
+            setWizardAnimationConfig({ ...currentConfig, ...updates })
+            resultContent = updatedFields.length > 0
+              ? `Updated: ${updatedFields.join(', ')}`
+              : 'No properties to update'
+            break
+          }
+          // ============================================
           // ASSET WIZARD TOOLS (for Create Asset flow)
           // ============================================
           case 'set_asset_type': {
@@ -1250,14 +1512,26 @@ export function BubblePanel({ className, isCollapsed = false, onToggleCollapse }
             const updatedFields: string[] = []
             if (tool.input.name) {
               setWizardAssetName(tool.input.name as string)
+              // Also dispatch event for CreatorPage to update its local state
+              window.dispatchEvent(new CustomEvent('bubble-update-name', {
+                detail: { name: tool.input.name as string }
+              }))
               updatedFields.push('name')
             }
             if (tool.input.user_description) {
               setWizardUserDescription(tool.input.user_description as string)
+              // Also dispatch event for CreatorPage to update its local state
+              window.dispatchEvent(new CustomEvent('bubble-update-description', {
+                detail: { description: tool.input.user_description as string }
+              }))
               updatedFields.push('description')
             }
             if (tool.input.ai_prompt) {
               setWizardAiPrompt(tool.input.ai_prompt as string)
+              // Also dispatch event for CreatorPage to update its local state
+              window.dispatchEvent(new CustomEvent('bubble-update-ai-prompt', {
+                detail: { aiPrompt: tool.input.ai_prompt as string }
+              }))
               updatedFields.push('ai_prompt')
             }
             if (tool.input.style) {
@@ -1278,9 +1552,67 @@ export function BubblePanel({ className, isCollapsed = false, onToggleCollapse }
               }))
               updatedFields.push('category_option')
             }
+            if (tool.input.image_model) {
+              // Emit custom event for image model selection
+              window.dispatchEvent(new CustomEvent('bubble-update-image-model', {
+                detail: { imageModel: tool.input.image_model as string }
+              }))
+              updatedFields.push('image_model')
+            }
+            if (tool.input.video_model) {
+              // Emit custom event for video model selection
+              window.dispatchEvent(new CustomEvent('bubble-update-video-model', {
+                detail: { videoModel: tool.input.video_model as string }
+              }))
+              updatedFields.push('video_model')
+            }
+            if (tool.input.aspect_ratio) {
+              // Emit custom event for aspect ratio
+              window.dispatchEvent(new CustomEvent('bubble-update-aspect-ratio', {
+                detail: { aspectRatio: tool.input.aspect_ratio as string }
+              }))
+              updatedFields.push('aspect_ratio')
+            }
+            if (tool.input.video_duration) {
+              // Emit custom event for video duration
+              window.dispatchEvent(new CustomEvent('bubble-update-video-duration', {
+                detail: { videoDuration: tool.input.video_duration as number }
+              }))
+              updatedFields.push('video_duration')
+            }
             resultContent = updatedFields.length > 0
               ? `Updated asset details: ${updatedFields.join(', ')}`
               : 'No fields to update'
+            break
+          }
+          case 'trigger_generation': {
+            if (tool.input.confirm === true) {
+              // Dispatch event to trigger the generate button on CreatorPage
+              window.dispatchEvent(new CustomEvent('bubble-trigger-generation'))
+              resultContent = 'Generation started! The results will appear in the preview area.'
+            } else {
+              resultContent = 'Generation cancelled. Let me know when you want to proceed.'
+            }
+            break
+          }
+          case 'continue_to_save': {
+            if (tool.input.confirm === true) {
+              // Dispatch event to click the Continue button on CreatorPage
+              window.dispatchEvent(new CustomEvent('bubble-continue-to-save'))
+              resultContent = 'Continuing to save step. The user can review and save their selected assets.'
+            } else {
+              resultContent = 'Staying on generation step.'
+            }
+            break
+          }
+          case 'save_assets': {
+            if (tool.input.confirm === true) {
+              // Dispatch event to click the Save button
+              window.dispatchEvent(new CustomEvent('bubble-save-assets'))
+              resultContent = 'Saving assets to library.'
+            } else {
+              resultContent = 'Save cancelled.'
+            }
             break
           }
           // ============================================

@@ -196,9 +196,9 @@ export function SaveStep({ onComplete }: SaveStepProps) {
   const selectedCategory = categories.find((c) => c.id === category)
 
   return (
-    <div className="flex-1 flex flex-col">
+    <div className="flex-1 flex flex-col min-h-0">
       {/* Header with navigation */}
-      <div className="h-[72px] flex items-center px-4 border-b border-zinc-800">
+      <div className="h-[72px] flex items-center px-4 border-b border-zinc-800 flex-shrink-0">
         <div className="w-24">
           <button
             onClick={handleBack}
@@ -217,8 +217,8 @@ export function SaveStep({ onComplete }: SaveStepProps) {
       </div>
 
       {/* Content */}
-      <div className="flex-1 overflow-y-auto p-6">
-        <div className="max-w-2xl mx-auto space-y-6">
+      <div className="flex-1 overflow-y-auto min-h-0">
+        <div className="max-w-2xl mx-auto p-6 pb-12 space-y-6">
           {/* Category Selection */}
           <div className="space-y-2">
             <label className="block text-sm font-medium text-zinc-300">

@@ -20,7 +20,6 @@ export interface ModeCapabilities {
   supports_negative_prompt: boolean
   supports_aspect_ratio: boolean
   supports_output_count: boolean
-  supports_seed: boolean
   supports_steps: boolean
   supports_guidance: boolean
   supports_style_preset: boolean
@@ -52,7 +51,6 @@ export const IMAGE_MODE_CONFIGS: Record<ImageMode, ModeConfig> = {
       supports_negative_prompt: true,
       supports_aspect_ratio: true,
       supports_output_count: true,
-      supports_seed: true,
       supports_steps: true,
       supports_guidance: true,
       supports_style_preset: true,
@@ -75,7 +73,6 @@ export const IMAGE_MODE_CONFIGS: Record<ImageMode, ModeConfig> = {
       supports_negative_prompt: true,
       supports_aspect_ratio: false, // Locked to base image
       supports_output_count: true,
-      supports_seed: true,
       supports_steps: true,
       supports_guidance: true,
       supports_style_preset: false,
@@ -98,7 +95,6 @@ export const IMAGE_MODE_CONFIGS: Record<ImageMode, ModeConfig> = {
       supports_negative_prompt: true,
       supports_aspect_ratio: false, // Locked to base image
       supports_output_count: true,
-      supports_seed: true,
       supports_steps: true,
       supports_guidance: true,
       supports_style_preset: false,
@@ -121,7 +117,6 @@ export const IMAGE_MODE_CONFIGS: Record<ImageMode, ModeConfig> = {
       supports_negative_prompt: true,
       supports_aspect_ratio: true,
       supports_output_count: true,
-      supports_seed: true,
       supports_steps: true,
       supports_guidance: true,
       supports_style_preset: false,
@@ -144,11 +139,118 @@ export function getModeConfig(mode: string | undefined): ModeConfig {
 // Parameter Options
 // ============================================
 
-export const IMAGE_MODELS = [
-  { id: "flux-pro", label: "FLUX Pro", description: "Best quality" },
-  { id: "gpt", label: "GPT Image", description: "Best for references" },
-  { id: "sdxl", label: "SDXL", description: "Faster" },
+export interface ImageModelConfig {
+  id: string
+  label: string
+  company: string
+  description: string
+  supportsMultipleRefs: boolean
+  supportsSingleRef: boolean
+  supportsInpainting: boolean
+  maxImageInputs: number  // Max reference images the model accepts (0 = text-only)
+  workflows: Array<'text-to-image' | 'image-to-image' | 'inpaint' | 'selective-edit' | 'upscale'>
+  bestFor: string
+  inputs: string[]
+  notes: string
+}
+
+export const IMAGE_MODELS: ImageModelConfig[] = [
+  // Ordered from fastest/lightest to heaviest/professional
+  {
+    id: "sdxl",
+    label: "SDXL",
+    company: "Stability AI",
+    description: "Fast ideation",
+    supportsMultipleRefs: false,
+    supportsSingleRef: true,
+    supportsInpainting: true,
+    maxImageInputs: 1,
+    workflows: ['text-to-image', 'image-to-image', 'inpaint'],
+    bestFor: "Fast ideation, rough concepts, early visual exploration",
+    inputs: ["Text prompt", "Optional: 1 reference image", "Optional: mask image (for inpainting)"],
+    notes: "Lower cost and faster generation. Quality and realism are lower than newer models. Best used for brainstorming rather than final images.",
+  },
+  {
+    id: "grok",
+    label: "Grok 2 Image",
+    company: "xAI",
+    description: "Text-only, fast",
+    supportsMultipleRefs: false,
+    supportsSingleRef: false,
+    supportsInpainting: false,
+    maxImageInputs: 0,
+    workflows: ['text-to-image'],
+    bestFor: "Rapid text-only image generation",
+    inputs: ["Text prompt only"],
+    notes: "Does not accept reference images. All refinements must be made through prompt edits.",
+  },
+  {
+    id: "flux-pro",
+    label: "FLUX 1.1 Pro",
+    company: "Black Forest Labs",
+    description: "High quality",
+    supportsMultipleRefs: false,
+    supportsSingleRef: false,
+    supportsInpainting: false,
+    maxImageInputs: 0,
+    workflows: ['text-to-image'],
+    bestFor: "High-quality text-to-image generation and photorealistic scenes",
+    inputs: ["Text prompt only"],
+    notes: "Text-to-image only. Strong realism, lighting, and detail. For image-to-image workflows, use FLUX Kontext Pro instead.",
+  },
+  {
+    id: "flux-kontext",
+    label: "FLUX Kontext Pro",
+    company: "Black Forest Labs",
+    description: "Image editing",
+    supportsMultipleRefs: false,
+    supportsSingleRef: true,
+    supportsInpainting: false,
+    maxImageInputs: 1,
+    workflows: ['image-to-image'],
+    bestFor: "Image transformation, style transfer, and character consistency",
+    inputs: ["Text prompt", "1 reference image"],
+    notes: "12B parameter model for in-context image editing. Supports strength control (0-1) for transformation intensity. Best for single-image transformations with high fidelity.",
+  },
+  {
+    id: "gpt",
+    label: "GPT Image",
+    company: "OpenAI",
+    description: "Multi-reference",
+    supportsMultipleRefs: true,
+    supportsSingleRef: true,
+    supportsInpainting: false,
+    maxImageInputs: 4,
+    workflows: ['text-to-image', 'image-to-image', 'selective-edit'],
+    bestFor: "Illustration, stylized scenes, structured compositions",
+    inputs: ["Text prompt", "One or more reference images"],
+    notes: "Strong prompt understanding and instruction following. Outputs tend toward illustration or stylized realism rather than strict photographic realism. Reference image limits should be enforced conservatively.",
+  },
+  {
+    id: "nano-banana",
+    label: "Imagen 3",
+    company: "Google",
+    description: "Professional",
+    supportsMultipleRefs: true,
+    supportsSingleRef: true,
+    supportsInpainting: false,
+    maxImageInputs: 8,
+    workflows: ['text-to-image', 'image-to-image', 'selective-edit'],
+    bestFor: "High-quality regeneration, reference blending, and image enhancement",
+    inputs: ["Text prompt", "Optional: multiple reference images"],
+    notes: "Heavier model intended for professional results. Slower generation compared to SDXL and FLUX 1.1 Pro. Excellent photorealism and text rendering.",
+  },
 ]
+
+// Helper to get model config by id
+export function getImageModelConfig(modelId: string): ImageModelConfig | undefined {
+  return IMAGE_MODELS.find(m => m.id === modelId)
+}
+
+// Helper to get models compatible with a specific workflow
+export function getModelsForWorkflow(workflow: ImageModelConfig['workflows'][number]): ImageModelConfig[] {
+  return IMAGE_MODELS.filter(m => m.workflows.includes(workflow))
+}
 
 export const STYLE_PRESETS = [
   { id: "cinematic", label: "Cinematic" },

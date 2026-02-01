@@ -54,6 +54,7 @@ export type WorkspaceTab =
   | "platform"
   | "editor"
   | "assets"
+  | "animations"
   | "export"
 
 export const WORKSPACE_TABS: {
@@ -61,13 +62,13 @@ export const WORKSPACE_TABS: {
   label: string
   icon: string
 }[] = [
-  { id: "platform", label: "Platform", icon: "FolderOpen" },
   { id: "brief", label: "Brief", icon: "FileText" },
   { id: "script", label: "Script", icon: "ScrollText" },
   { id: "moodboard", label: "Mood", icon: "Palette" },
   { id: "storyboard", label: "Story", icon: "BookOpen" },
   { id: "editor", label: "Editor", icon: "Film" },
   { id: "assets", label: "Assets", icon: "Layers" },
+  { id: "animations", label: "Animate", icon: "Sparkles" },
   { id: "export", label: "Export", icon: "Download" },
 ]
 

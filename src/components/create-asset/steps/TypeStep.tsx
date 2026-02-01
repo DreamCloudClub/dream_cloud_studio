@@ -96,6 +96,12 @@ export function TypeStep({ onBack }: TypeStepProps) {
 
   const handleContinue = () => {
     if (assetType) {
+      // Animation redirects to its own creation page
+      if (assetType === "animation") {
+        const url = projectId ? `/animations/new?projectId=${projectId}` : "/animations/new"
+        navigate(url)
+        return
+      }
       nextStep()
     }
   }

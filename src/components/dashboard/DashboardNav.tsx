@@ -13,7 +13,7 @@ const NAV_TABS: { id: NavTab; label: string; icon: React.ElementType; path?: str
   { id: "images", label: "Images", icon: Image, assetType: "image", color: "orange" },
   { id: "videos", label: "Videos", icon: Film, assetType: "video", color: "red" },
   { id: "audio", label: "Audio", icon: Volume2, assetType: "audio", color: "violet" },
-  { id: "animation", label: "Animation", icon: Sparkles, assetType: "animation", color: "emerald" },
+  { id: "animation", label: "Animation", icon: Sparkles, path: "/animations", color: "emerald" },
   { id: "foundations", label: "Foundations", icon: Box, path: "/library/foundations" },
 ]
 
@@ -54,6 +54,7 @@ export function DashboardNav() {
     if (location.pathname.startsWith("/create/image")) return "images"
     if (location.pathname.startsWith("/create/video")) return "videos"
     if (location.pathname.startsWith("/create/audio")) return "audio"
+    if (location.pathname.startsWith("/animations")) return "animation"
     if (location.pathname.startsWith("/create/animation")) return "animation"
     if (location.pathname.startsWith("/create/asset")) {
       // Check wizard store for selected type first, then URL param

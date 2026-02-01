@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect, useCallback } from "react"
 import {
-  ArrowLeft,
-  ArrowRight,
+  ChevronLeft,
+  ChevronRight,
   Sparkles,
   ChevronDown,
   ChevronUp,
@@ -73,7 +73,7 @@ function CustomDropdown({ value, onChange, options, placeholder = "Select...", c
           "flex items-center justify-between gap-2",
           "hover:bg-zinc-800/80",
           isOpen
-            ? "border-sky-500 ring-1 ring-sky-500/20"
+            ? "border-orange-500 ring-1 ring-orange-500/20"
             : "border-zinc-700/50 hover:border-zinc-600"
         )}
       >
@@ -103,7 +103,7 @@ function CustomDropdown({ value, onChange, options, placeholder = "Select...", c
                 "w-full px-4 py-2.5 text-left transition-all",
                 "flex items-center justify-between",
                 option.value === value
-                  ? "bg-sky-500/10 text-sky-400"
+                  ? "bg-orange-500/10 text-orange-400"
                   : "text-zinc-300 hover:bg-zinc-800"
               )}
             >
@@ -114,7 +114,7 @@ function CustomDropdown({ value, onChange, options, placeholder = "Select...", c
                 )}
               </div>
               {option.value === value && (
-                <Check className="w-4 h-4 text-sky-400" />
+                <Check className="w-4 h-4 text-orange-400" />
               )}
             </button>
           ))}
@@ -126,6 +126,8 @@ function CustomDropdown({ value, onChange, options, placeholder = "Select...", c
 import { useAssetWizardStore } from "@/state/assetWizardStore"
 import { ReferenceModal } from "../ReferenceModal"
 import { generateImages, generateVideo, generateMusic } from "@/services/replicate"
+import { generateImagesNanoBanana, generateVideoVeo } from "@/services/google-ai"
+import { generateImagesGrok, generateVideoGrok } from "@/services/grok"
 import { generateVoice, generateSoundEffect } from "@/services/elevenlabs"
 import { getAssetDisplayUrl } from "@/services/localStorage"
 import type { AssetCategory as DBAssetCategory } from "@/types/database"
@@ -142,11 +144,15 @@ const STYLE_PRESETS = [
 const IMAGE_MODELS = [
   { id: "flux-pro" as const, label: "FLUX Pro", description: "Best quality" },
   { id: "gpt" as const, label: "GPT Image", description: "Best for references" },
+  { id: "nano-banana" as const, label: "Nano Banana", description: "Google AI" },
+  { id: "grok" as const, label: "Grok", description: "xAI" },
   { id: "sdxl" as const, label: "SDXL", description: "Faster" },
 ]
 
 const VIDEO_MODELS = [
   { id: "kling" as const, label: "Kling v2.1", description: "Best quality, 5-10s" },
+  { id: "veo-3" as const, label: "Veo 3", description: "Google AI" },
+  { id: "grok-video" as const, label: "Grok Video", description: "xAI" },
   { id: "minimax" as const, label: "Minimax", description: "Fast, ~6s" },
 ]
 
@@ -371,6 +377,8 @@ export function PromptAndGenerateStep() {
     removeReferenceAsset,
     setGeneratedAssets,
     toggleAssetSelection,
+    cachedBatches,
+    setCachedBatches,
     nextStep,
     prevStep,
   } = useAssetWizardStore()
@@ -380,11 +388,32 @@ export function PromptAndGenerateStep() {
   const [isEnhancing, setIsEnhancing] = useState(false)
   const [isGenerating, setIsGenerating] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const [imageModel, setImageModel] = useState<"flux-pro" | "gpt" | "sdxl">("flux-pro")
-  const [videoModel, setVideoModel] = useState<"kling" | "minimax">("kling")
+  const [imageModel, setImageModel] = useState<"flux-pro" | "gpt" | "nano-banana" | "grok" | "sdxl">("sdxl")
+  const [videoModel, setVideoModel] = useState<"kling" | "veo-3" | "grok-video" | "minimax">("kling")
   const [videoDuration, setVideoDuration] = useState<5 | 10>(5)
   const [aspectRatio, setAspectRatio] = useState<"16:9" | "9:16" | "1:1" | "4:3">("16:9")
-  const [batches, setBatches] = useState<GeneratedBatch[]>([])
+
+  // Initialize batches from cache
+  const [batches, setBatchesLocal] = useState<GeneratedBatch[]>(() => {
+    return cachedBatches as GeneratedBatch[]
+  })
+
+  // Wrapper to sync batches to store cache
+  const setBatches = (updater: GeneratedBatch[] | ((prev: GeneratedBatch[]) => GeneratedBatch[])) => {
+    setBatchesLocal(prev => {
+      const newBatches = typeof updater === 'function' ? updater(prev) : updater
+      // Sync to store cache
+      setCachedBatches(newBatches.map(b => ({
+        id: b.id,
+        assets: b.assets,
+        prompt: b.prompt,
+        timestamp: b.timestamp,
+        refinement: b.refinement,
+      })))
+      return newBatches
+    })
+  }
+
   const [pendingRefinement, setPendingRefinement] = useState("")
 
   // Additional references added after generation (for next batch)
@@ -452,6 +481,66 @@ export function PromptAndGenerateStep() {
       window.removeEventListener('bubble-update-category-option', handleBubbleCategoryOption as EventListener)
     }
   }, [categoryConfig])
+
+  // Listen for Bubble's image model updates
+  useEffect(() => {
+    const handleBubbleImageModel = (event: CustomEvent<{ imageModel: string }>) => {
+      const { imageModel: newModel } = event.detail
+      if (['flux-pro', 'gpt', 'nano-banana', 'grok', 'sdxl'].includes(newModel)) {
+        setImageModel(newModel as "flux-pro" | "gpt" | "nano-banana" | "grok" | "sdxl")
+      }
+    }
+
+    window.addEventListener('bubble-update-image-model', handleBubbleImageModel as EventListener)
+    return () => {
+      window.removeEventListener('bubble-update-image-model', handleBubbleImageModel as EventListener)
+    }
+  }, [])
+
+  // Listen for Bubble's video model updates
+  useEffect(() => {
+    const handleBubbleVideoModel = (event: CustomEvent<{ videoModel: string }>) => {
+      const { videoModel: newModel } = event.detail
+      if (['kling', 'veo-3', 'grok-video', 'minimax'].includes(newModel)) {
+        setVideoModel(newModel as "kling" | "veo-3" | "grok-video" | "minimax")
+      }
+    }
+
+    window.addEventListener('bubble-update-video-model', handleBubbleVideoModel as EventListener)
+    return () => {
+      window.removeEventListener('bubble-update-video-model', handleBubbleVideoModel as EventListener)
+    }
+  }, [])
+
+  // Listen for Bubble's aspect ratio updates
+  useEffect(() => {
+    const handleBubbleAspectRatio = (event: CustomEvent<{ aspectRatio: string }>) => {
+      const { aspectRatio: newRatio } = event.detail
+      if (['16:9', '9:16', '1:1', '4:3'].includes(newRatio)) {
+        setAspectRatio(newRatio as "16:9" | "9:16" | "1:1" | "4:3")
+      }
+    }
+
+    window.addEventListener('bubble-update-aspect-ratio', handleBubbleAspectRatio as EventListener)
+    return () => {
+      window.removeEventListener('bubble-update-aspect-ratio', handleBubbleAspectRatio as EventListener)
+    }
+  }, [])
+
+  // Listen for Bubble's video duration updates
+  useEffect(() => {
+    const handleBubbleVideoDuration = (event: CustomEvent<{ videoDuration: number }>) => {
+      const { videoDuration: newDuration } = event.detail
+      if ([5, 10].includes(newDuration)) {
+        setVideoDuration(newDuration as 5 | 10)
+      }
+    }
+
+    window.addEventListener('bubble-update-video-duration', handleBubbleVideoDuration as EventListener)
+    return () => {
+      window.removeEventListener('bubble-update-video-duration', handleBubbleVideoDuration as EventListener)
+    }
+  }, [])
 
   const handleEnhance = async () => {
     if (!userDescription.trim() || !assetType || !category) return
@@ -529,16 +618,37 @@ export function PromptAndGenerateStep() {
       if (assetType === "image") {
         // Generate 4 images
         const selectedAspect = ASPECT_RATIOS.find(r => r.id === aspectRatio) || ASPECT_RATIOS[0]
-        const urls = await generateImages({
-          prompt: effectivePrompt,
-          negativePrompt,
-          style: stylePreset || undefined,
-          referenceImageUrls: referenceUrls.length > 0 ? referenceUrls : undefined,
-          model: imageModel,
-          numOutputs: 4,
-          width: selectedAspect.width,
-          height: selectedAspect.height,
-        })
+        let urls: string[]
+
+        if (imageModel === "nano-banana") {
+          // Use Google AI Nano Banana via Replicate
+          urls = await generateImagesNanoBanana({
+            prompt: effectivePrompt,
+            negativePrompt,
+            aspectRatio: aspectRatio as "1:1" | "16:9" | "9:16" | "4:3" | "3:4",
+            numberOfImages: 4,
+          })
+        } else if (imageModel === "grok") {
+          // Use Grok via FAL.ai
+          urls = await generateImagesGrok({
+            prompt: effectivePrompt,
+            negativePrompt,
+            aspectRatio: aspectRatio as "1:1" | "16:9" | "9:16" | "4:3" | "3:4",
+            numberOfImages: 4,
+          })
+        } else {
+          // Use Replicate (flux-pro, gpt, sdxl)
+          urls = await generateImages({
+            prompt: effectivePrompt,
+            negativePrompt,
+            style: stylePreset || undefined,
+            referenceImageUrls: referenceUrls.length > 0 ? referenceUrls : undefined,
+            model: imageModel as "flux-pro" | "gpt" | "sdxl",
+            numOutputs: 4,
+            width: selectedAspect.width,
+            height: selectedAspect.height,
+          })
+        }
 
         const newBatch: GeneratedBatch = {
           id: batchId,
@@ -562,13 +672,34 @@ export function PromptAndGenerateStep() {
 
         // Video only supports 16:9, 9:16, 1:1 - fall back to 16:9 if 4:3 selected
         const videoAspect = aspectRatio === "4:3" ? "16:9" : aspectRatio
-        const videoUrl = await generateVideo({
-          imageUrl: referenceImage,
-          prompt: effectivePrompt,
-          duration: videoDuration,
-          aspectRatio: videoAspect,
-          model: videoModel,
-        })
+        let videoUrl: string
+
+        if (videoModel === "veo-3") {
+          // Use Google AI Veo 3 via Replicate
+          videoUrl = await generateVideoVeo({
+            prompt: effectivePrompt,
+            imageUrl: referenceImage,
+            aspectRatio: videoAspect as "16:9" | "9:16" | "1:1",
+            duration: videoDuration,
+          })
+        } else if (videoModel === "grok-video") {
+          // Use Grok via FAL.ai
+          videoUrl = await generateVideoGrok({
+            prompt: effectivePrompt,
+            imageUrl: referenceImage,
+            aspectRatio: videoAspect as "16:9" | "9:16" | "1:1",
+            duration: videoDuration,
+          })
+        } else {
+          // Use Replicate (kling, minimax)
+          videoUrl = await generateVideo({
+            imageUrl: referenceImage,
+            prompt: effectivePrompt,
+            duration: videoDuration,
+            aspectRatio: videoAspect,
+            model: videoModel as "kling" | "minimax",
+          })
+        }
 
         const newBatch: GeneratedBatch = {
           id: batchId,
@@ -685,13 +816,30 @@ export function PromptAndGenerateStep() {
     }))
 
     try {
-      const videoUrl = await generateVideo({
-        imageUrl,
-        prompt: aiPrompt || userDescription || "Smooth cinematic motion",
-        duration: videoDuration,
-        quality: "pro",
-        model: videoModel,
-      })
+      let videoUrl: string
+      const animatePrompt = aiPrompt || userDescription || "Smooth cinematic motion"
+
+      if (videoModel === "veo-3") {
+        videoUrl = await generateVideoVeo({
+          prompt: animatePrompt,
+          imageUrl,
+          duration: videoDuration,
+        })
+      } else if (videoModel === "grok-video") {
+        videoUrl = await generateVideoGrok({
+          prompt: animatePrompt,
+          imageUrl,
+          duration: videoDuration,
+        })
+      } else {
+        videoUrl = await generateVideo({
+          imageUrl,
+          prompt: animatePrompt,
+          duration: videoDuration,
+          quality: "pro",
+          model: videoModel as "kling" | "minimax",
+        })
+      }
 
       // Replace the image with the video
       setBatches(prev => prev.map(batch => {
@@ -751,24 +899,58 @@ export function PromptAndGenerateStep() {
     return "Describe what you want to generate..."
   }
 
-  return (
-    <div className="flex-1 flex flex-col p-6 lg:p-8 overflow-y-auto">
-      <div className="max-w-3xl w-full mx-auto">
-        {/* Header */}
-        <div className="text-center mb-8">
-          <h1 className="text-2xl font-bold text-zinc-100 mb-2">
-            Create your {assetType}
-          </h1>
-          <p className="text-zinc-400">
-            {assetType === "video"
-              ? "Add a reference image, describe the motion, and generate"
-              : "Describe, generate, iterate until you're happy"
-            }
-          </p>
-        </div>
+  // Get the color for the Continue button based on asset type
+  const getContinueColor = () => {
+    switch (assetType) {
+      case "image": return "text-orange-400"
+      case "video": return "text-red-400"
+      case "audio": return "text-violet-400"
+      default: return "text-orange-400"
+    }
+  }
 
-        {/* Form Section - No panel wrapper initially */}
-        <div className="space-y-5 mb-6">
+  return (
+    <div className="flex-1 flex flex-col">
+      {/* Header with navigation */}
+      <div className="h-[72px] border-b border-zinc-800">
+        <div className="h-full px-6 lg:px-8 flex items-center">
+          <div className="w-24">
+            <button
+              onClick={prevStep}
+              className="flex items-center gap-1 text-zinc-400 hover:text-zinc-200 transition-colors"
+            >
+              <ChevronLeft className="w-5 h-5" />
+              <span className="text-sm font-medium">Back</span>
+            </button>
+          </div>
+
+          <h1 className="flex-1 text-center text-xl font-semibold text-zinc-100">
+            Create {assetType === "image" ? "Image" : assetType === "video" ? "Video" : "Audio"}
+          </h1>
+
+          <div className="w-24 flex justify-end">
+            <button
+              onClick={handleContinue}
+              disabled={!canContinue}
+              className={cn(
+                "flex items-center gap-1 transition-colors",
+                canContinue
+                  ? cn(getContinueColor(), "hover:opacity-80")
+                  : "text-zinc-600 cursor-not-allowed"
+              )}
+            >
+              <span className="text-sm font-medium">Continue</span>
+              <ChevronRight className="w-5 h-5" />
+            </button>
+          </div>
+        </div>
+      </div>
+
+      {/* Content */}
+      <div className="flex-1 overflow-y-auto">
+        <div className="max-w-3xl w-full mx-auto px-6 lg:px-8 py-8">
+          {/* Form Section - No panel wrapper initially */}
+          <div className="space-y-5 mb-6">
           {/* Name */}
           <div>
             <label className="block text-sm font-medium text-zinc-300 mb-2">
@@ -780,7 +962,7 @@ export function PromptAndGenerateStep() {
               onChange={(e) => setAssetName(e.target.value)}
               placeholder={`Name your ${assetType}...`}
               rows={1}
-              className="w-full px-4 py-3 bg-zinc-900/50 border border-zinc-800 rounded-xl text-zinc-100 placeholder:text-zinc-600 focus:outline-none focus:border-sky-500 resize-none text-lg"
+              className="w-full px-4 py-3 bg-zinc-900/50 border border-zinc-800 rounded-xl text-zinc-100 placeholder:text-zinc-600 focus:outline-none focus:border-orange-500 resize-none text-lg"
               style={{ overflow: 'hidden' }}
             />
           </div>
@@ -796,7 +978,7 @@ export function PromptAndGenerateStep() {
               onChange={(e) => setUserDescription(e.target.value)}
               placeholder={getDescriptionPlaceholder()}
               rows={3}
-              className="w-full px-4 py-3 bg-zinc-900/50 border border-zinc-800 rounded-xl text-zinc-100 placeholder:text-zinc-600 focus:outline-none focus:border-sky-500 resize-none"
+              className="w-full px-4 py-3 bg-zinc-900/50 border border-zinc-800 rounded-xl text-zinc-100 placeholder:text-zinc-600 focus:outline-none focus:border-orange-500 resize-none"
               style={{ overflow: 'hidden' }}
             />
           </div>
@@ -811,7 +993,7 @@ export function PromptAndGenerateStep() {
                 className={cn(
                   "px-3 py-1.5 rounded-lg text-xs font-medium transition-all inline-flex items-center gap-1.5",
                   userDescription.trim() && !isEnhancing
-                    ? "bg-sky-500/20 text-sky-400 hover:bg-sky-500/30"
+                    ? "bg-orange-500/20 text-orange-400 hover:bg-orange-500/30"
                     : "bg-zinc-800 text-zinc-500 cursor-not-allowed"
                 )}
               >
@@ -828,7 +1010,7 @@ export function PromptAndGenerateStep() {
               onChange={(e) => setAiPrompt(e.target.value)}
               placeholder="Technical prompt with style, lighting, composition... (Click Enhance to auto-generate)"
               rows={3}
-              className="w-full px-4 py-3 bg-zinc-800/30 border border-zinc-800 rounded-xl text-zinc-100 placeholder:text-zinc-600 focus:outline-none focus:border-sky-500 resize-none font-mono text-sm"
+              className="w-full px-4 py-3 bg-zinc-800/30 border border-zinc-800 rounded-xl text-zinc-100 placeholder:text-zinc-600 focus:outline-none focus:border-orange-500 resize-none font-mono text-sm"
               style={{ overflow: 'hidden' }}
             />
           </div>
@@ -884,7 +1066,7 @@ export function PromptAndGenerateStep() {
                 <label className="block text-xs font-medium text-zinc-400 mb-1.5">Model</label>
                 <CustomDropdown
                   value={imageModel}
-                  onChange={(val) => setImageModel(val as "flux-pro" | "gpt" | "sdxl")}
+                  onChange={(val) => setImageModel(val as "flux-pro" | "gpt" | "nano-banana" | "grok" | "sdxl")}
                   options={IMAGE_MODELS.map(m => ({
                     value: m.id,
                     label: m.label,
@@ -900,7 +1082,7 @@ export function PromptAndGenerateStep() {
                   <label className="block text-xs font-medium text-zinc-400 mb-1.5">Video Model</label>
                   <CustomDropdown
                     value={videoModel}
-                    onChange={(val) => setVideoModel(val as "kling" | "minimax")}
+                    onChange={(val) => setVideoModel(val as "kling" | "veo-3" | "grok-video" | "minimax")}
                     options={VIDEO_MODELS.map(m => ({
                       value: m.id,
                       label: m.label,
@@ -930,7 +1112,7 @@ export function PromptAndGenerateStep() {
                 <label className="block text-xs font-medium text-zinc-400 mb-1.5">Video Model</label>
                 <CustomDropdown
                   value={videoModel}
-                  onChange={(val) => setVideoModel(val as "kling" | "minimax")}
+                  onChange={(val) => setVideoModel(val as "kling" | "veo-3" | "grok-video" | "minimax")}
                   options={VIDEO_MODELS.map(m => ({
                     value: m.id,
                     label: m.label,
@@ -972,7 +1154,7 @@ export function PromptAndGenerateStep() {
                   onChange={(e) => setNegativePrompt(e.target.value)}
                   placeholder="Things to avoid..."
                   rows={2}
-                  className="w-full px-3 py-2 bg-zinc-800 border border-zinc-700 rounded-lg text-zinc-100 placeholder:text-zinc-600 focus:outline-none focus:border-sky-500 resize-none text-sm"
+                  className="w-full px-3 py-2 bg-zinc-800 border border-zinc-700 rounded-lg text-zinc-100 placeholder:text-zinc-600 focus:outline-none focus:border-orange-500 resize-none text-sm"
                 />
               </div>
             </div>
@@ -987,8 +1169,8 @@ export function PromptAndGenerateStep() {
 
           {/* Pending Refinement from Bubble (shows when no batches yet) */}
           {batches.length === 0 && pendingRefinement && (
-            <div className="p-4 bg-sky-500/10 border border-sky-500/30 rounded-xl">
-              <label className="block text-sm font-medium text-sky-300 mb-2">
+            <div className="p-4 bg-orange-500/10 border border-orange-500/30 rounded-xl">
+              <label className="block text-sm font-medium text-orange-300 mb-2">
                 Refinement from Bubble
               </label>
               <textarea
@@ -996,9 +1178,9 @@ export function PromptAndGenerateStep() {
                 onChange={(e) => setPendingRefinement(e.target.value)}
                 placeholder="Additional adjustments..."
                 rows={2}
-                className="w-full px-4 py-3 bg-zinc-900/50 border border-zinc-800 rounded-xl text-zinc-100 placeholder:text-zinc-600 focus:outline-none focus:border-sky-500 resize-none"
+                className="w-full px-4 py-3 bg-zinc-900/50 border border-zinc-800 rounded-xl text-zinc-100 placeholder:text-zinc-600 focus:outline-none focus:border-orange-500 resize-none"
               />
-              <p className="text-xs text-sky-400/70 mt-2">
+              <p className="text-xs text-orange-400/70 mt-2">
                 This will be appended to your prompt when you generate
               </p>
             </div>
@@ -1043,7 +1225,7 @@ export function PromptAndGenerateStep() {
               {batches.length === 0 && referenceAssets.length < 4 && (
                 <button
                   onClick={() => setShowReferenceModal(true)}
-                  className="aspect-square rounded-xl border-2 border-dashed border-zinc-700 hover:border-sky-500 hover:bg-sky-500/5 flex flex-col items-center justify-center gap-2 text-zinc-500 hover:text-sky-400 transition-all"
+                  className="aspect-square rounded-xl border-2 border-dashed border-zinc-700 hover:border-orange-500 hover:bg-orange-500/5 flex flex-col items-center justify-center gap-2 text-zinc-500 hover:text-orange-400 transition-all"
                 >
                   <ImagePlus className="w-8 h-8" />
                   <span className="text-xs">Add Reference</span>
@@ -1079,7 +1261,7 @@ export function PromptAndGenerateStep() {
                         className={cn(
                           "p-3 rounded-xl border-2 transition-all",
                           asset.selected
-                            ? "border-sky-500 bg-sky-500/10"
+                            ? "border-orange-500 bg-orange-500/10"
                             : "border-zinc-700 bg-zinc-800/50"
                         )}
                       >
@@ -1088,15 +1270,15 @@ export function PromptAndGenerateStep() {
                             onClick={() => handleToggleSelection(batch.id, asset.id)}
                             className={cn(
                               "w-6 h-6 rounded-full flex items-center justify-center flex-shrink-0 transition-all",
-                              asset.selected ? "bg-sky-500" : "bg-zinc-700 hover:bg-zinc-600"
+                              asset.selected ? "bg-orange-500" : "bg-zinc-700 hover:bg-zinc-600"
                             )}
                           >
                             {asset.selected && <Check className="w-4 h-4 text-white" />}
                           </button>
-                          <div className="w-10 h-10 rounded-full bg-sky-500/20 flex items-center justify-center flex-shrink-0">
-                            {category === "music" && <Music className="w-5 h-5 text-sky-400" />}
-                            {category === "sound_effect" && <Waves className="w-5 h-5 text-sky-400" />}
-                            {category === "voice" && <Mic className="w-5 h-5 text-sky-400" />}
+                          <div className="w-10 h-10 rounded-full bg-orange-500/20 flex items-center justify-center flex-shrink-0">
+                            {category === "music" && <Music className="w-5 h-5 text-orange-400" />}
+                            {category === "sound_effect" && <Waves className="w-5 h-5 text-orange-400" />}
+                            {category === "voice" && <Mic className="w-5 h-5 text-orange-400" />}
                           </div>
                           <audio src={asset.url} controls className="flex-1 h-8" />
                           <button
@@ -1119,7 +1301,7 @@ export function PromptAndGenerateStep() {
                           className={cn(
                             "relative aspect-video rounded-xl overflow-hidden border-2 transition-all",
                             asset.selected
-                              ? "border-sky-500 ring-2 ring-sky-500/30"
+                              ? "border-orange-500 ring-2 ring-orange-500/30"
                               : "border-zinc-700"
                           )}
                         >
@@ -1149,7 +1331,7 @@ export function PromptAndGenerateStep() {
                             className={cn(
                               "px-4 py-2 rounded-xl font-medium text-sm transition-all inline-flex items-center gap-2",
                               asset.selected
-                                ? "bg-sky-500 text-white"
+                                ? "bg-orange-500 text-white"
                                 : "bg-zinc-800 hover:bg-zinc-700 text-zinc-300"
                             )}
                           >
@@ -1175,7 +1357,7 @@ export function PromptAndGenerateStep() {
                         className={cn(
                           "group relative rounded-xl overflow-hidden border-2 transition-all cursor-pointer",
                           asset.selected
-                            ? "border-sky-500 ring-2 ring-sky-500/30"
+                            ? "border-orange-500 ring-2 ring-orange-500/30"
                             : "border-zinc-700 hover:border-zinc-600"
                         )}
                         onClick={() => handleToggleSelection(batch.id, asset.id)}
@@ -1194,9 +1376,9 @@ export function PromptAndGenerateStep() {
                           </button>
                         </div>
 
-                        {/* Selection indicator (blue checkmark) */}
+                        {/* Selection indicator (orange checkmark) */}
                         {asset.selected && !asset.isAnimating && (
-                          <div className="absolute top-2 right-2 w-6 h-6 rounded-full bg-sky-500 flex items-center justify-center">
+                          <div className="absolute top-2 right-2 w-6 h-6 rounded-full bg-orange-500 flex items-center justify-center">
                             <Check className="w-4 h-4 text-white" />
                           </div>
                         )}
@@ -1214,7 +1396,7 @@ export function PromptAndGenerateStep() {
                     <label className="block text-sm font-medium text-zinc-400 mb-2">
                       Refinements for next generation
                       {selectedCount > 0 && (
-                        <span className="ml-2 text-sky-400 text-xs">(selected images will be used as reference)</span>
+                        <span className="ml-2 text-orange-400 text-xs">(selected images will be used as reference)</span>
                       )}
                     </label>
                     <textarea
@@ -1222,7 +1404,7 @@ export function PromptAndGenerateStep() {
                       onChange={(e) => handleUpdateRefinement(batch.id, e.target.value)}
                       placeholder="Add changes or adjustments for the next batch... (e.g., 'make it more dramatic', 'change lighting to sunset')"
                       rows={2}
-                      className="w-full px-4 py-3 bg-zinc-900/50 border border-zinc-800 rounded-xl text-zinc-100 placeholder:text-zinc-600 focus:outline-none focus:border-sky-500 resize-none"
+                      className="w-full px-4 py-3 bg-zinc-900/50 border border-zinc-800 rounded-xl text-zinc-100 placeholder:text-zinc-600 focus:outline-none focus:border-orange-500 resize-none"
                     />
                   </div>
 
@@ -1259,7 +1441,7 @@ export function PromptAndGenerateStep() {
                             setIsAddingToAdditional(true)
                             setShowReferenceModal(true)
                           }}
-                          className="aspect-square rounded-xl border-2 border-dashed border-zinc-700 hover:border-sky-500 hover:bg-sky-500/5 flex flex-col items-center justify-center gap-2 text-zinc-500 hover:text-sky-400 transition-all"
+                          className="aspect-square rounded-xl border-2 border-dashed border-zinc-700 hover:border-orange-500 hover:bg-orange-500/5 flex flex-col items-center justify-center gap-2 text-zinc-500 hover:text-orange-400 transition-all"
                         >
                           <ImagePlus className="w-8 h-8" />
                           <span className="text-xs">Add Reference</span>
@@ -1280,7 +1462,7 @@ export function PromptAndGenerateStep() {
                     onChange={(e) => handleUpdateRefinement(batch.id, e.target.value)}
                     placeholder="Add changes or adjustments for the next batch..."
                     rows={2}
-                    className="w-full px-4 py-3 bg-zinc-900/50 border border-zinc-800 rounded-xl text-zinc-100 placeholder:text-zinc-600 focus:outline-none focus:border-sky-500 resize-none"
+                    className="w-full px-4 py-3 bg-zinc-900/50 border border-zinc-800 rounded-xl text-zinc-100 placeholder:text-zinc-600 focus:outline-none focus:border-orange-500 resize-none"
                   />
                 </div>
               )}
@@ -1289,15 +1471,15 @@ export function PromptAndGenerateStep() {
         </div>
 
         {/* Single Generate Button - always at the bottom */}
-        {!isGenerating && (
-          <div className="mt-6">
+        <div className="mt-6 pb-16">
+          {!isGenerating && (
             <button
               onClick={() => handleGenerate()}
               disabled={!userDescription.trim() && !aiPrompt.trim()}
               className={cn(
                 "px-5 py-2.5 rounded-xl font-medium transition-all inline-flex items-center gap-2",
                 userDescription.trim() || aiPrompt.trim()
-                  ? "bg-gradient-to-br from-sky-400 via-sky-500 to-blue-600 text-white hover:opacity-90"
+                  ? "bg-gradient-to-br from-orange-400 via-orange-500 to-orange-600 text-white hover:opacity-90"
                   : "bg-zinc-800 text-zinc-500 cursor-not-allowed"
               )}
             >
@@ -1315,49 +1497,20 @@ export function PromptAndGenerateStep() {
                     : "Generate 4 More"
               }
             </button>
-          </div>
-        )}
-
-        {/* Loading State */}
-        {isGenerating && (
-          <div className="mt-6 py-8 bg-zinc-900/30 rounded-xl border border-dashed border-zinc-800 text-center">
-            <Loader2 className="w-10 h-10 text-sky-500 animate-spin mx-auto mb-3" />
-            <p className="text-zinc-400">Generating{batches.length > 0 ? " more" : ""}...</p>
-            {assetType === "image" && imageModel === "flux-pro" && (
-              <p className="text-xs text-zinc-600 mt-1">FLUX Pro takes ~1 min for best quality</p>
-            )}
-          </div>
-        )}
-
-        {/* Navigation */}
-        <div className="flex justify-between items-center mt-10 pt-6 border-t border-zinc-800">
-          <button
-            onClick={prevStep}
-            className="px-5 py-2.5 rounded-xl font-medium bg-zinc-800 text-zinc-300 hover:bg-zinc-700 transition-colors inline-flex items-center gap-2"
-          >
-            <ArrowLeft className="w-4 h-4" />
-            Back
-          </button>
-
-          {selectedCount > 0 && (
-            <span className="text-sm text-zinc-400">
-              {selectedCount} asset{selectedCount !== 1 ? 's' : ''} selected
-            </span>
           )}
 
-          <button
-            onClick={handleContinue}
-            disabled={!canContinue}
-            className={cn(
-              "px-5 py-2.5 rounded-xl font-medium transition-all inline-flex items-center gap-2",
-              canContinue
-                ? "bg-gradient-to-br from-sky-400 via-sky-500 to-blue-600 text-white hover:opacity-90"
-                : "bg-zinc-800 text-zinc-500 cursor-not-allowed"
-            )}
-          >
-            Continue
-            <ArrowRight className="w-4 h-4" />
-          </button>
+          {/* Loading State */}
+          {isGenerating && (
+            <div className="py-8 bg-zinc-900/30 rounded-xl border border-dashed border-zinc-800 text-center">
+              <Loader2 className="w-10 h-10 text-orange-500 animate-spin mx-auto mb-3" />
+              <p className="text-zinc-400">Generating{batches.length > 0 ? " more" : ""}...</p>
+              {assetType === "image" && imageModel === "flux-pro" && (
+                <p className="text-xs text-zinc-600 mt-1">FLUX Pro takes ~1 min for best quality</p>
+              )}
+            </div>
+          )}
+        </div>
+
         </div>
       </div>
 

@@ -8,7 +8,7 @@ export type AssetType = "image" | "video" | "audio" | "animation"
 export type ImagePromptType = "text-to-image" | "image-to-image" | "inpaint" | "selective-edit" | "upscale"
 export type VideoPromptType = "text-to-video" | "image-to-video" | "video-to-video" | "extend"
 export type AudioPromptType = "text-to-speech" | "voice-to-voice" | "music-sfx"
-export type AnimationPromptType = "text-to-animation" | "template"
+export type AnimationPromptType = "text-to-animation"
 export type PromptType = ImagePromptType | VideoPromptType | AudioPromptType | AnimationPromptType | null
 
 // Asset categories for saving
@@ -47,7 +47,6 @@ export const AUDIO_PROMPT_TYPES = [
 
 export const ANIMATION_PROMPT_TYPES = [
   { id: "text-to-animation" as const, label: "Text to Animation", description: "Describe your animation and AI generates it" },
-  { id: "template" as const, label: "From Template", description: "Start from a pre-built animation template" },
 ]
 
 export function getPromptTypesForAssetType(assetType: AssetType | null) {
@@ -96,6 +95,21 @@ interface AssetWizardState {
     duration?: number  // For video/audio assets
   }[]
 
+  // Cached batches for generate step (persists between step navigation)
+  cachedBatches: {
+    id: string
+    assets: {
+      id: string
+      url: string
+      selected: boolean
+      isVideo?: boolean
+      duration?: number
+    }[]
+    prompt: string
+    timestamp: number
+    refinement: string
+  }[]
+
   // Animation-specific
   animationConfig: AnimationConfig | null
   animationPreviewUrl: string | null  // Rendered preview video URL
@@ -116,6 +130,8 @@ interface AssetWizardState {
   removeReferenceAsset: (assetId: string) => void
   setGeneratedAssets: (assets: AssetWizardState["generatedAssets"]) => void
   toggleAssetSelection: (id: string) => void
+  setCachedBatches: (batches: AssetWizardState["cachedBatches"] | ((prev: AssetWizardState["cachedBatches"]) => AssetWizardState["cachedBatches"])) => void
+  clearCachedBatches: () => void
   resetWizard: () => void
   initWithType: (type: AssetType) => void
   initWithTypeAndPrompt: (type: AssetType, promptType: PromptType) => void
@@ -136,6 +152,7 @@ const initialState = {
   stylePreset: null as string | null,
   referenceAssets: [] as Asset[],
   generatedAssets: [] as AssetWizardState["generatedAssets"],
+  cachedBatches: [] as AssetWizardState["cachedBatches"],
   animationConfig: null as AnimationConfig | null,
   animationPreviewUrl: null as string | null,
 }
@@ -184,6 +201,17 @@ export const useAssetWizardStore = create<AssetWizardState>((set, get) => ({
   },
 
   setGeneratedAssets: (assets) => set({ generatedAssets: assets }),
+
+  setCachedBatches: (batches) => {
+    if (typeof batches === 'function') {
+      const { cachedBatches: current } = get()
+      set({ cachedBatches: batches(current) })
+    } else {
+      set({ cachedBatches: batches })
+    }
+  },
+
+  clearCachedBatches: () => set({ cachedBatches: [] }),
 
   toggleAssetSelection: (id) => {
     const { generatedAssets } = get()

@@ -179,7 +179,7 @@ export function GenerateStep() {
         {isGenerating ? (
           <div className="flex items-center justify-center py-24">
             <div className="text-center">
-              <Loader2 className="w-12 h-12 text-sky-500 animate-spin mx-auto mb-4" />
+              <Loader2 className="w-12 h-12 text-orange-500 animate-spin mx-auto mb-4" />
               <p className="text-zinc-400">This may take a moment...</p>
               <p className="text-xs text-zinc-500 mt-2">
                 {assetType === "video" ? "Video generation can take 30-60 seconds" : "Usually 10-30 seconds"}
@@ -204,14 +204,14 @@ export function GenerateStep() {
                     "relative rounded-xl overflow-hidden border-2 transition-all",
                     assetType === "audio" ? "p-4" : "aspect-square",
                     asset.selected
-                      ? "border-sky-500 ring-2 ring-sky-500/30"
+                      ? "border-orange-500 ring-2 ring-orange-500/30"
                       : "border-zinc-700 hover:border-zinc-600"
                   )}
                 >
                   {assetType === "audio" ? (
                     // Audio player
                     <div className="flex flex-col items-center gap-3">
-                      <div className="w-16 h-16 rounded-full bg-sky-500/20 flex items-center justify-center">
+                      <div className="w-16 h-16 rounded-full bg-orange-500/20 flex items-center justify-center">
                         <span className="text-2xl">🎵</span>
                       </div>
                       <audio
@@ -240,7 +240,7 @@ export function GenerateStep() {
 
                   {/* Selection indicator */}
                   {asset.selected && (
-                    <div className="absolute top-2 right-2 w-6 h-6 rounded-full bg-sky-500 flex items-center justify-center">
+                    <div className="absolute top-2 right-2 w-6 h-6 rounded-full bg-orange-500 flex items-center justify-center">
                       <Check className="w-4 h-4 text-white" />
                     </div>
                   )}
@@ -272,7 +272,7 @@ export function GenerateStep() {
         ) : null}
 
         {/* Actions */}
-        <div className="flex justify-center gap-3">
+        <div className="flex justify-center gap-3 pb-16">
           <button
             onClick={prevStep}
             className="px-6 py-3 rounded-xl font-medium bg-zinc-800 text-zinc-300 hover:bg-zinc-700 transition-colors inline-flex items-center gap-2"
@@ -286,7 +286,7 @@ export function GenerateStep() {
             className={cn(
               "px-8 py-3 rounded-xl font-medium transition-all",
               selectedCount > 0 && !isGenerating
-                ? "bg-gradient-to-br from-sky-400 via-sky-500 to-blue-600 text-white hover:opacity-90"
+                ? "bg-gradient-to-br from-orange-400 via-orange-500 to-orange-600 text-white hover:opacity-90"
                 : "bg-zinc-800 text-zinc-500 cursor-not-allowed"
             )}
           >

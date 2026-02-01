@@ -143,6 +143,33 @@ export async function generateSoundEffect(
 }
 
 // ============================================
+// MUSIC GENERATION
+// ============================================
+
+export interface GenerateMusicOptions {
+  prompt: string
+  duration_seconds?: number
+  force_instrumental?: boolean
+}
+
+export async function generateMusic(
+  options: GenerateMusicOptions
+): Promise<string> {
+  const { prompt, duration_seconds = 30, force_instrumental = false } = options
+
+  // Convert seconds to milliseconds for the API
+  const duration_ms = duration_seconds * 1000
+
+  const data = await elevenlabsProxy.generateMusic({
+    prompt,
+    duration_ms,
+    force_instrumental,
+  })
+
+  return data.audioDataUrl
+}
+
+// ============================================
 // VOICE CLONING (requires professional tier)
 // Note: This would need a separate edge function endpoint for file upload
 // ============================================

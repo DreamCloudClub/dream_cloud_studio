@@ -21,6 +21,7 @@ function arrayBufferToBase64(buffer: ArrayBuffer): string {
   return btoa(binary)
 }
 
+
 serve(async (req) => {
   // Handle CORS preflight
   if (req.method === "OPTIONS") {
@@ -137,6 +138,44 @@ serve(async (req) => {
 
         return new Response(
           JSON.stringify({ audioDataUrl: dataUrl }),
+          { headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        )
+      }
+
+      case "generate_music": {
+        const {
+          prompt,
+          duration_ms = 30000, // Default 30 seconds
+          force_instrumental = false,
+        } = params
+
+        const body: Record<string, unknown> = {
+          prompt,
+          music_length_ms: duration_ms,
+          instrumental: force_instrumental,
+        }
+
+        const response = await fetch(`${ELEVENLABS_API_URL}/music`, {
+          method: "POST",
+          headers: {
+            "xi-api-key": ELEVENLABS_API_KEY,
+            "Content-Type": "application/json",
+            Accept: "audio/mpeg",
+          },
+          body: JSON.stringify(body),
+        })
+
+        if (!response.ok) {
+          const error = await response.json().catch(() => ({}))
+          throw new Error(error.detail?.message || error.message || "Failed to generate music")
+        }
+
+        const audioBuffer = await response.arrayBuffer()
+        const base64Audio = arrayBufferToBase64(audioBuffer)
+        const audioDataUrl = `data:audio/mpeg;base64,${base64Audio}`
+
+        return new Response(
+          JSON.stringify({ audioDataUrl }),
           { headers: { ...corsHeaders, "Content-Type": "application/json" } }
         )
       }

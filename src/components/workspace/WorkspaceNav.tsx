@@ -13,6 +13,7 @@ import {
   Loader2,
   Check,
   Home,
+  Sparkles,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { WORKSPACE_TABS, useWorkspaceStore } from "@/state/workspaceStore"
@@ -27,6 +28,7 @@ const iconMap: Record<string, React.ElementType> = {
   Palette,
   Download,
   FolderOpen,
+  Sparkles,
 }
 
 interface WorkspaceNavProps {
@@ -43,6 +45,10 @@ const TAB_COLORS: Record<string, { active: string; hover: string }> = {
   storyboard: {
     active: "bg-gradient-to-br from-violet-400/20 via-violet-500/20 to-purple-600/20 text-violet-400",
     hover: "hover:text-violet-400",
+  },
+  animations: {
+    active: "bg-gradient-to-br from-emerald-400/20 via-emerald-500/20 to-green-600/20 text-emerald-400",
+    hover: "hover:text-emerald-400",
   },
   export: {
     active: "bg-gradient-to-br from-orange-400/20 via-orange-500/20 to-amber-600/20 text-orange-400",

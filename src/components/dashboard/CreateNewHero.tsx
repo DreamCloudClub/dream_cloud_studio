@@ -356,6 +356,7 @@ export function CreateNewHero({ onStartWithBubble }: CreateNewHeroProps) {
   // Get the route for the creator page based on mode selection
   const getCreatorRoute = (type: PrimaryMode, sub: string | null): string => {
     if (type === "bubble") return "/"
+    if (type === "animation") return "/animations/new"
     if (!sub) return `/create/${type}`
     return `/create/${type}/${sub}`
   }

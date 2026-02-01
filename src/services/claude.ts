@@ -73,6 +73,16 @@ export interface BubbleContext {
     userDescription?: string
     aiPrompt?: string
     style?: string
+    // Generation state - for knowing when to use refinement vs description
+    hasGeneratedImages?: boolean
+    batchCount?: number
+    // Animation-specific data
+    animationConfig?: {
+      duration: number
+      layerCount: number
+      layerTypes: string[]
+      hasBackground: boolean
+    }
   }
   // Library page data
   library?: {
@@ -142,14 +152,47 @@ export interface BubbleContext {
 // Tool definitions for Bubble's actions
 const TOOLS = [
   {
+    name: 'create_new_project',
+    description: 'Create a new blank project and navigate to the Workspace. Use this when user wants to start a new video project.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        confirm: {
+          type: 'boolean',
+          description: 'Set to true to confirm project creation'
+        }
+      },
+      required: ['confirm']
+    }
+  },
+  {
     name: 'navigate',
-    description: 'Navigate to a specific page or route in the application',
+    description: 'Navigate to a specific page or route in the application. Use this to take the user to different pages.',
     input_schema: {
       type: 'object',
       properties: {
         route: {
           type: 'string',
-          description: 'The route to navigate to. Options: "/create/project" (start new project wizard), "/create/asset" (create standalone asset), "/create/foundation" (create new foundation/brand style guide), "/" (home/dashboard)'
+          description: `The route to navigate to. Available routes:
+- "/" - Home/Dashboard
+- "/create/asset" - Create standalone asset wizard
+- "/create/foundation" - Create new foundation/brand style guide
+- "/create/platform" - Create new platform
+- "/create/image/text-to-image" - Text to Image generation
+- "/create/image/image-to-image" - Image to Image transformation
+- "/create/image/inpaint" - Inpainting (edit parts of image)
+- "/create/image/selective-edit" - Selective editing with references
+- "/create/video/text-to-video" - Text to Video generation
+- "/create/video/image-to-video" - Animate an image into video
+- "/create/audio/text-to-speech" - Text to Speech
+- "/create/audio/music-sfx" - Music and sound effects
+- "/library/assets" - Browse asset library
+- "/library/projects" - Browse projects
+- "/library/foundations" - Browse foundations
+- "/library/platforms" - Browse platforms
+- "/animations" - Animation library
+- "/animations/new" - Create new animation
+- "/profile" - User profile settings`
         }
       },
       required: ['route']
@@ -610,7 +653,7 @@ const TOOLS = [
   },
   {
     name: 'update_asset_details',
-    description: 'Update the asset details in the Asset Creator wizard. Use to set the name, description, and AI prompt for the asset being created.',
+    description: 'Update the asset details in the Asset Creator wizard. Use to set the name, description, AI prompt, model selection, and other generation parameters.',
     input_schema: {
       type: 'object',
       properties: {
@@ -638,8 +681,70 @@ const TOOLS = [
         category_option: {
           type: 'string',
           description: 'Category-specific framing/composition option. For characters: "full-body", "torso", "face". For scenes: "wide", "medium", "close-up". For props: "multi", "isometric", "front". For stages: "deep", "mid", "flat". For effects/weather: "subtle", "medium", "dramatic"/"heavy". For music: "calm", "moderate", "energetic". For sound_effect: "realistic", "stylized", "retro".'
+        },
+        image_model: {
+          type: 'string',
+          enum: ['flux-pro', 'gpt', 'nano-banana', 'grok', 'sdxl'],
+          description: 'Image generation model: "flux-pro" (best quality), "gpt" (best for references), "nano-banana" (Google AI), "grok" (xAI), "sdxl" (faster)'
+        },
+        video_model: {
+          type: 'string',
+          enum: ['kling', 'veo-3', 'grok-video', 'minimax'],
+          description: 'Video generation model: "kling" (best quality, 5-10s), "veo-3" (Google AI), "grok-video" (xAI), "minimax" (fast, ~6s)'
+        },
+        aspect_ratio: {
+          type: 'string',
+          enum: ['16:9', '9:16', '1:1', '4:3'],
+          description: 'Aspect ratio for image/video generation'
+        },
+        video_duration: {
+          type: 'number',
+          enum: [5, 10],
+          description: 'Video duration in seconds (5 or 10)'
         }
       }
+    }
+  },
+  {
+    name: 'trigger_generation',
+    description: 'Click the Generate button to start generating the asset. Use this after filling in the name and description fields. Only use when the user confirms they want to generate.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        confirm: {
+          type: 'boolean',
+          description: 'Set to true to confirm generation should start'
+        }
+      },
+      required: ['confirm']
+    }
+  },
+  {
+    name: 'continue_to_save',
+    description: 'Click the Continue button to proceed to the save step after generation is complete and assets are selected. Only use when user has selected assets and wants to save them.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        confirm: {
+          type: 'boolean',
+          description: 'Set to true to continue to save step'
+        }
+      },
+      required: ['confirm']
+    }
+  },
+  {
+    name: 'save_assets',
+    description: 'Click the Save button to save the selected assets to the library. Use this on the save/review step after user confirms they want to save.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        confirm: {
+          type: 'boolean',
+          description: 'Set to true to save assets'
+        }
+      },
+      required: ['confirm']
     }
   },
   // ============================================
@@ -1102,6 +1207,178 @@ const TOOLS = [
     }
   },
   // ============================================
+  // ANIMATION TOOLS (for Remotion animation creation)
+  // ============================================
+  {
+    name: 'set_animation_config',
+    description: 'Create or replace the entire animation configuration. Use this to set up a complete animation with all layers, duration, and background. The animation will be previewed immediately in the Remotion player.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        duration: {
+          type: 'number',
+          description: 'Total animation duration in seconds (typically 3-10 seconds)'
+        },
+        background: {
+          type: 'object',
+          description: 'Background styling',
+          properties: {
+            color: { type: 'string', description: 'Background color as hex (e.g., "#000000")' },
+            gradient: { type: 'string', description: 'CSS gradient (e.g., "linear-gradient(135deg, #667eea 0%, #764ba2 100%)")' }
+          }
+        },
+        layers: {
+          type: 'array',
+          description: 'Animation layers (rendered in order, first is bottom)',
+          items: {
+            type: 'object',
+            properties: {
+              type: {
+                type: 'string',
+                enum: ['text', 'shape', 'image'],
+                description: 'Layer type: text (animated text), shape (rectangle/circle), image (from URL)'
+              },
+              content: {
+                type: 'string',
+                description: 'For text: the text content. For shape: "rectangle" or "circle". For image: the URL.'
+              },
+              animation: {
+                type: 'string',
+                enum: ['fadeIn', 'fadeOut', 'slideUp', 'slideDown', 'slideLeft', 'slideRight', 'scale', 'typewriter'],
+                description: 'Animation type to apply'
+              },
+              timing: {
+                type: 'array',
+                items: { type: 'number' },
+                description: 'Animation timing as [startSeconds, endSeconds]'
+              },
+              position: {
+                type: 'object',
+                description: 'Position as percentage (50,50 is center)',
+                properties: {
+                  x: { type: 'number', description: 'Horizontal position (0-100, 50 is center)' },
+                  y: { type: 'number', description: 'Vertical position (0-100, 50 is center)' }
+                }
+              },
+              style: {
+                type: 'object',
+                description: 'Styling properties',
+                properties: {
+                  fontSize: { type: 'number', description: 'Font size in pixels (for text)' },
+                  fontFamily: { type: 'string', description: 'Font family (e.g., "Inter, sans-serif")' },
+                  color: { type: 'string', description: 'Text or shape color as hex' },
+                  backgroundColor: { type: 'string', description: 'Background color for text labels' },
+                  width: { type: 'number', description: 'Width in pixels (for shapes)' },
+                  height: { type: 'number', description: 'Height in pixels (for shapes)' }
+                }
+              }
+            },
+            required: ['type', 'content', 'animation', 'timing']
+          }
+        }
+      },
+      required: ['duration', 'layers']
+    }
+  },
+  {
+    name: 'add_animation_layer',
+    description: 'Add a new layer to the current animation. Layers are rendered in order (first added is at the bottom).',
+    input_schema: {
+      type: 'object',
+      properties: {
+        type: {
+          type: 'string',
+          enum: ['text', 'shape', 'image'],
+          description: 'Layer type'
+        },
+        content: {
+          type: 'string',
+          description: 'The layer content (text string, shape type, or image URL)'
+        },
+        animation: {
+          type: 'string',
+          enum: ['fadeIn', 'fadeOut', 'slideUp', 'slideDown', 'slideLeft', 'slideRight', 'scale', 'typewriter'],
+          description: 'Animation type'
+        },
+        timing: {
+          type: 'array',
+          items: { type: 'number' },
+          description: '[startSeconds, endSeconds]'
+        },
+        position: {
+          type: 'object',
+          properties: {
+            x: { type: 'number' },
+            y: { type: 'number' }
+          },
+          description: 'Position as percentage (50,50 is center)'
+        },
+        style: {
+          type: 'object',
+          description: 'Styling (fontSize, fontFamily, color, backgroundColor, width, height)'
+        }
+      },
+      required: ['type', 'content', 'animation', 'timing']
+    }
+  },
+  {
+    name: 'update_animation_layer',
+    description: 'Update an existing layer in the animation by index.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        layerIndex: {
+          type: 'number',
+          description: 'Index of the layer to update (0-based)'
+        },
+        content: { type: 'string', description: 'New content (optional)' },
+        animation: {
+          type: 'string',
+          enum: ['fadeIn', 'fadeOut', 'slideUp', 'slideDown', 'slideLeft', 'slideRight', 'scale', 'typewriter'],
+          description: 'New animation type (optional)'
+        },
+        timing: {
+          type: 'array',
+          items: { type: 'number' },
+          description: 'New [startSeconds, endSeconds] (optional)'
+        },
+        position: {
+          type: 'object',
+          properties: { x: { type: 'number' }, y: { type: 'number' } },
+          description: 'New position (optional)'
+        },
+        style: { type: 'object', description: 'Style updates to merge (optional)' }
+      },
+      required: ['layerIndex']
+    }
+  },
+  {
+    name: 'remove_animation_layer',
+    description: 'Remove a layer from the animation by index.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        layerIndex: {
+          type: 'number',
+          description: 'Index of the layer to remove (0-based)'
+        }
+      },
+      required: ['layerIndex']
+    }
+  },
+  {
+    name: 'update_animation_properties',
+    description: 'Update animation-level properties like duration and background.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        duration: { type: 'number', description: 'New duration in seconds' },
+        backgroundColor: { type: 'string', description: 'New background color as hex' },
+        backgroundGradient: { type: 'string', description: 'New background gradient (overrides color)' }
+      }
+    }
+  },
+  // ============================================
   // FOUNDATION WIZARD TOOLS
   // ============================================
   {
@@ -1187,10 +1464,48 @@ const TOOLS = [
 const STEP_GUIDANCE: Record<string, string> = {
   home: `You are on the home/dashboard page.
 
-If the user describes a video idea, ask "Would you like to start a new project for this?" and WAIT for their response.
-If the user wants to create a foundation (brand style guide, visual identity), navigate to "/create/foundation".
-If the user wants to create an asset (image, video, audio), navigate to "/create/asset".
-Only use the navigate tool AFTER they confirm they want to start.`,
+PROACTIVE ASSET CREATION MODE:
+When a user mentions wanting to CREATE, GENERATE, or MAKE an image, video, or audio asset, immediately guide them through the process:
+
+1. DETECT INTENT - Keywords like: "create", "generate", "make", "I want", "can you", "help me with" + image/video/audio/picture/clip/sound
+2. ASK ASSET TYPE - If not specified, ask: "What would you like to create? An image, video, or audio?"
+3. ASK GENERATION TYPE - Based on their answer:
+   - Image: "Would you like to create from a text description (text-to-image), transform an existing image (image-to-image), or edit parts of an image (inpaint)?"
+   - Video: "Would you like to create from text (text-to-video) or animate an existing image (image-to-video)?"
+   - Audio: "Would you like to generate speech (text-to-speech) or music/sound effects?"
+4. NAVIGATE - Use the navigate tool to go to the right page:
+   - "/create/image/text-to-image" - Text to Image
+   - "/create/image/image-to-image" - Image to Image
+   - "/create/image/inpaint" - Inpainting
+   - "/create/video/text-to-video" - Text to Video
+   - "/create/video/image-to-video" - Animate image
+   - "/create/audio/text-to-speech" - Text to Speech
+   - "/create/audio/music-sfx" - Music and sound effects
+
+EXAMPLES:
+- User: "I want to create an image" → Ask what type, then navigate
+- User: "Generate a video of a sunset" → Navigate to /create/video/text-to-video
+- User: "Make me a picture of a dragon" → Navigate to /create/image/text-to-image
+- User: "I need some background music" → Navigate to /create/audio/music-sfx
+
+PROACTIVE PROJECT CREATION:
+When a user mentions wanting to create a PROJECT, VIDEO PROJECT, or something with multiple scenes/shots/script:
+1. DETECT INTENT - Keywords like: "project", "video project", "commercial", "ad", "short film", "multiple scenes", "script"
+2. CREATE PROJECT - Use create_new_project with confirm: true to create a new project and open the Workspace
+3. The Workspace has tabs: Platform → Brief → Script → Mood → Storyboard → Editor → Assets → Export
+4. You'll guide them through each tab conversationally
+
+For brand style guides/foundations, navigate to "/create/foundation".
+
+FORK DETECTION:
+- Single asset (one image, one video clip, one audio file) → Creator pages
+- Full project (script, multiple shots, storyboard) → Use create_new_project
+- If unclear, ask: "Would you like to create a single asset or a full video project with multiple scenes?"
+
+TOOLS:
+- create_new_project: Creates a new project and opens the Workspace
+
+Be proactive and guide users - don't wait for them to know the exact terminology.`,
 
   platform: `You are on the PLATFORM step (step 1 of 7).
 
@@ -1290,67 +1605,54 @@ TOOLS:
 Summarize what they've created. Do NOT use any tools here.
 Tell them to click the Create button when ready.`,
 
-  workspace: `You are in an existing project WORKSPACE - editing a saved project.
+  workspace: `You are in the project WORKSPACE. This is where users build their video projects.
 
-The workspace uses a SIMPLIFIED TIMELINE MODEL:
-- Assets are media items (video, image, audio) in the library
-- The Timeline contains Clips - each clip references an asset and defines its placement
-- Clips have: startTime (when on timeline), duration (how long), inPoint (offset into source)
+PROACTIVE GUIDANCE - Guide users through each tab based on where they are:
 
-The workspace has multiple tabs:
-- platform: Platform/channel settings
-- brief: Project info (name, audience, tone, duration)
-- script: Script editor with characters and dialogue
-- moodboard: Visual style references and colors
-- storyboard: Story cards and narrative structure
-- editor: Timeline editor - the main editing interface
-- assets: Asset library - images, videos, audio for this project
-- export: Export settings (resolution, format, quality)
+**BRIEF TAB** (first tab - includes Platform selection at top):
+- First ask about platform: "Is this for a new platform or an existing one?"
+- Then ask for project details one at a time:
+  1. "What would you like to call this project?"
+  2. "Who is the target audience?"
+  3. "What tone should it have? (professional, playful, dramatic, etc.)"
+  4. "How long should the final video be?"
+  5. "What aspect ratio? (16:9 for YouTube, 9:16 for TikTok/Reels, 1:1 for Instagram)"
+- Use update_brief to fill fields as they answer
+- Move to 'script' when done
 
-TIMELINE EDITING TOOLS (core editing):
-- timeline_add_clip: Add an asset to the timeline at a specific time
-- timeline_append_clip: Add an asset to the end of the timeline
-- timeline_move_clip: Move a clip to a new position
-- timeline_trim_clip: Adjust clip's in-point and/or duration
-- timeline_split_clip: Split a clip into two at a specific time
-- timeline_delete_clip: Remove a clip from the timeline
-- timeline_select_clip: Select a clip for editing
+**SCRIPT TAB**:
+- Offer to help write the script: "Would you like me to help write the script?"
+- Ask about the story, characters, dialogue
+- Use create_script_character for characters, create_script_section for content
+- Move to 'moodboard' when done
 
-PLAYBACK TOOLS:
-- workspace_play_preview: Play/pause video playback
-- workspace_seek: Jump to a specific time on the timeline
+**MOODBOARD TAB**:
+- Ask: "Do you have a foundation (brand style) to use, or reference images?"
+- User typically handles this tab themselves (uploading images)
+- Move to 'storyboard' when done
 
-OTHER WORKSPACE TOOLS:
-- switch_workspace_tab: Navigate between tabs
-- workspace_start_asset_creation: Launch asset generator
-- workspace_update_export_settings: Change resolution, format, frameRate, quality
-- workspace_add_storyboard_card: Add story cards
-- workspace_update_storyboard_card: Edit story cards
-- workspace_delete_storyboard_card: Remove story cards
+**STORYBOARD TAB**:
+- Show what's there, then offer: "I can help you create assets for your storyboard. Would you like to create an image, video, or audio?"
+- If yes, use navigate to go to creator pages:
+  - Image: "/create/image/text-to-image"
+  - Video: "/create/video/text-to-video" or "/create/video/image-to-video"
+  - Audio: "/create/audio/text-to-speech" or "/create/audio/music-sfx"
 
-ALSO AVAILABLE:
-- update_brief, update_mood_board, update_video_content
-- set_title_card, set_outro_card, set_transition, add_text_overlay
-- generate_image, generate_voiceover, generate_music, generate_sound_effect
+**EDITOR TAB**:
+- Help with timeline questions
+- Answer "how do I..." questions about editing
 
-EDITING WORKFLOW:
-1. First, make sure there are assets in the library (assets tab)
-2. Add clips to the timeline using timeline_add_clip or timeline_append_clip
-3. Move clips with timeline_move_clip
-4. Trim clips with timeline_trim_clip
-5. Split clips with timeline_split_clip
-6. Delete clips with timeline_delete_clip
+**ASSETS TAB**:
+- Show available assets
+- Offer to create new assets if needed
 
-Common tasks:
-- "Add this video to the timeline" -> timeline_append_clip
-- "Put this clip at 5 seconds" -> timeline_add_clip with start_time: 5
-- "Move this clip to the beginning" -> timeline_move_clip with start_time: 0
-- "Trim the first 2 seconds" -> timeline_trim_clip with in_point: 2
-- "Split this clip in half" -> timeline_split_clip
-- "Remove this clip" -> timeline_delete_clip
-- "Go to assets" -> switch_workspace_tab to 'assets'
-- "Generate an image" -> workspace_start_asset_creation
-- "Set export to 4K" -> workspace_update_export_settings`,
+TOOLS:
+- switch_workspace_tab: Move between tabs ('brief', 'script', 'moodboard', 'storyboard', 'editor', 'assets', 'animations', 'export')
+- update_brief: Fill brief fields
+- create_script_character, create_script_section: Build the script
+- navigate: Go to creator pages for asset generation
+
+When user asks general questions, help them understand the interface and workflow.`,
 
   // ============================================
   // ASSET CREATOR STEPS
@@ -1367,6 +1669,131 @@ Help the user choose a category:
 - For audio: music, sound_effect, voice
 
 Use set_asset_category when they specify the category.`,
+
+  'animation-library': `You are on the ANIMATION LIBRARY page.
+
+This page shows a grid of saved animations. Users can:
+- Browse their existing animations
+- Click an animation to preview it in a modal
+- Click "Edit Animation" to open it in the editor
+- Click "Create New" to create a new animation
+
+You can help users:
+- Find specific animations by describing them
+- Navigate to create a new animation
+- Suggest animation ideas based on their project needs
+
+Available tools:
+- navigate: Use to go to "/animations/new" to create a new animation`,
+
+  'animation-editor': `You are in the ANIMATION EDITOR.
+
+This is where users create and edit Remotion animations. The page shows:
+- Name and description fields at the top
+- A Remotion preview player showing the current animation
+- Animation details below (duration, layers)
+
+YOU HAVE FULL CONTROL of the animation through these tools:
+- set_animation_config: Create a complete animation from scratch
+- add_animation_layer: Add layers (text, shapes, images) to existing animation
+- update_animation_layer: Modify a layer's content, animation, timing, position, or style
+- remove_animation_layer: Remove a layer by index
+- update_animation_properties: Change duration or background
+
+ANIMATION STRUCTURE:
+- duration: Total animation length in seconds (typically 3-10s)
+- background: { color: "#hex" } or { gradient: "linear-gradient(...)" }
+- layers: Array of elements, each with:
+  - type: "text" | "shape" | "image"
+  - content: The text, shape type ("rectangle"/"circle"), or image URL
+  - animation: "fadeIn" | "fadeOut" | "slideUp" | "slideDown" | "slideLeft" | "slideRight" | "scale" | "typewriter"
+  - timing: [startSeconds, endSeconds]
+  - position: { x: 0-100, y: 0-100 } (percentage, 50/50 is center)
+  - style: { fontSize, fontFamily, color, backgroundColor, width, height }
+
+CATEGORY GUIDELINES:
+- text: Kinetic typography, animated text overlays
+- logo: Logo reveals with scale or fadeIn, brand animations
+- transition: Wipes using shapes, scene transitions
+- lower_third: Name plates at bottom (y: 75-85), slideUp animation
+- title_card: Centered large text (y: 50), dramatic typography
+- overlay: Decorative elements, borders, animated graphics
+
+WORKFLOW:
+1. When user describes what they want, use set_animation_config to create the full animation
+2. The preview updates immediately in the player
+3. User can ask for changes - use update/add/remove tools to iterate
+4. User fills in name/description and clicks Save
+
+EXAMPLE - User says "Create a fade-in title that says Welcome":
+Use set_animation_config with:
+{
+  "duration": 4,
+  "layers": [{
+    "type": "text",
+    "content": "Welcome",
+    "animation": "fadeIn",
+    "timing": [0, 3.5],
+    "position": { "x": 50, "y": 50 },
+    "style": { "fontSize": 72, "fontFamily": "Inter, sans-serif", "color": "#ffffff" }
+  }],
+  "background": { "color": "#000000" }
+}
+
+Be creative! Suggest improvements, offer variations, and help users build professional motion graphics.`,
+
+  'asset-generate': `You are in the ANIMATION CREATOR - GENERATE step.
+
+This page shows a Remotion animation preview player. The user creates animations by chatting with you.
+
+YOU HAVE FULL CONTROL of the animation through these tools:
+- set_animation_config: Create a complete animation from scratch
+- add_animation_layer: Add layers (text, shapes, images) to existing animation
+- update_animation_layer: Modify a layer's content, animation, timing, position, or style
+- remove_animation_layer: Remove a layer by index
+- update_animation_properties: Change duration or background
+
+ANIMATION STRUCTURE:
+- duration: Total animation length in seconds (typically 3-10s)
+- background: { color: "#hex" } or { gradient: "linear-gradient(...)" }
+- layers: Array of elements, each with:
+  - type: "text" | "shape" | "image"
+  - content: The text, shape type ("rectangle"/"circle"), or image URL
+  - animation: "fadeIn" | "fadeOut" | "slideUp" | "slideDown" | "slideLeft" | "slideRight" | "scale" | "typewriter"
+  - timing: [startSeconds, endSeconds]
+  - position: { x: 0-100, y: 0-100 } (percentage, 50/50 is center)
+  - style: { fontSize, fontFamily, color, backgroundColor, width, height }
+
+CATEGORY GUIDELINES (based on user's selected category):
+- text: Kinetic typography, animated text overlays
+- logo: Logo reveals with scale or fadeIn, brand animations
+- transition: Wipes using shapes, scene transitions
+- lower_third: Name plates at bottom (y: 75-85), slideUp animation
+- title_card: Centered large text (y: 50), dramatic typography
+- overlay: Decorative elements, borders, animated graphics
+
+WORKFLOW:
+1. When user describes what they want, use set_animation_config to create the full animation
+2. The preview updates immediately in the player
+3. User can ask for changes - use update/add/remove tools to iterate
+4. When happy, they click Continue to save
+
+EXAMPLE - User says "Create a fade-in title that says Welcome":
+Use set_animation_config with:
+{
+  "duration": 4,
+  "layers": [{
+    "type": "text",
+    "content": "Welcome",
+    "animation": "fadeIn",
+    "timing": [0, 3.5],
+    "position": { "x": 50, "y": 50 },
+    "style": { "fontSize": 72, "fontFamily": "Inter, sans-serif", "color": "#ffffff" }
+  }],
+  "background": { "color": "#000000" }
+}
+
+Be creative! Suggest improvements, offer variations, and help users build professional motion graphics.`,
 
   'asset-prompt': `You are in the ASSET CREATOR - CREATE step.
 
@@ -1441,6 +1868,138 @@ You can help users:
 - Open existing projects
 - Start new projects (use navigate to "/create/project")
 - Delete projects they no longer need`,
+
+  // ============================================
+  // CREATOR PAGE STEPS (standalone generation)
+  // ============================================
+  'creator-text-to-image': `You are on the TEXT TO IMAGE creation page.
+
+PROACTIVE WORKFLOW - Guide users step by step:
+1. ASK FOR NAME: "What would you like to call this image?"
+2. ASK FOR DESCRIPTION: "Describe what you want to see in this image"
+3. FILL THE FORM: Use update_asset_details to set name, user_description, and optionally ai_prompt
+4. ASK ABOUT OPTIONS: "Would you like to adjust the aspect ratio or AI model?"
+5. OFFER TO GENERATE: "Ready to generate? I can click the generate button for you!"
+
+AFTER IMAGES ARE GENERATED (when context shows hasGeneratedImages: true):
+- If user wants changes/adjustments, use the "refinement" field in update_asset_details
+- The refinement field adds instructions for the NEXT generation batch
+- Do NOT modify the original user_description or ai_prompt - use refinement instead
+- Example: User says "make it more colorful" → update_asset_details with refinement: "make it more colorful"
+
+TOOLS AVAILABLE:
+- update_asset_details: Set name, user_description, ai_prompt, image_model, aspect_ratio, refinement
+  - image_model options: "flux-pro" (best), "gpt" (references), "nano-banana" (Google), "grok" (xAI), "sdxl" (fast)
+  - aspect_ratio options: "16:9", "9:16", "1:1", "4:3"
+  - refinement: Use ONLY after images are generated to specify changes for the next batch
+- trigger_generation: Click the Generate button (use after user confirms they want to generate)
+
+After filling fields, ask "Ready to generate?" and if they confirm, use trigger_generation with confirm: true.`,
+
+  'creator-image-to-image': `You are on the IMAGE TO IMAGE transformation page.
+
+PROACTIVE WORKFLOW:
+1. ASK FOR SOURCE: "Please upload or select the image you want to transform"
+2. ASK FOR NAME: "What would you like to call the transformed image?"
+3. ASK FOR CHANGES: "Describe how you want to transform this image"
+4. FILL THE FORM: Use update_asset_details to set name, user_description
+5. OFFER OPTIONS: "Would you like to adjust the transformation strength or aspect ratio?"
+
+TOOLS AVAILABLE:
+- update_asset_details: Set name, user_description, ai_prompt, image_model, aspect_ratio`,
+
+  'creator-inpaint': `You are on the INPAINTING page (edit parts of an image).
+
+PROACTIVE WORKFLOW:
+1. ASK FOR SOURCE: "Please upload or select the image you want to edit"
+2. EXPLAIN MASKING: "Use the brush to paint over the area you want to change"
+3. ASK FOR CHANGES: "What should replace the masked area?"
+4. FILL THE FORM: Use update_asset_details to set the description
+5. OFFER TO GENERATE: "Ready to see the edit?"
+
+TOOLS AVAILABLE:
+- update_asset_details: Set name, user_description, ai_prompt`,
+
+  'creator-selective-edit': `You are on the SELECTIVE EDIT page (edit with references).
+
+PROACTIVE WORKFLOW:
+1. ASK FOR SOURCE: "Upload the image you want to edit"
+2. ASK FOR REFERENCE: "Upload a reference image showing the style or element you want"
+3. ASK FOR CHANGES: "Describe how you want to combine these"
+4. FILL THE FORM: Use update_asset_details
+
+TOOLS AVAILABLE:
+- update_asset_details: Set name, user_description, ai_prompt`,
+
+  'creator-text-to-video': `You are on the TEXT TO VIDEO creation page.
+
+PROACTIVE WORKFLOW - Guide users step by step:
+1. ASK FOR NAME: "What would you like to call this video?"
+2. ASK FOR DESCRIPTION: "Describe the scene or action you want to see"
+3. FILL THE FORM: Use update_asset_details to set name, user_description
+4. ASK ABOUT OPTIONS: "Would you like to choose a specific video model or duration?"
+5. OFFER TO GENERATE: "Ready to generate your video?"
+
+TOOLS AVAILABLE:
+- update_asset_details: Set name, user_description, ai_prompt, video_model, aspect_ratio, video_duration
+  - video_model options: "kling" (best quality), "veo-3" (Google), "grok-video" (xAI), "minimax" (fast)
+  - video_duration options: 5 or 10 (seconds)
+  - aspect_ratio options: "16:9", "9:16", "1:1"
+- trigger_generation: Click the Generate button (use after user confirms)
+
+Tips: For best results, describe camera movement, lighting, and the main action clearly.`,
+
+  'creator-image-to-video': `You are on the IMAGE TO VIDEO page (animate an image).
+
+PROACTIVE WORKFLOW:
+1. ASK FOR SOURCE: "Please upload or select the image you want to animate"
+2. ASK FOR NAME: "What would you like to call this video?"
+3. ASK FOR MOTION: "Describe how you want the image to move or animate"
+4. FILL THE FORM: Use update_asset_details to set name, user_description
+5. ASK ABOUT OPTIONS: "Would you like to choose a specific video model or duration?"
+6. OFFER TO GENERATE: "Ready to bring your image to life?"
+
+TOOLS AVAILABLE:
+- update_asset_details: Set name, user_description, ai_prompt, video_model, aspect_ratio, video_duration
+  - video_model options: "kling" (best quality), "veo-3" (Google), "grok-video" (xAI), "minimax" (fast)
+  - video_duration options: 5 or 10 (seconds)
+- trigger_generation: Click the Generate button (use after user confirms)
+
+Tips: Describe subtle motions (clouds drifting, hair blowing) for more realistic results.`,
+
+  'creator-text-to-speech': `You are on the TEXT TO SPEECH page.
+
+PROACTIVE WORKFLOW:
+1. ASK FOR NAME: "What would you like to call this voiceover?"
+2. ASK FOR SCRIPT: "What text should be spoken?"
+3. ASK FOR VOICE: "What kind of voice would you like? (e.g., professional male, friendly female, energetic)"
+4. FILL THE FORM: Use update_asset_details to set name, user_description
+5. OFFER TO GENERATE: "Ready to generate the voiceover?"
+
+TOOLS AVAILABLE:
+- update_asset_details: Set name, user_description (the script text)
+- trigger_generation: Click the Generate button (use after user confirms)
+
+Tips: For longer scripts, suggest breaking into multiple clips for better pacing.`,
+
+  'creator-music-sfx': `You are on the MUSIC & SOUND EFFECTS page.
+
+PROACTIVE WORKFLOW:
+1. ASK TYPE: "Would you like to create music or a sound effect?"
+2. ASK FOR NAME: "What would you like to call this audio?"
+3. ASK FOR DESCRIPTION:
+   - For music: "Describe the mood, genre, and instruments"
+   - For sound effects: "Describe the sound you need"
+4. FILL THE FORM: Use update_asset_details to set name, user_description
+5. OFFER TO GENERATE: "Ready to generate?"
+
+TOOLS AVAILABLE:
+- update_asset_details: Set name, user_description, ai_prompt
+- trigger_generation: Click the Generate button (use after user confirms)
+
+Examples:
+- Music: "upbeat electronic music with synths, 120 BPM, energetic and positive"
+- SFX: "thunderclap with rolling thunder, dramatic, cinematic"`,
 
   // ============================================
   // FOUNDATION WIZARD STEPS
@@ -1648,6 +2207,18 @@ function buildContextMessage(context: BubbleContext): string {
     contextInfo += `  - User Description: ${a.userDescription || 'NOT SET'}\n`
     contextInfo += `  - AI Prompt: ${a.aiPrompt || 'NOT SET'}\n`
     contextInfo += `  - Style: ${a.style || 'NOT SET'}\n`
+
+    // Animation-specific context
+    if (a.type === 'animation' && a.animationConfig) {
+      const ac = a.animationConfig
+      contextInfo += `\n--- CURRENT ANIMATION ---\n`
+      contextInfo += `  - Duration: ${ac.duration}s\n`
+      contextInfo += `  - Layers: ${ac.layerCount} (${ac.layerTypes.join(', ') || 'none'})\n`
+      contextInfo += `  - Has Background: ${ac.hasBackground ? 'Yes' : 'No'}\n`
+    } else if (a.type === 'animation') {
+      contextInfo += `\n--- CURRENT ANIMATION ---\n`
+      contextInfo += `  No animation created yet. Use set_animation_config to create one.\n`
+    }
   }
 
   // Library context
