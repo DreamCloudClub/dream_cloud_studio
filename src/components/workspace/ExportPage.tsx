@@ -1,5 +1,5 @@
 import { useState, useMemo, useRef, useCallback } from "react"
-import { PlayerRef } from "@remotion/player"
+import { Player, PlayerRef } from "@remotion/player"
 import {
   Download,
   Monitor,
@@ -8,17 +8,29 @@ import {
   Sparkles,
   Clock,
   HardDrive,
-  Play,
   CheckCircle,
   AlertCircle,
   Loader2,
   Copy,
+  Volume2,
+  VolumeX,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { useWorkspaceStore, ExportSettings, getClipsWithAssets } from "@/state/workspaceStore"
-import { VideoPreview } from "@/remotion/VideoPreview"
-import type { Shot as RemotionShot } from "@/remotion/Root"
+import { TimelineComposition, FPS } from "@/remotion/TimelineComposition"
 import { getAssetDisplayUrl } from "@/services/localStorage"
+
+// Get dimensions from resolution setting
+function getDimensions(resolution: ExportSettings["resolution"]): { width: number; height: number } {
+  switch (resolution) {
+    case "4k":
+      return { width: 3840, height: 2160 }
+    case "720p":
+      return { width: 1280, height: 720 }
+    default:
+      return { width: 1920, height: 1080 }
+  }
+}
 
 type RenderStatus = "idle" | "rendering" | "complete" | "error"
 
@@ -51,48 +63,33 @@ export function ExportPage() {
   const [renderStatus, setRenderStatus] = useState<RenderStatus>("idle")
   const [renderProgress, setRenderProgress] = useState(0)
   const [copied, setCopied] = useState(false)
+  const [isMuted, setIsMuted] = useState(false)
   const playerRef = useRef<PlayerRef>(null)
 
   if (!project) return null
 
   const { exportSettings } = project
 
-  // Get clips with their assets
-  const clips = getClipsWithAssets(project.timeline.clips, project.assets)
+  // Get ALL clips with their assets (video, image, and audio)
+  const allClips = useMemo(() => {
+    return getClipsWithAssets(project.timeline.clips, project.assets)
+  }, [project.timeline.clips, project.assets])
 
-  // Transform timeline clips to Remotion format
-  const remotionShots = useMemo((): RemotionShot[] => {
-    const shots: RemotionShot[] = []
+  // Visual clips only (for counting)
+  const visualClips = useMemo(() => {
+    return allClips.filter(clip => clip.asset?.type === "video" || clip.asset?.type === "image")
+  }, [allClips])
 
-    // Sort clips by start time
-    const sortedClips = [...clips].sort((a, b) => a.startTime - b.startTime)
+  // Calculate total duration and frames
+  const totalDuration = allClips.reduce((acc, clip) => Math.max(acc, clip.startTime + clip.duration), 0)
+  const totalFrames = useMemo(() => Math.max(Math.round(totalDuration * FPS), FPS), [totalDuration])
+  const dimensions = getDimensions(exportSettings.resolution)
 
-    for (const clip of sortedClips) {
-      if (!clip.asset) continue
-
-      const src = getAssetDisplayUrl(clip.asset)
-      if (!src) continue
-
-      const type = clip.asset.type === "video" ? "video" : "image"
-
-      shots.push({
-        id: clip.id,
-        type,
-        src,
-        duration: clip.duration,
-        transition: "fade",
-        scale: clip.transform?.scale,
-        positionX: clip.transform?.positionX,
-        positionY: clip.transform?.positionY,
-        pan: clip.animation?.pan,
-      })
-    }
-
-    return shots
-  }, [clips])
-
-  // Calculate estimated values
-  const totalDuration = clips.reduce((acc, clip) => Math.max(acc, clip.startTime + clip.duration), 0)
+  // Memoize inputProps with mute setting
+  const inputProps = useMemo(() => ({
+    clips: allClips,
+    globalMuted: isMuted,
+  }), [allClips, isMuted])
 
   const estimatedSize = (() => {
     const baseSize = totalDuration * 2 // ~2MB per second at 1080p standard
@@ -103,13 +100,29 @@ export function ExportPage() {
 
   // Generate Remotion render command
   const getRenderCommand = useCallback(() => {
-    const resolution = exportSettings.resolution === "4k" ? "3840x2160"
-      : exportSettings.resolution === "720p" ? "1280x720"
-      : "1920x1080"
-    const [width, height] = resolution.split("x")
+    // Convert clips to serializable format for CLI render
+    const serializableClips = allClips.map(clip => ({
+      id: clip.id,
+      assetId: clip.assetId,
+      trackId: clip.trackId,
+      startTime: clip.startTime,
+      duration: clip.duration,
+      inPoint: clip.inPoint || 0,
+      transitionIn: clip.transitionIn,
+      transitionOut: clip.transitionOut,
+      transitionDuration: clip.transitionDuration,
+      asset: clip.asset ? {
+        id: clip.asset.id,
+        name: clip.asset.name,
+        type: clip.asset.type,
+        url: getAssetDisplayUrl(clip.asset),
+        storageType: clip.asset.storageType,
+        duration: clip.asset.duration,
+      } : undefined,
+    }))
 
-    return `npx remotion render src/remotion/index.ts VideoComposition out/${project.name || "video"}.${exportSettings.format} --props='${JSON.stringify({ shots: remotionShots })}' --width=${width} --height=${height} --fps=${exportSettings.frameRate}`
-  }, [project.name, exportSettings, remotionShots])
+    return `npx remotion render src/remotion/index.ts TimelineComposition out/${project.name || "video"}.${exportSettings.format} --props='${JSON.stringify({ clips: serializableClips })}' --width=${dimensions.width} --height=${dimensions.height} --fps=${exportSettings.frameRate}`
+  }, [project.name, exportSettings, allClips, dimensions])
 
   const handleCopyCommand = useCallback(() => {
     navigator.clipboard.writeText(getRenderCommand())
@@ -138,23 +151,26 @@ export function ExportPage() {
   }, [])
 
   const handleStartRender = useCallback(async () => {
-    if (remotionShots.length === 0) {
+    if (visualClips.length === 0) {
       setRenderStatus("error")
       return
     }
 
-    // For single shot, download directly
-    if (remotionShots.length === 1 && remotionShots[0].src) {
-      const shot = remotionShots[0]
-      const ext = shot.type === "video" ? "mp4" : "jpg"
-      await handleDownloadSource(shot.src, `${project.name || "export"}.${ext}`)
-      return
+    // For single clip, download directly
+    if (visualClips.length === 1 && visualClips[0].asset) {
+      const clip = visualClips[0]
+      const url = getAssetDisplayUrl(clip.asset!)
+      if (url) {
+        const ext = clip.asset!.type === "video" ? "mp4" : "jpg"
+        await handleDownloadSource(url, `${project.name || "export"}.${ext}`)
+        return
+      }
     }
 
-    // For multiple shots, show the CLI command
+    // For multiple clips, show the CLI command
     setRenderStatus("complete")
     setRenderProgress(100)
-  }, [remotionShots, project.name, handleDownloadSource])
+  }, [visualClips, project.name, handleDownloadSource])
 
   const formatTime = (seconds: number) => {
     const mins = Math.floor(seconds / 60)
@@ -167,16 +183,31 @@ export function ExportPage() {
       <div className="max-w-4xl mx-auto p-6 lg:p-8 space-y-8">
         {/* Video Preview Panel */}
         <div className="aspect-video relative bg-zinc-900 rounded-2xl overflow-hidden">
-          {remotionShots.length > 0 ? (
-            <VideoPreview
-              ref={playerRef}
-              shots={remotionShots}
-              width="100%"
-              height="100%"
-              autoPlay={false}
-              loop={false}
-              controls={true}
-            />
+          {visualClips.length > 0 ? (
+            <>
+              <Player
+                ref={playerRef}
+                component={TimelineComposition}
+                inputProps={inputProps}
+                durationInFrames={totalFrames}
+                fps={FPS}
+                compositionWidth={dimensions.width}
+                compositionHeight={dimensions.height}
+                style={{
+                  width: "100%",
+                  height: "100%",
+                }}
+                controls={true}
+              />
+              {/* Mute button overlay */}
+              <button
+                onClick={() => setIsMuted(!isMuted)}
+                className="absolute top-3 right-3 w-10 h-10 bg-black/60 hover:bg-black/80 rounded-full flex items-center justify-center text-white transition-colors"
+                title={isMuted ? "Unmute" : "Mute"}
+              >
+                {isMuted ? <VolumeX className="w-5 h-5" /> : <Volume2 className="w-5 h-5" />}
+              </button>
+            </>
           ) : (
             <div className="w-full h-full flex items-center justify-center text-zinc-600 text-center">
               <div>
@@ -204,7 +235,7 @@ export function ExportPage() {
           <div className="grid grid-cols-2 gap-4">
             <div>
               <p className="text-2xl font-bold text-zinc-100">
-                {clips.length}
+                {visualClips.length}
               </p>
               <p className="text-sm text-zinc-500">Clips</p>
             </div>
@@ -372,7 +403,7 @@ export function ExportPage() {
               />
             </div>
             <p className="text-sm text-zinc-500">
-              Processing clip {Math.ceil((renderProgress / 100) * clips.length)} of {clips.length}...
+              Processing clip {Math.ceil((renderProgress / 100) * visualClips.length)} of {visualClips.length}...
             </p>
           </div>
         )}
@@ -385,22 +416,26 @@ export function ExportPage() {
             </div>
 
             {/* Download individual clips */}
-            {remotionShots.length > 0 && (
+            {visualClips.length > 0 && (
               <div className="space-y-2">
                 <p className="text-sm text-zinc-400">Download source files:</p>
                 <div className="flex flex-wrap gap-2">
-                  {remotionShots.map((shot, i) => (
-                    <button
-                      key={shot.id}
-                      onClick={() => handleDownloadSource(
-                        shot.src!,
-                        `${project.name || "clip"}-${i + 1}.${shot.type === "video" ? "mp4" : "jpg"}`
-                      )}
-                      className="px-3 py-1.5 bg-zinc-800 hover:bg-zinc-700 rounded-lg text-sm text-zinc-300 transition-colors"
-                    >
-                      Clip {i + 1} ({shot.type})
-                    </button>
-                  ))}
+                  {visualClips.map((clip, i) => {
+                    const url = clip.asset ? getAssetDisplayUrl(clip.asset) : null
+                    if (!url) return null
+                    return (
+                      <button
+                        key={clip.id}
+                        onClick={() => handleDownloadSource(
+                          url,
+                          `${project.name || "clip"}-${i + 1}.${clip.asset?.type === "video" ? "mp4" : "jpg"}`
+                        )}
+                        className="px-3 py-1.5 bg-zinc-800 hover:bg-zinc-700 rounded-lg text-sm text-zinc-300 transition-colors"
+                      >
+                        Clip {i + 1} ({clip.asset?.type})
+                      </button>
+                    )
+                  })}
                 </div>
               </div>
             )}

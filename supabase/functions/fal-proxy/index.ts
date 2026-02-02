@@ -76,17 +76,21 @@ serve(async (req) => {
         // Poll job status
         const { model, requestId } = params
 
-        const response = await fetch(
-          `${FAL_API_URL}/${model}/requests/${requestId}/status`,
-          {
-            headers: {
-              "Authorization": `Key ${FAL_API_KEY}`,
-            },
-          }
-        )
+        const statusUrl = `${FAL_API_URL}/${model}/requests/${requestId}/status`
+        console.log(`FAL.ai status check - URL: ${statusUrl}`)
+
+        const response = await fetch(statusUrl, {
+          headers: {
+            "Authorization": `Key ${FAL_API_KEY}`,
+          },
+        })
+
+        console.log(`FAL.ai status response: ${response.status}`)
 
         if (!response.ok) {
-          throw new Error("Failed to fetch status")
+          const errorText = await response.text()
+          console.log(`FAL.ai status error: ${errorText}`)
+          throw new Error(`Failed to fetch status: ${response.status} - ${errorText}`)
         }
 
         const status = await response.json()

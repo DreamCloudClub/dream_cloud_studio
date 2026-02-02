@@ -31,14 +31,34 @@ serve(async (req) => {
     switch (action) {
       case "create_prediction": {
         const { version, input } = params
-        response = await fetch(`${REPLICATE_API_URL}/predictions`, {
-          method: "POST",
-          headers: {
-            "Authorization": `Bearer ${REPLICATE_API_TOKEN}`,
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({ version, input }),
-        })
+
+        // Check if version is a model name (e.g., "google/veo-3") or a version hash
+        const isModelName = version.includes("/") && !version.match(/^[a-f0-9]{64}$/)
+
+        if (isModelName) {
+          // Use model-based endpoint for named models
+          console.log(`Creating prediction for model: ${version}`)
+          response = await fetch(`${REPLICATE_API_URL}/models/${version}/predictions`, {
+            method: "POST",
+            headers: {
+              "Authorization": `Bearer ${REPLICATE_API_TOKEN}`,
+              "Content-Type": "application/json",
+              "Prefer": "wait",  // Wait for result if quick
+            },
+            body: JSON.stringify({ input }),
+          })
+        } else {
+          // Use version-based endpoint for version hashes
+          console.log(`Creating prediction for version: ${version.substring(0, 12)}...`)
+          response = await fetch(`${REPLICATE_API_URL}/predictions`, {
+            method: "POST",
+            headers: {
+              "Authorization": `Bearer ${REPLICATE_API_TOKEN}`,
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({ version, input }),
+          })
+        }
         break
       }
 
@@ -60,6 +80,11 @@ serve(async (req) => {
     }
 
     const data = await response.json()
+
+    // Log errors for debugging
+    if (!response.ok) {
+      console.error(`Replicate API error (${response.status}):`, JSON.stringify(data))
+    }
 
     return new Response(
       JSON.stringify(data),

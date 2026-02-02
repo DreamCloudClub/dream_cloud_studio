@@ -19,6 +19,14 @@ export interface ClipAnimation {
   endPosition?: { x: number; y: number }
 }
 
+// Transition types for clip entrances/exits
+export type TransitionType = 'none' | 'crossfade' | 'fade-black' | 'wipe-left' | 'wipe-right' | 'zoom-in' | 'zoom-out'
+
+export interface ClipTransition {
+  type: TransitionType
+  duration: number  // seconds
+}
+
 // Embedded asset snapshot - stored with clip for persistence
 export interface EmbeddedAsset {
   id: string
@@ -51,6 +59,11 @@ export interface TimelineClip {
   animation?: ClipAnimation
   volume?: number       // 0-1
 
+  // Transitions
+  transitionIn?: TransitionType
+  transitionOut?: TransitionType
+  transitionDuration?: number  // seconds, default 0.5
+
   createdAt?: string
   updatedAt?: string
 }
@@ -76,6 +89,9 @@ export interface TimelineClipRow {
   animation: ClipAnimation | null
   volume: number
   embedded_asset: EmbeddedAsset | null
+  transition_in: TransitionType | null
+  transition_out: TransitionType | null
+  transition_duration: number | null
   created_at: string
   updated_at: string
 }
@@ -92,6 +108,9 @@ export interface TimelineClipInsert {
   animation?: ClipAnimation
   volume?: number
   embedded_asset?: EmbeddedAsset
+  transition_in?: TransitionType
+  transition_out?: TransitionType
+  transition_duration?: number
 }
 
 export interface TimelineClipUpdate {
@@ -103,6 +122,9 @@ export interface TimelineClipUpdate {
   animation?: ClipAnimation
   volume?: number
   embedded_asset?: EmbeddedAsset
+  transition_in?: TransitionType
+  transition_out?: TransitionType
+  transition_duration?: number
 }
 
 // ============================================
@@ -175,6 +197,9 @@ export function clipFromRow(row: TimelineClipRow): TimelineClip {
     animation: row.animation || undefined,
     volume: row.volume,
     embeddedAsset: row.embedded_asset || undefined,
+    transitionIn: row.transition_in || undefined,
+    transitionOut: row.transition_out || undefined,
+    transitionDuration: row.transition_duration || undefined,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   }
@@ -193,6 +218,9 @@ export function clipToInsert(clip: Omit<TimelineClip, 'id' | 'createdAt' | 'upda
     animation: clip.animation,
     volume: clip.volume,
     embedded_asset: clip.embeddedAsset,
+    transition_in: clip.transitionIn,
+    transition_out: clip.transitionOut,
+    transition_duration: clip.transitionDuration,
   }
 }
 

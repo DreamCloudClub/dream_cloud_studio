@@ -7,7 +7,8 @@ import { falProxy } from '../lib/api-proxy'
 // FAL.ai model IDs for Grok Imagine (xAI namespace)
 // See: https://fal.ai/models/xai/grok-imagine-image/api
 const GROK_IMAGE_MODEL = "xai/grok-imagine-image"
-const GROK_VIDEO_MODEL = "xai/grok-imagine-video"
+const GROK_VIDEO_TEXT_TO_VIDEO = "xai/grok-imagine-video/text-to-video"
+const GROK_VIDEO_IMAGE_TO_VIDEO = "xai/grok-imagine-video/image-to-video"
 
 interface FalStatusResponse {
   status: "IN_QUEUE" | "IN_PROGRESS" | "COMPLETED" | "FAILED"
@@ -24,20 +25,36 @@ async function submitRequest(
 }
 
 async function pollStatus(model: string, requestId: string): Promise<unknown> {
+  // For models with subpaths like "xai/grok-imagine-video/text-to-video",
+  // FAL.ai might need the base model path for status checks
+  // Try the full path first, fall back to base path if it fails
+  let statusModel = model
+
   while (true) {
-    const status = await falProxy.status({ model, requestId }) as FalStatusResponse
+    try {
+      const status = await falProxy.status({ model: statusModel, requestId }) as FalStatusResponse
 
-    if (status.status === "COMPLETED" && status.response_url) {
-      const result = await falProxy.result({ responseUrl: status.response_url })
-      return result
+      if (status.status === "COMPLETED" && status.response_url) {
+        const result = await falProxy.result({ responseUrl: status.response_url })
+        return result
+      }
+
+      if (status.status === "FAILED") {
+        throw new Error(status.error || "Generation failed")
+      }
+
+      // Wait before polling again
+      await new Promise((resolve) => setTimeout(resolve, 2000))
+    } catch (error) {
+      // If status check fails and we haven't tried base model path yet, try it
+      if (statusModel === model && model.includes('/')) {
+        const basePath = model.split('/').slice(0, -1).join('/')
+        console.log(`Status check failed with full path, trying base path: ${basePath}`)
+        statusModel = basePath
+        continue
+      }
+      throw error
     }
-
-    if (status.status === "FAILED") {
-      throw new Error(status.error || "Generation failed")
-    }
-
-    // Wait before polling again
-    await new Promise((resolve) => setTimeout(resolve, 2000))
   }
 }
 
@@ -121,7 +138,9 @@ export async function generateVideoGrok(options: GenerateVideoGrokOptions): Prom
     seed,
   } = options
 
-  console.log(`Generating video with Grok...`)
+  // Use different endpoint based on whether an image is provided
+  const model = imageUrl ? GROK_VIDEO_IMAGE_TO_VIDEO : GROK_VIDEO_TEXT_TO_VIDEO
+  console.log(`Generating video with Grok (${imageUrl ? 'image-to-video' : 'text-to-video'})...`)
 
   const input: Record<string, unknown> = {
     prompt,
@@ -133,21 +152,41 @@ export async function generateVideoGrok(options: GenerateVideoGrokOptions): Prom
   }
 
   if (duration) {
-    input.duration_seconds = duration
+    input.duration = duration
   }
 
   if (seed !== undefined) {
     input.seed = seed
   }
 
-  const requestId = await submitRequest(GROK_VIDEO_MODEL, input)
-  const result = await pollStatus(GROK_VIDEO_MODEL, requestId) as { video?: { url: string } }
+  const requestId = await submitRequest(model, input)
+  const result = await pollStatus(model, requestId) as Record<string, unknown>
 
-  if (!result.video?.url) {
-    throw new Error("No video generated")
+  console.log('Grok video generation result:', JSON.stringify(result, null, 2))
+
+  // Try different response formats the API might return
+  if (result.video && typeof result.video === 'object' && 'url' in (result.video as object)) {
+    return (result.video as { url: string }).url
   }
 
-  return result.video.url
+  // Some APIs return video_url directly
+  if (typeof result.video_url === 'string') {
+    return result.video_url
+  }
+
+  // Some APIs return url directly
+  if (typeof result.url === 'string') {
+    return result.url
+  }
+
+  // Some APIs return videos array
+  if (Array.isArray(result.videos) && result.videos.length > 0) {
+    const firstVideo = result.videos[0]
+    if (typeof firstVideo === 'string') return firstVideo
+    if (typeof firstVideo?.url === 'string') return firstVideo.url
+  }
+
+  throw new Error(`No video generated. Response: ${JSON.stringify(result)}`)
 }
 
 // ============================================

@@ -28,11 +28,13 @@ export async function callEdgeFunction<T = unknown>(
   })
 
   if (error) {
+    console.error(`Edge function ${functionName}/${action} error:`, error)
     throw new Error(error.message || `Edge function ${functionName} failed`)
   }
 
   // Check for error in response body (edge functions may return errors in data)
   if (data?.error) {
+    console.error(`Edge function ${functionName}/${action} returned error:`, data.error)
     throw new Error(data.error)
   }
 

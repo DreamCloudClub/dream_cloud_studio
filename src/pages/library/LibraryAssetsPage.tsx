@@ -20,6 +20,7 @@ import {
   Trash2,
   AlertTriangle,
   FolderOpen,
+  Grid2X2,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { LibraryLayout, UploadAssetModal, AssetDetailsModal } from "@/components/library"
@@ -68,9 +69,17 @@ interface CategorySectionProps {
   assets: Asset[]
   onDeleteAsset: (asset: Asset) => void
   onViewAsset: (asset: Asset) => void
+  gridColumns: number
 }
 
-function CategorySection({ category, assets, onDeleteAsset, onViewAsset }: CategorySectionProps) {
+const GRID_CLASSES: Record<number, string> = {
+  1: "grid-cols-1",
+  2: "grid-cols-2",
+  3: "grid-cols-2 sm:grid-cols-3",
+  4: "grid-cols-2 sm:grid-cols-3 md:grid-cols-4",
+}
+
+function CategorySection({ category, assets, onDeleteAsset, onViewAsset, gridColumns }: CategorySectionProps) {
   const [isExpanded, setIsExpanded] = useState(true)
   const Icon = iconMap[category.icon]
 
@@ -119,13 +128,14 @@ function CategorySection({ category, assets, onDeleteAsset, onViewAsset }: Categ
       </button>
 
       {isExpanded && (
-        <div className="ml-6 grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
+        <div className={cn("ml-6 grid gap-3", GRID_CLASSES[gridColumns])}>
           {assets.map((asset) => (
             <AssetCard
               key={asset.id}
               asset={asset}
               onDelete={() => onDeleteAsset(asset)}
               onViewDetails={() => onViewAsset(asset)}
+              gridColumns={gridColumns}
             />
           ))}
         </div>
@@ -138,11 +148,13 @@ interface AssetCardProps {
   asset: Asset
   onDelete: () => void
   onViewDetails: () => void
+  gridColumns?: number
 }
 
-function AssetCard({ asset, onDelete, onViewDetails }: AssetCardProps) {
+function AssetCard({ asset, onDelete, onViewDetails, gridColumns = 4 }: AssetCardProps) {
   const isVideo = asset.type === "video"
   const isAudio = asset.type === "audio"
+  const isFullWidth = gridColumns === 1
 
   // Get the display URL for this asset (handles local vs cloud storage)
   const displayUrl = getAssetDisplayUrl(asset)
@@ -151,13 +163,13 @@ function AssetCard({ asset, onDelete, onViewDetails }: AssetCardProps) {
   const getAudioIcon = () => {
     switch (asset.category) {
       case "music":
-        return <Music className="w-8 h-8 text-zinc-600" />
+        return <Music className="w-8 h-8 text-violet-400" />
       case "sound_effect":
-        return <Waves className="w-8 h-8 text-zinc-600" />
+        return <Waves className="w-8 h-8 text-violet-400" />
       case "voice":
-        return <Mic className="w-8 h-8 text-zinc-600" />
+        return <Mic className="w-8 h-8 text-violet-400" />
       default:
-        return <Music className="w-8 h-8 text-zinc-600" />
+        return <Music className="w-8 h-8 text-violet-400" />
     }
   }
 
@@ -172,7 +184,10 @@ function AssetCard({ asset, onDelete, onViewDetails }: AssetCardProps) {
       className="group bg-zinc-900 rounded-xl overflow-hidden border border-zinc-800 hover:border-zinc-700 transition-colors cursor-pointer"
     >
       {/* Thumbnail */}
-      <div className="aspect-square bg-zinc-800 relative">
+      <div className={cn(
+        "bg-zinc-800 relative overflow-hidden",
+        isFullWidth ? "max-h-[400px]" : "aspect-square"
+      )}>
         {/* Delete button - shows on hover */}
         <button
           onClick={handleDelete}
@@ -183,13 +198,19 @@ function AssetCard({ asset, onDelete, onViewDetails }: AssetCardProps) {
         </button>
 
         {isAudio ? (
-          <div className="absolute inset-0 flex items-center justify-center">
+          <div className={cn(
+            "flex items-center justify-center bg-gradient-to-br from-violet-500/20 to-purple-600/20",
+            isFullWidth ? "h-32" : "absolute inset-0"
+          )}>
             {getAudioIcon()}
           </div>
         ) : isVideo && displayUrl ? (
           <video
             src={displayUrl}
-            className="absolute inset-0 w-full h-full object-cover"
+            className={cn(
+              "w-full object-contain bg-black",
+              isFullWidth ? "max-h-[400px]" : "absolute inset-0 h-full object-cover"
+            )}
             preload="metadata"
             muted
             playsInline
@@ -198,10 +219,16 @@ function AssetCard({ asset, onDelete, onViewDetails }: AssetCardProps) {
           <img
             src={displayUrl}
             alt={asset.name}
-            className="absolute inset-0 w-full h-full object-cover"
+            className={cn(
+              "w-full",
+              isFullWidth ? "max-h-[400px] object-contain" : "absolute inset-0 h-full object-cover"
+            )}
           />
         ) : (
-          <div className="absolute inset-0 flex items-center justify-center">
+          <div className={cn(
+            "flex items-center justify-center",
+            isFullWidth ? "h-32" : "absolute inset-0"
+          )}>
             <Mountain className="w-8 h-8 text-zinc-700" />
           </div>
         )}
@@ -244,6 +271,7 @@ export function LibraryAssetsPage() {
   const [searchParams, setSearchParams] = useSearchParams()
   const [searchQuery, setSearchQuery] = useState("")
   const [selectedType, setSelectedType] = useState<"all" | AssetType>("all")
+  const [gridColumns, setGridColumns] = useState(4)
   const [allUserAssets, setAllUserAssets] = useState<Asset[]>([])
   const [isLoading, setIsLoading] = useState(true)
   const [isUploadModalOpen, setIsUploadModalOpen] = useState(false)
@@ -431,42 +459,65 @@ export function LibraryAssetsPage() {
           </div>
         </div>
 
-        {/* Content */}
-        <div className="flex-1 overflow-y-auto">
-          <div className="max-w-4xl mx-auto px-6 lg:px-8 pt-10 pb-6 space-y-6">
+        {/* Filters - Fixed under header */}
+        <div className="flex-shrink-0 max-w-4xl mx-auto w-full px-6 lg:px-8 pt-6 pb-4">
+          <div className="flex flex-col sm:flex-row gap-3">
+            {/* Grid size toggle */}
+            <div className="flex items-center gap-2">
+              <Grid2X2 className="w-4 h-4 text-zinc-500" />
+              <div className="flex items-center bg-zinc-800/50 rounded-xl p-1">
+                {[1, 2, 3, 4].map((cols) => (
+                  <button
+                    key={cols}
+                    onClick={() => setGridColumns(cols)}
+                    className={cn(
+                      "w-7 h-7 rounded-lg text-xs font-medium transition-colors flex items-center justify-center",
+                      gridColumns === cols
+                        ? "bg-sky-500 text-white"
+                        : "text-zinc-400 hover:text-zinc-200"
+                    )}
+                  >
+                    {cols}
+                  </button>
+                ))}
+              </div>
+            </div>
 
-        {/* Filters */}
-        <div className="flex flex-col sm:flex-row gap-3">
-          <div className="relative flex-1">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-zinc-500" />
-            <input
-              type="text"
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              placeholder="Search assets..."
-              className="w-full pl-10 pr-4 py-2.5 bg-zinc-800/50 border border-zinc-700 rounded-xl text-sm text-zinc-200 placeholder:text-zinc-500 focus:outline-none focus:border-sky-500"
-            />
-          </div>
-          <div className="flex items-center gap-2">
-            <Filter className="w-4 h-4 text-zinc-500" />
-            <div className="flex items-center bg-zinc-800/50 rounded-xl p-1">
-              {(["all", "image", "video", "audio"] as const).map((type) => (
-                <button
-                  key={type}
-                  onClick={() => handleTypeChange(type)}
-                  className={cn(
-                    "px-3 py-1.5 rounded-lg text-xs font-medium transition-colors",
-                    selectedType === type
-                      ? "bg-sky-500 text-white"
-                      : "text-zinc-400 hover:text-zinc-200"
-                  )}
-                >
-                  {type.charAt(0).toUpperCase() + type.slice(1)}
-                </button>
-              ))}
+            <div className="relative flex-1">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-zinc-500" />
+              <input
+                type="text"
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                placeholder="Search assets..."
+                className="w-full pl-10 pr-4 py-2.5 bg-zinc-800/50 border border-zinc-700 rounded-xl text-sm text-zinc-200 placeholder:text-zinc-500 focus:outline-none focus:border-sky-500"
+              />
+            </div>
+            <div className="flex items-center gap-2">
+              <Filter className="w-4 h-4 text-zinc-500" />
+              <div className="flex items-center bg-zinc-800/50 rounded-xl p-1">
+                {(["all", "image", "video", "audio"] as const).map((type) => (
+                  <button
+                    key={type}
+                    onClick={() => handleTypeChange(type)}
+                    className={cn(
+                      "px-3 py-1.5 rounded-lg text-xs font-medium transition-colors",
+                      selectedType === type
+                        ? "bg-sky-500 text-white"
+                        : "text-zinc-400 hover:text-zinc-200"
+                    )}
+                  >
+                    {type.charAt(0).toUpperCase() + type.slice(1)}
+                  </button>
+                ))}
+              </div>
             </div>
           </div>
         </div>
+
+        {/* Content */}
+        <div className="flex-1 overflow-y-auto custom-scrollbar">
+          <div className="max-w-4xl mx-auto px-6 lg:px-8 py-6 space-y-6">
 
         {/* Category Sections */}
         <div className="space-y-6">
@@ -477,6 +528,7 @@ export function LibraryAssetsPage() {
               assets={assets}
               onDeleteAsset={handleDeleteClick}
               onViewAsset={handleViewDetails}
+              gridColumns={gridColumns}
             />
           ))}
         </div>

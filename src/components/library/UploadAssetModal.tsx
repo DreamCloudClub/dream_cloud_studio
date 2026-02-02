@@ -134,7 +134,8 @@ export function UploadAssetModal({ isOpen, onClose, onSuccess }: UploadAssetModa
       onClose()
     } catch (err) {
       console.error("Upload error:", err)
-      setError("Failed to upload asset. Please try again.")
+      const errorMessage = err instanceof Error ? err.message : "Unknown error"
+      setError(`Failed to upload: ${errorMessage}`)
     } finally {
       setIsUploading(false)
     }

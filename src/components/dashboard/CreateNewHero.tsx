@@ -78,15 +78,6 @@ const IMAGE_SUB_MODES: SubMode[] = [
     outputs: "Edited image with masked regions regenerated according to prompt, seamlessly blended."
   },
   {
-    id: "selective-edit",
-    label: "Multi-Ref",
-    icon: Expand,
-    title: "Selective Editing (Multi-Reference)",
-    description: "Compose or edit images using multiple reference images. Insert characters into scenes, blend styles, or create new compositions from reference elements.",
-    inputs: "Text prompt + 1-4 reference images with optional roles (character, scene, style, object).",
-    outputs: "Generated image combining elements from references according to prompt."
-  },
-  {
     id: "upscale",
     label: "Upscale",
     icon: Maximize,
@@ -312,7 +303,6 @@ function getProcessIcons(primaryMode: PrimaryMode, subMode: string | null): { in
     "text-to-image": { inputIcon: Type, outputIcon: Image },
     "image-to-image": { inputIcon: Image, outputIcon: Image },
     "inpaint": { inputIcon: Paintbrush, outputIcon: Image },
-    "selective-edit": { inputIcon: ImagePlus, outputIcon: Image },
     "upscale": { inputIcon: Image, outputIcon: Maximize },
     // Video modes
     "text-to-video": { inputIcon: Type, outputIcon: Video },

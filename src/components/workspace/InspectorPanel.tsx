@@ -270,14 +270,6 @@ function ItemCard({ item, onEdit, onDelete }: ItemCardProps) {
     })
   }
 
-  // Get first 5 lines as excerpt
-  const lines = item.content.split("\n").slice(0, 5)
-  // Pad to 5 lines if needed
-  while (lines.length < 5) {
-    lines.push("")
-  }
-  const excerpt = lines.join("\n")
-
   const isScript = item.type === 'script'
 
   return (
@@ -319,9 +311,9 @@ function ItemCard({ item, onEdit, onDelete }: ItemCardProps) {
           )}
         </div>
       </div>
-      {/* Fixed height excerpt - 5 lines */}
-      <p className="text-xs text-zinc-300 whitespace-pre-wrap leading-[1.4]" style={{ height: "84px" }}>
-        {excerpt}
+      {/* Excerpt with line-clamp for clean multi-line truncation */}
+      <p className="text-xs text-zinc-300 leading-[1.4] line-clamp-5">
+        {item.content}
       </p>
     </div>
   )

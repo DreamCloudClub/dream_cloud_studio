@@ -10,6 +10,7 @@ import { PlatformDetail } from "@/pages/PlatformDetail"
 import { PlatformEdit } from "@/pages/PlatformEdit"
 import { CreatePlatform } from "@/pages/CreatePlatform"
 import { CreatorPage } from "@/pages/CreatorPage"
+import { UpscalePage } from "@/pages/UpscalePage"
 import { AnimationLibrary } from "@/pages/AnimationLibrary"
 import { AnimationEditor } from "@/pages/AnimationEditor"
 import { DevTools } from "@/pages/DevTools"
@@ -70,6 +71,7 @@ function AppRoutes() {
       <Route path="/create/asset" element={<ProtectedRoute><CreateAssetWizard /></ProtectedRoute>} />
       <Route path="/create/foundation" element={<ProtectedRoute><CreateFoundationWizard /></ProtectedRoute>} />
       <Route path="/create/platform" element={<ProtectedRoute><CreatePlatform /></ProtectedRoute>} />
+      <Route path="/create/image/upscale" element={<ProtectedRoute><UpscalePage /></ProtectedRoute>} />
       <Route path="/create/:type/:subMode" element={<ProtectedRoute><CreatorPage /></ProtectedRoute>} />
       <Route path="/create/:type" element={<ProtectedRoute><CreatorPage /></ProtectedRoute>} />
 

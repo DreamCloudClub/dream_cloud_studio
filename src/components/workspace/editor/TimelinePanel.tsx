@@ -47,14 +47,20 @@ function useMergedAssets(): ProjectAsset[] {
   }, [projectAssets, libraryAssets])
 }
 
+export interface TrackAudioSettings {
+  muted: boolean
+  volume: number // 0-100
+}
+
 interface TimelinePanelProps {
   currentTime: number
   scale: number
   onTimeChange: (time: number) => void
   onScrubStart?: () => void
+  onTrackAudioChange?: (settings: Record<string, TrackAudioSettings>) => void
 }
 
-export function TimelinePanel({ currentTime, scale, onTimeChange, onScrubStart }: TimelinePanelProps) {
+export function TimelinePanel({ currentTime, scale, onTimeChange, onScrubStart, onTrackAudioChange }: TimelinePanelProps) {
   const {
     project,
     selectedClipId,
@@ -75,6 +81,42 @@ export function TimelinePanel({ currentTime, scale, onTimeChange, onScrubStart }
   const [isDraggingPlayhead, setIsDraggingPlayhead] = useState(false)
   // Tracks with auto-snap enabled (default: none - all tracks start unlocked)
   const [autoSnapTracks, setAutoSnapTracks] = useState<Set<string>>(new Set())
+  // Track audio settings: muted and volume (0-100)
+  const [trackMuted, setTrackMuted] = useState<Record<string, boolean>>({})
+  const [trackVolume, setTrackVolume] = useState<Record<string, number>>({})
+
+  // Helper to get track audio settings with defaults
+  const getTrackMuted = (trackId: string) => trackMuted[trackId] ?? false
+  const getTrackVolume = (trackId: string) => trackVolume[trackId] ?? 100
+
+  const toggleTrackMute = (trackId: string) => {
+    setTrackMuted(prev => ({ ...prev, [trackId]: !prev[trackId] }))
+  }
+
+  const setTrackVolumeLevel = (trackId: string, volume: number) => {
+    setTrackVolume(prev => ({ ...prev, [trackId]: volume }))
+    // If setting volume > 0, unmute the track
+    if (volume > 0 && trackMuted[trackId]) {
+      setTrackMuted(prev => ({ ...prev, [trackId]: false }))
+    }
+  }
+
+  // Emit track audio settings when they change
+  useEffect(() => {
+    if (onTrackAudioChange) {
+      // Build settings object for all known tracks
+      const allTrackIds = new Set([...Object.keys(trackMuted), ...Object.keys(trackVolume)])
+      const settings: Record<string, TrackAudioSettings> = {}
+      for (const trackId of allTrackIds) {
+        settings[trackId] = {
+          muted: trackMuted[trackId] ?? false,
+          volume: trackVolume[trackId] ?? 100,
+        }
+      }
+      onTrackAudioChange(settings)
+    }
+  }, [trackMuted, trackVolume, onTrackAudioChange])
+
   const timelineRef = useRef<HTMLDivElement>(null)
   const scrollContainerRef = useRef<HTMLDivElement>(null)
   const tracksContainerRef = useRef<HTMLDivElement>(null)
@@ -555,19 +597,87 @@ export function TimelinePanel({ currentTime, scale, onTimeChange, onScrubStart }
   }
 
   // Handle trimming from the start edge (changes startTime, inPoint, and duration)
+  // Checks for overlap with previous clip on the same track
   const handleTrimStart = useCallback(
     (clipId: string, newStartTime: number, newInPoint: number, newDuration: number) => {
-      trimClip(clipId, newInPoint, newDuration, newStartTime)
+      // Find the clip and its track
+      const clip = clips.find(c => c.id === clipId)
+      if (!clip) return
+
+      let trackId = clip.trackId
+      if (trackId === "video-main") trackId = "video-1"
+
+      // Find clips on the same track that come before this one
+      const clipsOnTrack = clips.filter(c => {
+        let cTrackId = c.trackId
+        if (cTrackId === "video-main") cTrackId = "video-1"
+        return cTrackId === trackId && c.id !== clipId
+      })
+
+      // Check for overlap with any clip that would be in the way
+      const previousClip = clipsOnTrack
+        .filter(c => c.startTime + c.duration <= clip.startTime + 0.01) // clips that end before or at our start
+        .sort((a, b) => (b.startTime + b.duration) - (a.startTime + a.duration))[0] // get the nearest one
+
+      // Don't allow trimming to overlap with the previous clip
+      let finalStartTime = newStartTime
+      if (previousClip) {
+        const previousEndTime = previousClip.startTime + previousClip.duration
+        if (newStartTime < previousEndTime) {
+          finalStartTime = previousEndTime
+        }
+      }
+
+      // Recalculate duration based on adjusted start time
+      const startDelta = finalStartTime - clip.startTime
+      const adjustedDuration = clip.duration - startDelta
+      const adjustedInPoint = (clip.inPoint || 0) + startDelta
+
+      if (adjustedDuration >= 0.5) { // MIN_CLIP_DURATION
+        trimClip(clipId, adjustedInPoint, adjustedDuration, finalStartTime)
+      }
     },
-    [trimClip]
+    [clips, trimClip]
   )
 
   // Handle trimming from the end edge (only changes duration)
+  // Checks for overlap with next clip on the same track
   const handleTrimEnd = useCallback(
     (clipId: string, newDuration: number) => {
-      trimClip(clipId, undefined, newDuration)
+      // Find the clip and its track
+      const clip = clips.find(c => c.id === clipId)
+      if (!clip) return
+
+      let trackId = clip.trackId
+      if (trackId === "video-main") trackId = "video-1"
+
+      // Find clips on the same track that come after this one
+      const clipsOnTrack = clips.filter(c => {
+        let cTrackId = c.trackId
+        if (cTrackId === "video-main") cTrackId = "video-1"
+        return cTrackId === trackId && c.id !== clipId
+      })
+
+      // Find the next clip (starts at or after our current end)
+      const nextClip = clipsOnTrack
+        .filter(c => c.startTime >= clip.startTime + clip.duration - 0.01)
+        .sort((a, b) => a.startTime - b.startTime)[0]
+
+      // Don't allow trimming to overlap with the next clip
+      let finalDuration = newDuration
+      if (nextClip) {
+        const maxEndTime = nextClip.startTime
+        const maxDuration = maxEndTime - clip.startTime
+        if (clip.startTime + newDuration > maxEndTime) {
+          finalDuration = maxDuration
+        }
+      }
+
+      if (finalDuration >= 0.5) { // MIN_CLIP_DURATION
+        trimClip(clipId, undefined, finalDuration)
+      }
     },
-    [trimClip]
+    [clips, trimClip]
   )
 
   // Playhead drag handlers
@@ -589,7 +699,7 @@ export function TimelinePanel({ currentTime, scale, onTimeChange, onScrubStart }
     const handleMouseMove = (e: MouseEvent) => {
       if (!tracksContainerRef.current) return
       const rect = tracksContainerRef.current.getBoundingClientRect()
-      const x = e.clientX - rect.left - 80 // Subtract track label width
+      const x = e.clientX - rect.left - 112 // Subtract track label width (w-28 = 112px)
       pendingTime = Math.max(0, x / (BASE_SCALE * scale))
 
       // Use requestAnimationFrame for smooth updates
@@ -639,7 +749,7 @@ export function TimelinePanel({ currentTime, scale, onTimeChange, onScrubStart }
         <div
           ref={timelineRef}
           className="relative min-w-full"
-          style={{ width: `${Math.max(totalDuration * BASE_SCALE * scale + 80, 100)}px` }}
+          style={{ width: `${Math.max(totalDuration * BASE_SCALE * scale + 112, 100)}px` }}
         >
           {/* Time Ruler - clickable to seek */}
           <TimelineRuler totalDuration={totalDuration} scale={scale} onTimeChange={(time) => {
@@ -663,6 +773,8 @@ export function TimelinePanel({ currentTime, scale, onTimeChange, onScrubStart }
                 isDroppingAsset={isDroppingAsset && droppingTrackId === track.id}
                 isDragTarget={draggedClipId !== null && dragOverTrackId === track.id}
                 autoSnap={autoSnapTracks.has(track.id)}
+                muted={getTrackMuted(track.id)}
+                volume={getTrackVolume(track.id)}
                 onToggleAutoSnap={async () => {
                   const isCurrentlySnapped = autoSnapTracks.has(track.id)
                   setAutoSnapTracks(prev => {
@@ -679,6 +791,8 @@ export function TimelinePanel({ currentTime, scale, onTimeChange, onScrubStart }
                     await snapClipsOnTrack(track.id)
                   }
                 }}
+                onMuteToggle={() => toggleTrackMute(track.id)}
+                onVolumeChange={(vol) => setTrackVolumeLevel(track.id, vol)}
                 onClipClick={handleClipClick}
                 onClipDragStart={handleDragStart}
                 onClipDragEnd={handleDragEnd}
@@ -707,6 +821,8 @@ export function TimelinePanel({ currentTime, scale, onTimeChange, onScrubStart }
                 isDroppingAsset={isDroppingAsset && droppingTrackId === track.id}
                 isDragTarget={draggedClipId !== null && dragOverTrackId === track.id}
                 autoSnap={autoSnapTracks.has(track.id)}
+                muted={getTrackMuted(track.id)}
+                volume={getTrackVolume(track.id)}
                 onToggleAutoSnap={async () => {
                   const isCurrentlySnapped = autoSnapTracks.has(track.id)
                   setAutoSnapTracks(prev => {
@@ -723,6 +839,8 @@ export function TimelinePanel({ currentTime, scale, onTimeChange, onScrubStart }
                     await snapClipsOnTrack(track.id)
                   }
                 }}
+                onMuteToggle={() => toggleTrackMute(track.id)}
+                onVolumeChange={(vol) => setTrackVolumeLevel(track.id, vol)}
                 onClipClick={handleClipClick}
                 onClipDragStart={handleDragStart}
                 onClipDragEnd={handleDragEnd}
@@ -740,7 +858,7 @@ export function TimelinePanel({ currentTime, scale, onTimeChange, onScrubStart }
             {/* Playhead */}
             <div
               className="absolute top-0 bottom-0 z-30"
-              style={{ left: `${80 + playheadPosition}px` }}
+              style={{ left: `${112 + playheadPosition}px` }}
             >
               {/* Playhead line */}
               <div className={`absolute top-0 bottom-0 left-1/2 -translate-x-1/2 w-0.5 pointer-events-none ${

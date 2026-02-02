@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from "react"
+import { useState, useEffect, useRef, useCallback } from "react"
 import { useNavigate, useParams, useSearchParams, Link } from "react-router-dom"
 import {
   Sparkles,
@@ -17,7 +17,6 @@ import {
   Trash2,
   ImagePlus,
   Upload,
-  Paintbrush,
   Info,
   AlertTriangle,
 } from "lucide-react"
@@ -26,7 +25,7 @@ import { useCreatorStore, type AssetType } from "@/state/creatorStore"
 import { useUIStore } from "@/state/uiStore"
 import { useAuth } from "@/contexts/AuthContext"
 import { useAssetWizardStore, type PromptType } from "@/state/assetWizardStore"
-import { BubblePanel } from "@/components/create"
+import { BubblePanel, MaskingCanvas } from "@/components/create"
 import { InspectorPanel, WorkspaceNav } from "@/components/workspace"
 import { HeaderActions } from "@/components/shared"
 import { DashboardNav } from "@/components/dashboard"
@@ -46,7 +45,6 @@ import {
   ASPECT_RATIOS,
   OUTPUT_COUNTS,
   INPAINT_AREAS,
-  REFERENCE_ROLES,
   type ImageModelConfig,
 } from "@/config/imageModes"
 
@@ -65,9 +63,17 @@ interface CustomDropdownProps {
   options: DropdownOption[]
   placeholder?: string
   className?: string
+  accentColor?: "orange" | "red" | "violet" | "emerald"
 }
 
-function CustomDropdown({ value, onChange, options, placeholder = "Select...", className }: CustomDropdownProps) {
+function CustomDropdown({ value, onChange, options, placeholder = "Select...", className, accentColor = "orange" }: CustomDropdownProps) {
+  const accentStyles = {
+    orange: { border: "border-orange-500 ring-1 ring-orange-500/20", selected: "bg-orange-500/10 text-orange-400", check: "text-orange-400" },
+    red: { border: "border-red-500 ring-1 ring-red-500/20", selected: "bg-red-500/10 text-red-400", check: "text-red-400" },
+    violet: { border: "border-violet-500 ring-1 ring-violet-500/20", selected: "bg-violet-500/10 text-violet-400", check: "text-violet-400" },
+    emerald: { border: "border-emerald-500 ring-1 ring-emerald-500/20", selected: "bg-emerald-500/10 text-emerald-400", check: "text-emerald-400" },
+  }
+  const accent = accentStyles[accentColor]
   const [isOpen, setIsOpen] = useState(false)
   const dropdownRef = useRef<HTMLDivElement>(null)
 
@@ -101,7 +107,7 @@ function CustomDropdown({ value, onChange, options, placeholder = "Select...", c
           "flex items-center justify-between gap-2",
           "hover:bg-zinc-800/80",
           isOpen
-            ? "border-orange-500 ring-1 ring-orange-500/20"
+            ? accent.border
             : "border-zinc-700/50 hover:border-zinc-600"
         )}
       >
@@ -130,7 +136,7 @@ function CustomDropdown({ value, onChange, options, placeholder = "Select...", c
                 "w-full px-3 py-2 text-left transition-all text-sm",
                 "flex items-center justify-between",
                 option.value === value
-                  ? "bg-orange-500/10 text-orange-400"
+                  ? accent.selected
                   : "text-zinc-300 hover:bg-zinc-800"
               )}
             >
@@ -141,7 +147,7 @@ function CustomDropdown({ value, onChange, options, placeholder = "Select...", c
                 )}
               </div>
               {option.value === value && (
-                <Check className="w-4 h-4 text-orange-400 flex-shrink-0" />
+                <Check className={cn("w-4 h-4 flex-shrink-0", accent.check)} />
               )}
             </button>
           ))}
@@ -200,17 +206,11 @@ interface GeneratedBatch {
   refinement: string
 }
 
-interface ReferenceImage {
-  asset: Asset
-  role?: string
-}
-
 // Mode display names
 const MODE_LABELS: Record<string, string> = {
   "text-to-image": "Text to Image",
   "image-to-image": "Image to Image",
   "inpaint": "Inpainting",
-  "selective-edit": "Selective Editing",
   "outpaint": "Outpainting",
   "upscale": "AI Upscaling",
   "text-to-video": "Text to Video",
@@ -229,30 +229,86 @@ const TYPE_ICONS: Record<string, typeof Image> = {
   animation: Play,
 }
 
-const TYPE_COLORS: Record<string, { bg: string; text: string; border: string; accent: string }> = {
-  image: { bg: "bg-orange-500/10", text: "text-orange-400", border: "border-orange-500/30", accent: "bg-orange-500" },
-  video: { bg: "bg-red-500/10", text: "text-red-400", border: "border-red-500/30", accent: "bg-red-500" },
-  audio: { bg: "bg-violet-500/10", text: "text-violet-400", border: "border-violet-500/30", accent: "bg-violet-500" },
-  animation: { bg: "bg-emerald-500/10", text: "text-emerald-400", border: "border-emerald-500/30", accent: "bg-emerald-500" },
+const TYPE_COLORS: Record<string, { bg: string; text: string; border: string; accent: string; hoverAccent: string; focusBorder: string; hoverBorder: string; hoverBg: string; hoverText: string; hoverTextLight: string; ring: string; borderSolid: string; bgButton: string; emptyBoxBorder: string; emptyBoxBg: string; emptyBoxHoverBorder: string; emptyBoxHoverBg: string }> = {
+  image: { bg: "bg-orange-500/10", text: "text-orange-400", border: "border-orange-500/30", accent: "bg-orange-500", hoverAccent: "hover:bg-orange-500", focusBorder: "focus:border-orange-500", hoverBorder: "hover:border-orange-500", hoverBg: "hover:bg-orange-500/5", hoverText: "hover:text-orange-400", hoverTextLight: "hover:text-orange-300", ring: "ring-orange-500/30", borderSolid: "border-orange-500/50", bgButton: "bg-orange-500/20", emptyBoxBorder: "border-orange-500/40", emptyBoxBg: "bg-orange-500/5", emptyBoxHoverBorder: "hover:border-orange-500", emptyBoxHoverBg: "hover:bg-orange-500/15" },
+  video: { bg: "bg-red-500/10", text: "text-red-400", border: "border-red-500/30", accent: "bg-red-500", hoverAccent: "hover:bg-red-500", focusBorder: "focus:border-red-500", hoverBorder: "hover:border-red-500", hoverBg: "hover:bg-red-500/5", hoverText: "hover:text-red-400", hoverTextLight: "hover:text-red-300", ring: "ring-red-500/30", borderSolid: "border-red-500/50", bgButton: "bg-red-500/20", emptyBoxBorder: "border-red-500/40", emptyBoxBg: "bg-red-500/5", emptyBoxHoverBorder: "hover:border-red-500", emptyBoxHoverBg: "hover:bg-red-500/15" },
+  audio: { bg: "bg-violet-500/10", text: "text-violet-400", border: "border-violet-500/30", accent: "bg-violet-500", hoverAccent: "hover:bg-violet-500", focusBorder: "focus:border-violet-500", hoverBorder: "hover:border-violet-500", hoverBg: "hover:bg-violet-500/5", hoverText: "hover:text-violet-400", hoverTextLight: "hover:text-violet-300", ring: "ring-violet-500/30", borderSolid: "border-violet-500/50", bgButton: "bg-violet-500/20", emptyBoxBorder: "border-violet-500/40", emptyBoxBg: "bg-violet-500/5", emptyBoxHoverBorder: "hover:border-violet-500", emptyBoxHoverBg: "hover:bg-violet-500/15" },
+  animation: { bg: "bg-emerald-500/10", text: "text-emerald-400", border: "border-emerald-500/30", accent: "bg-emerald-500", hoverAccent: "hover:bg-emerald-500", focusBorder: "focus:border-emerald-500", hoverBorder: "hover:border-emerald-500", hoverBg: "hover:bg-emerald-500/5", hoverText: "hover:text-emerald-400", hoverTextLight: "hover:text-emerald-300", ring: "ring-emerald-500/30", borderSolid: "border-emerald-500/50", bgButton: "bg-emerald-500/20", emptyBoxBorder: "border-emerald-500/40", emptyBoxBg: "bg-emerald-500/5", emptyBoxHoverBorder: "hover:border-emerald-500", emptyBoxHoverBg: "hover:bg-emerald-500/15" },
 }
 
 // Video generation options
+// Ordered from fastest/lightest to heaviest/professional
 const VIDEO_MODELS = [
-  { value: "kling", label: "Kling v2.1", description: "Best quality" },
-  { value: "veo-3", label: "Veo 3", description: "Google AI" },
-  { value: "grok-video", label: "Grok Video", description: "xAI" },
-  { value: "minimax", label: "Minimax", description: "Fast" },
+  {
+    value: "minimax",
+    label: "Minimax",
+    company: "Minimax",
+    description: "Fast",
+    supportsQuality: false,
+    supportsTextToVideo: true,
+    maxImages: 4,
+    durations: [5, 10],
+    bestFor: "Quick iterations and rapid prototyping",
+    inputs: ["Text prompt", "Optional source image", "Duration"],
+    notes: "Fastest video generation. Supports both text-to-video and image-to-video.",
+  },
+  {
+    value: "grok-video",
+    label: "Grok Video",
+    company: "xAI",
+    description: "Creative",
+    supportsQuality: false,
+    supportsTextToVideo: true,
+    maxImages: 4,
+    durations: [5, 10],
+    bestFor: "Creative and stylized video content",
+    inputs: ["Text prompt", "Optional source image", "Duration", "Aspect ratio"],
+    notes: "Fast generation with good prompt understanding. Supports text-to-video and image-to-video.",
+  },
+  {
+    value: "veo-3",
+    label: "Veo 3",
+    company: "Google",
+    description: "Photorealistic",
+    supportsQuality: false,
+    supportsTextToVideo: true,
+    maxImages: 4,
+    durations: [4, 6, 8],
+    bestFor: "Photorealistic video with natural motion and lighting",
+    inputs: ["Text prompt", "Optional source image", "Duration (4/6/8s)", "Aspect ratio"],
+    notes: "Google's latest video model. Supports text-to-video and image-to-video.",
+  },
+  {
+    value: "kling",
+    label: "Kling v2.1",
+    company: "Kuaishou",
+    description: "Professional",
+    supportsQuality: true,
+    supportsTextToVideo: false,
+    maxImages: 4,
+    durations: [5, 10],
+    bestFor: "High-quality cinematic video from source images",
+    inputs: ["Source image (required)", "Text prompt", "Duration (5s/10s)", "Quality (720p/1080p)"],
+    notes: "Industry-leading image-to-video. Requires a source image. Pro mode outputs 1080p.",
+  },
 ]
 
-const VIDEO_DURATIONS = [
-  { value: "5", label: "5 seconds" },
-  { value: "10", label: "10 seconds" },
-]
+// Helper to get duration options for a model
+const getVideoDurationsForModel = (modelValue: string) => {
+  const model = VIDEO_MODELS.find(m => m.value === modelValue)
+  const durations = model?.durations || [5, 10]
+  return durations.map(d => ({ value: String(d), label: `${d} seconds` }))
+}
 
 const VIDEO_ASPECT_RATIOS = [
   { value: "16:9", label: "Landscape (16:9)" },
   { value: "9:16", label: "Portrait (9:16)" },
   { value: "1:1", label: "Square (1:1)" },
+]
+
+const VIDEO_QUALITY = [
+  { value: "standard", label: "Standard (720p)" },
+  { value: "pro", label: "Pro (1080p)" },
 ]
 
 // ============================================
@@ -332,6 +388,14 @@ export function CreatorPage() {
   // Inpainting specific
   const [maskBlur, setMaskBlur] = useState(4)
   const [inpaintArea, setInpaintArea] = useState("masked_only")
+  const [maskDataUrl, setMaskDataUrl] = useState<string | null>(null)
+  const [hasMask, setHasMask] = useState(false)
+
+  // Handle mask changes from MaskingCanvas
+  const handleMaskChange = useCallback((dataUrl: string | null, maskExists: boolean) => {
+    setMaskDataUrl(dataUrl)
+    setHasMask(maskExists)
+  }, [])
 
   // Selective editing specific
   const [referenceStrength, setReferenceStrength] = useState(0.8)
@@ -342,18 +406,30 @@ export function CreatorPage() {
 
   // Video-specific state
   const [videoModel, setVideoModel] = useState<"kling" | "veo-3" | "grok-video" | "minimax">("kling")
-  const [videoDuration, setVideoDuration] = useState<5 | 10>(5)
+  const [videoDuration, setVideoDuration] = useState<number>(5)
   const [videoAspectRatio, setVideoAspectRatio] = useState("16:9")
+  const [videoQuality, setVideoQuality] = useState<"standard" | "pro">("pro")
+
+  // Video source images (for image-to-video, supports up to 4)
+  const [videoSourceImages, setVideoSourceImages] = useState<Asset[]>([])
+
+  // Reset duration when video model changes if current duration isn't valid
+  useEffect(() => {
+    const modelConfig = VIDEO_MODELS.find(m => m.value === videoModel)
+    const validDurations = modelConfig?.durations || [5, 10]
+    if (!validDurations.includes(videoDuration)) {
+      setVideoDuration(validDurations[0])
+    }
+  }, [videoModel, videoDuration])
 
   // Check if this is a video type
   const isVideo = type === "video"
   const isImageToVideo = isVideo && subMode === "image-to-video"
   const isTextToVideo = isVideo && subMode === "text-to-video"
 
-  // Reference images (for selective-edit)
-  const [referenceImages, setReferenceImages] = useState<ReferenceImage[]>([])
+  // Reference modal state
   const [showReferenceModal, setShowReferenceModal] = useState(false)
-  const [referenceModalTarget, setReferenceModalTarget] = useState<"base" | "reference" | "img2img">("reference")
+  const [referenceModalTarget, setReferenceModalTarget] = useState<"base" | "img2img" | "video">("img2img")
 
   // Image-to-image reference images (dynamic based on model)
   const [img2imgRefs, setImg2imgRefs] = useState<Asset[]>([])
@@ -367,8 +443,20 @@ export function CreatorPage() {
     }
   }, [model, img2imgRefs.length])
 
-  // Model info modal
+  // Model info modals
   const [showModelInfoModal, setShowModelInfoModal] = useState(false)
+  const [showVideoModelInfoModal, setShowVideoModelInfoModal] = useState(false)
+
+  // Auto-switch from Kling when in text-to-video mode (Kling requires source image)
+  useEffect(() => {
+    if (isTextToVideo && videoModel === "kling") {
+      // Switch to first model that supports text-to-video
+      const textToVideoModel = VIDEO_MODELS.find(m => m.supportsTextToVideo)
+      if (textToVideoModel) {
+        setVideoModel(textToVideoModel.value as "kling" | "veo-3" | "grok-video" | "minimax")
+      }
+    }
+  }, [isTextToVideo, videoModel])
 
   // Generation state
   const [isGenerating, setIsGenerating] = useState(false)
@@ -442,8 +530,10 @@ export function CreatorPage() {
   useEffect(() => {
     const handleBubbleVideoDuration = (event: CustomEvent<{ videoDuration: number }>) => {
       const { videoDuration: newDuration } = event.detail
-      if ([5, 10].includes(newDuration)) {
-        setVideoDuration(newDuration as 5 | 10)
+      const modelConfig = VIDEO_MODELS.find(m => m.value === videoModel)
+      const validDurations = modelConfig?.durations || [5, 10]
+      if (validDurations.includes(newDuration)) {
+        setVideoDuration(newDuration)
       }
     }
 
@@ -451,7 +541,7 @@ export function CreatorPage() {
     return () => {
       window.removeEventListener('bubble-update-video-duration', handleBubbleVideoDuration as EventListener)
     }
-  }, [])
+  }, [videoModel])
 
   // Listen for Bubble's trigger generation event
   useEffect(() => {
@@ -544,6 +634,7 @@ export function CreatorPage() {
     setGeneratedAssets,
     setUserDescription: setWizardDescription,
     setAiPrompt: setWizardPrompt,
+    setGenerationModel: setWizardGenerationModel,
     setCurrentStep,
     cachedBatches,
     setCachedBatches,
@@ -589,11 +680,28 @@ export function CreatorPage() {
   const handleSave = () => {
     if (!hasSelectedAssets) return
 
+    // Map model IDs to display names
+    const modelDisplayNames: Record<string, string> = {
+      "flux-pro": "flux-1.1-pro",
+      "flux-kontext": "flux-kontext-pro",
+      "gpt": "gpt-image-1.5",
+      "nano-banana": "imagen-3",
+      "grok": "grok-2-image",
+      "sdxl": "sdxl",
+      "kling": "kling-v2.1",
+      "veo-3": "veo-3",
+      "grok-video": "grok-video",
+      "minimax": "minimax-video-01",
+    }
+    const effectiveModel = isVideo ? videoModel : model
+    const generationModelName = modelDisplayNames[effectiveModel] || effectiveModel
+
     // Transfer data to wizard store
     setWizardAssetType(type as any)
     setWizardPromptType(subMode as PromptType)
     setWizardDescription(description)
     setWizardPrompt(enhancedPrompt)
+    setWizardGenerationModel(generationModelName)
     setGeneratedAssets(selectedAssets)
     setCurrentStep("save")
 
@@ -606,23 +714,6 @@ export function CreatorPage() {
     setBaseImage(asset)
     setBaseImageUrl(getAssetDisplayUrl(asset))
     setShowReferenceModal(false)
-  }
-
-  const handleAddReferenceImage = (asset: Asset) => {
-    if (referenceImages.length < caps.max_reference_images) {
-      setReferenceImages(prev => [...prev, { asset, role: "character" }])
-    }
-    setShowReferenceModal(false)
-  }
-
-  const handleRemoveReferenceImage = (assetId: string) => {
-    setReferenceImages(prev => prev.filter(r => r.asset.id !== assetId))
-  }
-
-  const handleUpdateReferenceRole = (assetId: string, role: string) => {
-    setReferenceImages(prev => prev.map(r =>
-      r.asset.id === assetId ? { ...r, role } : r
-    ))
   }
 
   // Img2img reference handlers
@@ -639,6 +730,20 @@ export function CreatorPage() {
     setImg2imgRefs(prev => prev.filter((_, i) => i !== index))
   }
 
+  // Video source image handlers
+  const handleAddVideoSourceImage = (asset: Asset) => {
+    const currentModelConfig = VIDEO_MODELS.find(m => m.value === videoModel)
+    const maxImages = currentModelConfig?.maxImages || 4
+    if (videoSourceImages.length < maxImages) {
+      setVideoSourceImages(prev => [...prev, asset])
+    }
+    setShowReferenceModal(false)
+  }
+
+  const handleRemoveVideoSourceImage = (index: number) => {
+    setVideoSourceImages(prev => prev.filter((_, i) => i !== index))
+  }
+
   const handleGenerate = async () => {
     // Get selected generated images (for regeneration)
     const selectedGeneratedImages = batches.flatMap(b => b.assets).filter(a => a.selected)
@@ -649,9 +754,9 @@ export function CreatorPage() {
       return
     }
 
-    // Validate base image for image-to-video
-    if (isImageToVideo && !baseImage) {
-      setError("Please select a source image for video generation")
+    // Validate source images for image-to-video
+    if (isImageToVideo && videoSourceImages.length === 0) {
+      setError("Please select at least one source image for video generation")
       return
     }
 
@@ -668,9 +773,8 @@ export function CreatorPage() {
       return
     }
 
-    if (caps.requires_mask) {
-      // TODO: Validate mask is drawn
-      setError("Mask editing coming soon")
+    if (caps.requires_mask && !hasMask) {
+      setError("Please paint a mask on the image to select the region to regenerate")
       return
     }
 
@@ -683,7 +787,10 @@ export function CreatorPage() {
     try {
       // Handle video generation
       if (isVideo) {
-        const sourceImageUrl = baseImage ? getAssetDisplayUrl(baseImage) : undefined
+        // Use the first video source image if available
+        const sourceImageUrl = videoSourceImages.length > 0
+          ? getAssetDisplayUrl(videoSourceImages[0])
+          : undefined
         let videoUrl: string
 
         if (videoModel === "veo-3") {
@@ -707,6 +814,7 @@ export function CreatorPage() {
             duration: videoDuration,
             aspectRatio: videoAspectRatio as "16:9" | "9:16" | "1:1",
             model: videoModel as "kling" | "minimax",
+            quality: videoQuality,
           })
         }
 
@@ -730,9 +838,18 @@ export function CreatorPage() {
 
         // Build reference URLs
         let referenceUrls: string[] = []
+        const modelConfig = getImageModelConfig(model)
 
+        // For inpainting, use the base image as the reference
+        if (subMode === "inpaint" && baseImage) {
+          const baseUrl = baseImageUrl || getAssetDisplayUrl(baseImage)
+          if (baseUrl) {
+            referenceUrls = [baseUrl]
+            console.log("Using base image for inpainting")
+          }
+        }
         // For image-to-image, use img2imgRefs first, then fall back to selected generated images
-        if (subMode === "image-to-image") {
+        else if (subMode === "image-to-image") {
           if (img2imgRefs.length > 0) {
             referenceUrls = img2imgRefs
               .map(asset => getAssetDisplayUrl(asset))
@@ -745,11 +862,16 @@ export function CreatorPage() {
             console.log(`Using ${referenceUrls.length} selected generated image(s) as reference`)
           }
         }
-        // For selective-edit, use referenceImages
-        else if (caps.allows_reference_images && referenceImages.length > 0) {
-          referenceUrls = referenceImages
-            .map(r => getAssetDisplayUrl(r.asset))
-            .filter(Boolean) as string[]
+        // For T2I with selected images: use as reference if model supports it
+        else if (subMode === "text-to-image" && selectedGeneratedImages.length > 0) {
+          if (modelConfig?.supportsSingleRef || modelConfig?.supportsMultipleRefs) {
+            referenceUrls = selectedGeneratedImages
+              .map(asset => asset.url)
+              .filter(Boolean) as string[]
+            console.log(`T2I regenerate: Using ${referenceUrls.length} selected image(s) as reference`)
+          } else {
+            console.log(`T2I regenerate: Model ${model} doesn't support references, generating from text only`)
+          }
         }
 
         // Get aspect ratio dimensions
@@ -760,7 +882,7 @@ export function CreatorPage() {
           urls = await generateImagesNanoBanana({
             prompt: effectivePrompt,
             negativePrompt: caps.supports_negative_prompt ? negativePrompt : undefined,
-            aspectRatio: referenceUrls.length > 0 ? "match_input_image" : aspectRatio as "1:1" | "16:9" | "9:16" | "4:3" | "3:4",
+            aspectRatio: aspectRatio as "1:1" | "16:9" | "9:16" | "4:3" | "3:4",
             numberOfImages: numOutputs,
             referenceImageUrls: referenceUrls.length > 0 ? referenceUrls : undefined,
           })
@@ -772,15 +894,18 @@ export function CreatorPage() {
             numberOfImages: numOutputs,
           })
         } else {
+          // For inpainting, don't pass width/height - use input image dimensions
+          const isInpainting = subMode === "inpaint" && maskDataUrl
           urls = await generateImages({
             prompt: effectivePrompt,
             negativePrompt: caps.supports_negative_prompt ? negativePrompt : undefined,
             style: caps.supports_style_preset && stylePreset ? stylePreset : undefined,
             referenceImageUrls: referenceUrls.length > 0 ? referenceUrls : undefined,
+            maskUrl: isInpainting ? maskDataUrl : undefined,
             model: model as "flux-pro" | "flux-kontext" | "gpt" | "sdxl",
             numOutputs,
-            width: selectedAspect.width,
-            height: selectedAspect.height,
+            width: isInpainting ? undefined : selectedAspect.width,
+            height: isInpainting ? undefined : selectedAspect.height,
             strength: caps.supports_strength ? strength : undefined,
           })
         }
@@ -858,10 +983,13 @@ export function CreatorPage() {
   // Check if we can generate
   // For img2img: allow if we have ref images OR selected generated images to use as refs
   const hasImg2imgSource = img2imgRefs.length > 0 || selectedCount > 0
+  const hasVideoSource = videoSourceImages.length > 0
+  const isInpaint = subMode === "inpaint"
   const canGenerate = (description.trim() || enhancedPrompt.trim()) &&
     (subMode !== "image-to-image" || hasImg2imgSource) && // img2img needs refs or selected images
-    (subMode === "image-to-image" || !caps.requires_base_image || baseImage) && // other modes need base image
-    (!caps.requires_mask || true) // TODO: Check mask
+    (!isImageToVideo || hasVideoSource) && // image-to-video needs source images
+    (subMode === "image-to-image" || isVideo || !caps.requires_base_image || baseImage) && // other modes need base image
+    (!isInpaint || (baseImage && hasMask)) // inpaint needs base image AND mask
 
   return (
     <div className="h-screen bg-zinc-950 flex flex-col">
@@ -926,7 +1054,7 @@ export function CreatorPage() {
                 className={cn(
                   "flex items-center gap-1 transition-colors",
                   hasSelectedAssets
-                    ? "text-orange-400 hover:text-orange-300"
+                    ? `${colors.text} ${colors.hoverTextLight}`
                     : "text-zinc-600 cursor-not-allowed"
                 )}
               >
@@ -984,7 +1112,7 @@ export function CreatorPage() {
                   onChange={(e) => setProjectName(e.target.value)}
                   placeholder="Name your creation..."
                   rows={1}
-                  className="w-full px-4 py-2.5 bg-zinc-900/50 border border-zinc-800 rounded-xl text-zinc-100 placeholder:text-zinc-600 focus:outline-none focus:border-orange-500 resize-none"
+                  className={`w-full px-4 py-2.5 bg-zinc-900/50 border border-zinc-800 rounded-xl text-zinc-100 placeholder:text-zinc-600 focus:outline-none ${colors.focusBorder} resize-none`}
                   style={{ overflow: 'hidden' }}
                 />
               </div>
@@ -998,7 +1126,7 @@ export function CreatorPage() {
                   onChange={(e) => setDescription(e.target.value)}
                   placeholder="Describe what you want to create..."
                   rows={2}
-                  className="w-full px-4 py-2.5 bg-zinc-900/50 border border-zinc-800 rounded-xl text-zinc-100 placeholder:text-zinc-600 focus:outline-none focus:border-orange-500 resize-none"
+                  className={`w-full px-4 py-2.5 bg-zinc-900/50 border border-zinc-800 rounded-xl text-zinc-100 placeholder:text-zinc-600 focus:outline-none ${colors.focusBorder} resize-none`}
                   style={{ overflow: 'hidden' }}
                 />
               </div>
@@ -1020,7 +1148,7 @@ export function CreatorPage() {
                   onChange={(e) => setEnhancedPrompt(e.target.value)}
                   placeholder="Technical prompt for generation..."
                   rows={3}
-                  className={`w-full px-4 py-2.5 bg-zinc-800/30 border rounded-xl text-zinc-100 placeholder:text-zinc-600 focus:outline-none focus:border-orange-500 resize-none font-mono text-sm ${
+                  className={`w-full px-4 py-2.5 bg-zinc-800/30 border rounded-xl text-zinc-100 placeholder:text-zinc-600 focus:outline-none ${colors.focusBorder} resize-none font-mono text-sm ${
                     draft ? colors.border : "border-zinc-800"
                   }`}
                   style={{ overflow: 'hidden' }}
@@ -1029,50 +1157,10 @@ export function CreatorPage() {
             </div>
 
             {/* ============================================ */}
-            {/* VIDEO SOURCE IMAGE (image-to-video) */}
+            {/* BASE IMAGE (non-inpaint modes that require base image) */}
+            {/* For inpaint, base image is shown AFTER parameters */}
             {/* ============================================ */}
-            {isImageToVideo && (
-              <div>
-                <label className="block text-sm font-medium text-zinc-300 mb-2">
-                  Source Image <span className="text-red-400">*</span>
-                </label>
-                {baseImage ? (
-                  <div className="relative w-full aspect-video rounded-xl overflow-hidden border-2 border-red-500/30 bg-zinc-800 group">
-                    <img
-                      src={baseImageUrl || getAssetDisplayUrl(baseImage)}
-                      alt={baseImage.name}
-                      className="w-full h-full object-contain"
-                    />
-                    <button
-                      onClick={() => {
-                        setBaseImage(null)
-                        setBaseImageUrl(null)
-                      }}
-                      className="absolute top-2 right-2 p-2 rounded-lg bg-black/70 hover:bg-red-500 text-white opacity-0 group-hover:opacity-100 transition-all"
-                    >
-                      <X className="w-4 h-4" />
-                    </button>
-                  </div>
-                ) : (
-                  <button
-                    onClick={() => {
-                      setReferenceModalTarget("base")
-                      setShowReferenceModal(true)
-                    }}
-                    className="w-full aspect-video rounded-xl border-2 border-dashed border-red-500/30 hover:border-red-500 hover:bg-red-500/5 flex flex-col items-center justify-center gap-3 text-zinc-500 hover:text-red-400 transition-all"
-                  >
-                    <ImagePlus className="w-10 h-10" />
-                    <span className="text-sm font-medium">Select Source Image</span>
-                    <span className="text-xs text-zinc-600">This image will be animated into video</span>
-                  </button>
-                )}
-              </div>
-            )}
-
-            {/* ============================================ */}
-            {/* BASE IMAGE (inpaint only - img2img handled separately below model selector) */}
-            {/* ============================================ */}
-            {caps.requires_base_image && subMode !== "image-to-image" && (
+            {caps.requires_base_image && subMode !== "image-to-image" && subMode !== "inpaint" && (
               <div>
                 <label className="block text-sm font-medium text-zinc-300 mb-2">
                   Base Image <span className="text-red-400">*</span>
@@ -1093,14 +1181,6 @@ export function CreatorPage() {
                     >
                       <X className="w-4 h-4" />
                     </button>
-                    {caps.requires_mask && (
-                      <button
-                        className="absolute bottom-2 right-2 px-3 py-2 rounded-lg bg-orange-500 hover:bg-orange-400 text-white text-sm font-medium flex items-center gap-2 transition-all"
-                      >
-                        <Paintbrush className="w-4 h-4" />
-                        Edit Mask
-                      </button>
-                    )}
                   </div>
                 ) : (
                   <button
@@ -1108,67 +1188,13 @@ export function CreatorPage() {
                       setReferenceModalTarget("base")
                       setShowReferenceModal(true)
                     }}
-                    className="w-full aspect-video rounded-xl border-2 border-dashed border-zinc-700 hover:border-orange-500 hover:bg-orange-500/5 flex flex-col items-center justify-center gap-3 text-zinc-500 hover:text-orange-400 transition-all"
+                    className={`w-full aspect-video rounded-xl border-2 border-dashed border-zinc-700 ${colors.hoverBorder} ${colors.hoverBg} flex flex-col items-center justify-center gap-3 text-zinc-500 ${colors.hoverText} transition-all`}
                   >
                     <Upload className="w-10 h-10" />
                     <span className="text-sm font-medium">Select Base Image</span>
                     <span className="text-xs text-zinc-600">From library or upload new</span>
                   </button>
                 )}
-              </div>
-            )}
-
-            {/* ============================================ */}
-            {/* REFERENCE IMAGES (selective-edit) */}
-            {/* ============================================ */}
-            {caps.allows_reference_images && (
-              <div>
-                <label className="block text-sm font-medium text-zinc-300 mb-2">
-                  Reference Images
-                  <span className="text-zinc-500 font-normal ml-2">({referenceImages.length}/{caps.max_reference_images})</span>
-                </label>
-                <div className="grid grid-cols-2 gap-3">
-                  {referenceImages.map((ref) => (
-                    <div
-                      key={ref.asset.id}
-                      className="relative rounded-xl overflow-hidden border-2 border-zinc-700 bg-zinc-800 group"
-                    >
-                      <div className="aspect-square">
-                        <img
-                          src={getAssetDisplayUrl(ref.asset)}
-                          alt={ref.asset.name}
-                          className="w-full h-full object-cover"
-                        />
-                      </div>
-                      <div className="p-2 bg-zinc-900 border-t border-zinc-800">
-                        <CustomDropdown
-                          value={ref.role || "character"}
-                          onChange={(role) => handleUpdateReferenceRole(ref.asset.id, role)}
-                          options={REFERENCE_ROLES.map(r => ({ value: r.id, label: r.label }))}
-                          className="w-full"
-                        />
-                      </div>
-                      <button
-                        onClick={() => handleRemoveReferenceImage(ref.asset.id)}
-                        className="absolute top-2 right-2 p-1.5 rounded-lg bg-black/70 hover:bg-red-500 text-white opacity-0 group-hover:opacity-100 transition-all"
-                      >
-                        <X className="w-3.5 h-3.5" />
-                      </button>
-                    </div>
-                  ))}
-                  {referenceImages.length < caps.max_reference_images && (
-                    <button
-                      onClick={() => {
-                        setReferenceModalTarget("reference")
-                        setShowReferenceModal(true)
-                      }}
-                      className="aspect-square rounded-xl border-2 border-dashed border-zinc-700 hover:border-orange-500 hover:bg-orange-500/5 flex flex-col items-center justify-center gap-2 text-zinc-500 hover:text-orange-400 transition-all"
-                    >
-                      <ImagePlus className="w-8 h-8" />
-                      <span className="text-xs font-medium">Add Reference</span>
-                    </button>
-                  )}
-                </div>
               </div>
             )}
 
@@ -1180,32 +1206,149 @@ export function CreatorPage() {
 
               {isVideo ? (
                 /* Video Parameters */
-                <div className="grid grid-cols-3 gap-3">
-                  <div>
-                    <label className="block text-xs font-medium text-zinc-400 mb-1.5">Model</label>
-                    <CustomDropdown
-                      value={videoModel}
-                      onChange={(val) => setVideoModel(val as "kling" | "veo-3" | "grok-video" | "minimax")}
-                      options={VIDEO_MODELS}
-                    />
+                <>
+                  <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+                    {/* View Models Button */}
+                    <div>
+                      <label className="block text-xs font-medium text-zinc-400 mb-1.5">View Models</label>
+                      <button
+                        onClick={() => setShowVideoModelInfoModal(true)}
+                        className="w-full px-3 py-2 bg-red-500/20 border border-red-500/50 rounded-lg text-sm text-red-400 hover:bg-red-500/30 hover:border-red-500 transition-all flex items-center justify-center gap-2"
+                      >
+                        <Info className="w-4 h-4" />
+                        <span>Video Models</span>
+                      </button>
+                    </div>
+
+                    {/* Model Dropdown - filter for text-to-video compatibility */}
+                    <div>
+                      <label className="block text-xs font-medium text-zinc-400 mb-1.5">Select Model</label>
+                      <CustomDropdown
+                        value={videoModel}
+                        onChange={(val) => setVideoModel(val as "kling" | "veo-3" | "grok-video" | "minimax")}
+                        options={VIDEO_MODELS
+                          .filter(m => isImageToVideo || m.supportsTextToVideo)
+                          .map(m => ({ value: m.value, label: m.label, description: m.company }))}
+                        accentColor="red"
+                      />
+                    </div>
+
+                    {/* Duration */}
+                    <div>
+                      <label className="block text-xs font-medium text-zinc-400 mb-1.5">Duration</label>
+                      <CustomDropdown
+                        value={String(videoDuration)}
+                        onChange={(val) => setVideoDuration(Number(val))}
+                        options={getVideoDurationsForModel(videoModel)}
+                        accentColor="red"
+                      />
+                    </div>
+
+                    {/* Aspect Ratio */}
+                    <div>
+                      <label className="block text-xs font-medium text-zinc-400 mb-1.5">Aspect Ratio</label>
+                      <CustomDropdown
+                        value={videoAspectRatio}
+                        onChange={setVideoAspectRatio}
+                        options={VIDEO_ASPECT_RATIOS}
+                        accentColor="red"
+                      />
+                    </div>
+
+                    {/* Quality - only for Kling */}
+                    {videoModel === "kling" && (
+                      <div>
+                        <label className="block text-xs font-medium text-zinc-400 mb-1.5">Quality</label>
+                        <CustomDropdown
+                          value={videoQuality}
+                          onChange={(val) => setVideoQuality(val as "standard" | "pro")}
+                          options={VIDEO_QUALITY}
+                          accentColor="red"
+                        />
+                      </div>
+                    )}
                   </div>
-                  <div>
-                    <label className="block text-xs font-medium text-zinc-400 mb-1.5">Duration</label>
-                    <CustomDropdown
-                      value={String(videoDuration)}
-                      onChange={(val) => setVideoDuration(Number(val) as 5 | 10)}
-                      options={VIDEO_DURATIONS}
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-xs font-medium text-zinc-400 mb-1.5">Aspect Ratio</label>
-                    <CustomDropdown
-                      value={videoAspectRatio}
-                      onChange={setVideoAspectRatio}
-                      options={VIDEO_ASPECT_RATIOS}
-                    />
-                  </div>
-                </div>
+
+                  {/* ============================================ */}
+                  {/* VIDEO SOURCE IMAGES (image-to-video) */}
+                  {/* Grid of 4 slots like image-to-image */}
+                  {/* ============================================ */}
+                  {isImageToVideo && (() => {
+                    const currentModelConfig = VIDEO_MODELS.find(m => m.value === videoModel)
+                    const maxImages = currentModelConfig?.maxImages || 4
+
+                    // Calculate visible slots: always show at least 1, plus 1 empty after last filled
+                    const filledCount = videoSourceImages.length
+                    const visibleSlots = Math.min(
+                      Math.max(1, filledCount + 1),
+                      maxImages
+                    )
+
+                    return (
+                      <div className="mt-4">
+                        <label className="block text-sm font-medium text-zinc-300 mb-2">
+                          Source Images
+                          <span className="text-zinc-500 font-normal ml-2">
+                            {maxImages === 1 ? "(1 max)" : `(up to ${maxImages})`}
+                          </span>
+                          <span className="text-red-400 ml-1">*</span>
+                        </label>
+                        <div className="grid grid-cols-4 gap-3">
+                          {Array.from({ length: visibleSlots }).map((_, index) => {
+                            const asset = videoSourceImages[index]
+
+                            if (asset) {
+                              // Filled slot
+                              return (
+                                <div
+                                  key={asset.id}
+                                  className="relative aspect-square rounded-xl overflow-hidden border-2 border-red-500/50 bg-zinc-800 group"
+                                >
+                                  <img
+                                    src={getAssetDisplayUrl(asset)}
+                                    alt={asset.name}
+                                    className="w-full h-full object-cover"
+                                  />
+                                  <button
+                                    onClick={() => handleRemoveVideoSourceImage(index)}
+                                    className="absolute top-1.5 right-1.5 p-1.5 rounded-lg bg-black/70 hover:bg-red-500 text-white opacity-0 group-hover:opacity-100 transition-all"
+                                  >
+                                    <X className="w-3.5 h-3.5" />
+                                  </button>
+                                  <div className="absolute bottom-0 left-0 right-0 px-2 py-1 bg-black/60 text-[10px] text-zinc-300 truncate">
+                                    {index + 1}. {asset.name}
+                                  </div>
+                                </div>
+                              )
+                            } else {
+                              // Empty slot
+                              return (
+                                <button
+                                  key={`empty-${index}`}
+                                  onClick={() => {
+                                    setReferenceModalTarget("video")
+                                    setShowReferenceModal(true)
+                                  }}
+                                  className={`aspect-square rounded-xl border-2 border-dashed ${colors.emptyBoxBorder} ${colors.emptyBoxBg} ${colors.emptyBoxHoverBorder} ${colors.emptyBoxHoverBg} flex flex-col items-center justify-center gap-1.5 ${colors.text} ${colors.hoverText} transition-all`}
+                                >
+                                  <ImagePlus className="w-6 h-6" />
+                                  <span className="text-[10px] font-medium">
+                                    {index === 0 ? "Add image" : `Add #${index + 1}`}
+                                  </span>
+                                </button>
+                              )
+                            }
+                          })}
+                        </div>
+                        {filledCount === 0 && (
+                          <p className="text-xs text-zinc-500 mt-2">
+                            Add source images to animate into video
+                          </p>
+                        )}
+                      </div>
+                    )
+                  })()}
+                </>
               ) : (
                 /* Image Parameters */
                 <>
@@ -1215,7 +1358,7 @@ export function CreatorPage() {
                       <label className="block text-xs font-medium text-zinc-400 mb-1.5">View Models</label>
                       <button
                         onClick={() => setShowModelInfoModal(true)}
-                        className="w-full px-3 py-2 bg-orange-500/20 border border-orange-500/50 rounded-lg text-sm text-orange-400 hover:bg-orange-500/30 hover:border-orange-500 transition-all flex items-center justify-center gap-2"
+                        className={`w-full px-3 py-2 ${colors.bgButton} border ${colors.borderSolid} rounded-lg text-sm ${colors.text} hover:bg-opacity-30 ${colors.hoverBorder} transition-all flex items-center justify-center gap-2`}
                       >
                         <Info className="w-4 h-4" />
                         <span>Image Models</span>
@@ -1316,7 +1459,7 @@ export function CreatorPage() {
                               return (
                                 <div
                                   key={asset.id}
-                                  className="relative aspect-square rounded-xl overflow-hidden border-2 border-orange-500/50 bg-zinc-800 group"
+                                  className={`relative aspect-square rounded-xl overflow-hidden border-2 ${colors.borderSolid} bg-zinc-800 group`}
                                 >
                                   <img
                                     src={getAssetDisplayUrl(asset)}
@@ -1343,7 +1486,7 @@ export function CreatorPage() {
                                     setReferenceModalTarget("img2img")
                                     setShowReferenceModal(true)
                                   }}
-                                  className="aspect-square rounded-xl border-2 border-dashed border-zinc-700 hover:border-orange-500 hover:bg-orange-500/5 flex flex-col items-center justify-center gap-1.5 text-zinc-500 hover:text-orange-400 transition-all"
+                                  className={`aspect-square rounded-xl border-2 border-dashed ${colors.emptyBoxBorder} ${colors.emptyBoxBg} ${colors.emptyBoxHoverBorder} ${colors.emptyBoxHoverBg} flex flex-col items-center justify-center gap-1.5 ${colors.text} ${colors.hoverText} transition-all`}
                                 >
                                   <ImagePlus className="w-6 h-6" />
                                   <span className="text-[10px] font-medium">
@@ -1384,26 +1527,72 @@ export function CreatorPage() {
                     </div>
                   )}
 
-                  {/* Reference Strength (selective-edit) */}
-                  {caps.supports_reference_strength && referenceImages.length > 0 && (
-                    <div>
-                      <label className="block text-xs font-medium text-zinc-400 mb-1.5">
-                        Reference Strength
-                        <span className="text-zinc-500 ml-2 font-normal">({(referenceStrength * 100).toFixed(0)}%)</span>
-                      </label>
-                      <Slider
-                        value={referenceStrength}
-                        onChange={setReferenceStrength}
-                        min={0.1}
-                        max={1}
-                        step={0.05}
-                        showValue={false}
-                      />
-                    </div>
-                  )}
                 </>
               )}
             </div>
+
+            {/* ============================================ */}
+            {/* INPAINTING: Base Image + Masking Canvas */}
+            {/* Shown AFTER parameters for inpaint mode */}
+            {/* ============================================ */}
+            {subMode === "inpaint" && (
+              <div className="space-y-4">
+                <h3 className="text-sm font-medium text-zinc-400">Base Image & Mask</h3>
+
+                {!baseImage ? (
+                  /* Base image upload */
+                  <div>
+                    <label className="block text-sm font-medium text-zinc-300 mb-2">
+                      Select Image to Edit <span className="text-red-400">*</span>
+                    </label>
+                    <button
+                      onClick={() => {
+                        setReferenceModalTarget("base")
+                        setShowReferenceModal(true)
+                      }}
+                      className={`w-full aspect-video rounded-xl border-2 border-dashed border-zinc-700 ${colors.hoverBorder} ${colors.hoverBg} flex flex-col items-center justify-center gap-3 text-zinc-500 ${colors.hoverText} transition-all`}
+                    >
+                      <Upload className="w-10 h-10" />
+                      <span className="text-sm font-medium">Select Base Image</span>
+                      <span className="text-xs text-zinc-600">From library or upload new</span>
+                    </button>
+                  </div>
+                ) : (
+                  /* Masking canvas with base image */
+                  <div className="space-y-3">
+                    <div className="flex items-center justify-between">
+                      <label className="text-sm font-medium text-zinc-300">
+                        Paint mask on image <span className="text-red-400">*</span>
+                      </label>
+                      <button
+                        onClick={() => {
+                          setBaseImage(null)
+                          setBaseImageUrl(null)
+                          setMaskDataUrl(null)
+                          setHasMask(false)
+                        }}
+                        className={`text-xs text-zinc-500 ${colors.hoverText} transition-colors flex items-center gap-1`}
+                      >
+                        <X className="w-3 h-3" />
+                        Change image
+                      </button>
+                    </div>
+                    <MaskingCanvas
+                      imageUrl={baseImageUrl || getAssetDisplayUrl(baseImage)}
+                      onMaskChange={handleMaskChange}
+                    />
+                    {!hasMask && (
+                      <div className="flex items-center gap-2 p-3 bg-amber-500/10 border border-amber-500/30 rounded-lg">
+                        <AlertTriangle className="w-4 h-4 text-amber-400 flex-shrink-0" />
+                        <p className="text-xs text-amber-300">
+                          Paint on the image to select the region you want to regenerate
+                        </p>
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+            )}
 
             {/* ============================================ */}
             {/* ADVANCED OPTIONS (images only) */}
@@ -1429,7 +1618,7 @@ export function CreatorPage() {
                         onChange={(e) => setNegativePrompt(e.target.value)}
                         placeholder="Things to avoid in generation..."
                         rows={2}
-                        className="w-full px-3 py-2 bg-zinc-800 border border-zinc-700 rounded-lg text-zinc-100 placeholder:text-zinc-600 focus:outline-none focus:border-orange-500 resize-none text-sm"
+                        className={`w-full px-3 py-2 bg-zinc-800 border border-zinc-700 rounded-lg text-zinc-100 placeholder:text-zinc-600 focus:outline-none ${colors.focusBorder} resize-none text-sm`}
                       />
                     </div>
                   )}
@@ -1547,7 +1736,7 @@ export function CreatorPage() {
                           className={cn(
                             "group relative rounded-xl overflow-hidden border-2 transition-all cursor-pointer",
                             asset.selected
-                              ? "border-orange-500 ring-2 ring-orange-500/30"
+                              ? `${colors.borderSolid} ring-2 ${colors.ring}`
                               : "border-zinc-700 hover:border-zinc-600"
                           )}
                           onClick={() => handleToggleSelection(batch.id, asset.id)}
@@ -1561,13 +1750,13 @@ export function CreatorPage() {
                           <div className="absolute top-2 left-2 opacity-0 group-hover:opacity-100 transition-opacity flex gap-1">
                             <button
                               onClick={(e) => { e.stopPropagation(); handleRemoveAsset(batch.id, asset.id) }}
-                              className="p-1.5 bg-zinc-900/80 hover:bg-orange-500 text-zinc-400 hover:text-white rounded-lg transition-all"
+                              className={`p-1.5 bg-zinc-900/80 ${colors.hoverAccent} text-zinc-400 hover:text-white rounded-lg transition-all`}
                             >
                               <Trash2 className="w-3.5 h-3.5" />
                             </button>
                           </div>
                           {asset.selected && (
-                            <div className="absolute top-2 right-2 w-6 h-6 rounded-full bg-orange-500 flex items-center justify-center">
+                            <div className={`absolute top-2 right-2 w-6 h-6 rounded-full ${colors.accent} flex items-center justify-center`}>
                               <Check className="w-4 h-4 text-white" />
                             </div>
                           )}
@@ -1591,7 +1780,7 @@ export function CreatorPage() {
                         onChange={(e) => handleUpdateRefinement(batch.id, e.target.value)}
                         placeholder={selectedCount > 0 ? "Describe changes to apply to selected images..." : "Add changes for the next batch..."}
                         rows={2}
-                        className="w-full px-4 py-3 bg-zinc-900/50 border border-zinc-800 rounded-xl text-zinc-100 placeholder:text-zinc-600 focus:outline-none focus:border-orange-500 resize-none"
+                        className={`w-full px-4 py-3 bg-zinc-900/50 border border-zinc-800 rounded-xl text-zinc-100 placeholder:text-zinc-600 focus:outline-none ${colors.focusBorder} resize-none`}
                       />
                     </div>
                   )}
@@ -1606,7 +1795,7 @@ export function CreatorPage() {
               {/* Model Compatibility Warning */}
               {(() => {
                 const modelConfig = getImageModelConfig(model)
-                const refCount = referenceImages.length + (baseImage ? 1 : 0)
+                const refCount = (baseImage ? 1 : 0) + img2imgRefs.length
                 const selectedRefCount = batches.flatMap(b => b.assets).filter(a => a.selected).length
                 const totalRefs = refCount + selectedRefCount
 
@@ -1712,118 +1901,202 @@ export function CreatorPage() {
         onSelect={(asset) => {
           if (referenceModalTarget === "base") {
             handleSelectBaseImage(asset)
-          } else if (referenceModalTarget === "img2img") {
-            handleAddImg2imgRef(asset)
+          } else if (referenceModalTarget === "video") {
+            handleAddVideoSourceImage(asset)
           } else {
-            handleAddReferenceImage(asset)
+            handleAddImg2imgRef(asset)
           }
         }}
         assetType="image"
         category={"scene" as AssetCategory}
       />
 
-      {/* Model Info Modal */}
+      {/* Model Info Modal - Detailed View */}
       {showModelInfoModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
           <div
             className="absolute inset-0 bg-black/70 backdrop-blur-sm"
             onClick={() => setShowModelInfoModal(false)}
           />
-          <div className="relative bg-zinc-900 border border-zinc-800 rounded-2xl max-w-lg w-full max-h-[80vh] overflow-hidden">
+          <div className="relative bg-zinc-900 border border-zinc-800 rounded-2xl max-w-lg w-full max-h-[85vh] overflow-hidden">
             <div className="p-4 border-b border-zinc-800 flex items-center justify-between">
-              <h2 className="text-lg font-semibold text-zinc-100">Image Models</h2>
+              <h2 className="text-base font-semibold text-zinc-100">Image Models</h2>
               <button
                 onClick={() => setShowModelInfoModal(false)}
                 className="p-1 text-zinc-400 hover:text-zinc-100 transition-colors"
               >
-                <X className="w-5 h-5" />
+                <X className="w-4 h-4" />
               </button>
             </div>
-            <div className="p-4 space-y-4 overflow-y-auto max-h-[60vh]">
+            <div className="p-3 space-y-3 overflow-y-auto max-h-[75vh]">
               {IMAGE_MODELS.filter(m => {
-                // Filter out models that don't support current workflow
-                if (subMode === "image-to-image" && !m.supportsSingleRef) return false
+                // Filter to only show models compatible with current workflow
+                const workflow = subMode as ImageModelConfig['workflows'][number]
+                if (workflow && !m.workflows.includes(workflow)) return false
                 return true
               }).map((m) => (
-                <div
+                <button
                   key={m.id}
+                  onClick={() => {
+                    setModel(m.id)
+                    setShowModelInfoModal(false)
+                  }}
                   className={cn(
-                    "p-4 rounded-xl border transition-colors",
+                    "w-full p-4 rounded-xl border text-left transition-all",
                     model === m.id
-                      ? "bg-orange-500/10 border-orange-500/30"
-                      : "bg-zinc-800/50 border-zinc-700/50"
+                      ? "bg-orange-500/10 border-orange-500/50 ring-1 ring-orange-500/30"
+                      : "bg-zinc-800/30 border-zinc-700/50 hover:bg-zinc-800/60 hover:border-zinc-600"
                   )}
                 >
-                  {/* Header */}
-                  <div className="flex items-start justify-between mb-3">
-                    <div>
-                      <h3 className="font-medium text-zinc-100">{m.label}</h3>
-                      <p className="text-xs text-zinc-500">{m.company}</p>
+                  {/* Header: Name, Company, Badges */}
+                  <div className="flex items-center justify-between gap-2 mb-2">
+                    <div className="flex items-center gap-2">
+                      <span className="font-semibold text-zinc-100">{m.label}</span>
+                      <span className="text-xs text-zinc-500">{m.company}</span>
+                      {model === m.id && (
+                        <span className="px-1.5 py-0.5 text-[9px] font-medium rounded bg-orange-500 text-white">
+                          Selected
+                        </span>
+                      )}
                     </div>
-                    <div className="flex gap-1 flex-wrap justify-end">
+                    <div className="flex gap-1 flex-shrink-0">
                       {m.supportsMultipleRefs && (
-                        <span className="px-2 py-0.5 text-[10px] font-medium rounded-full bg-emerald-500/20 text-emerald-400">
+                        <span className="px-1.5 py-0.5 text-[9px] font-medium rounded bg-emerald-500/20 text-emerald-400">
                           Multi-ref
                         </span>
                       )}
                       {m.supportsSingleRef && !m.supportsMultipleRefs && (
-                        <span className="px-2 py-0.5 text-[10px] font-medium rounded-full bg-sky-500/20 text-sky-400">
+                        <span className="px-1.5 py-0.5 text-[9px] font-medium rounded bg-sky-500/20 text-sky-400">
                           Single ref
                         </span>
                       )}
                       {!m.supportsSingleRef && !m.supportsMultipleRefs && (
-                        <span className="px-2 py-0.5 text-[10px] font-medium rounded-full bg-zinc-500/20 text-zinc-400">
+                        <span className="px-1.5 py-0.5 text-[9px] font-medium rounded bg-zinc-500/20 text-zinc-400">
                           Text only
                         </span>
                       )}
                       {m.supportsInpainting && (
-                        <span className="px-2 py-0.5 text-[10px] font-medium rounded-full bg-purple-500/20 text-purple-400">
+                        <span className="px-1.5 py-0.5 text-[9px] font-medium rounded bg-purple-500/20 text-purple-400">
                           Inpaint
                         </span>
                       )}
                     </div>
                   </div>
 
-                  {/* Best For */}
-                  <div className="mb-3">
-                    <p className="text-xs font-medium text-zinc-500 mb-1">Best for</p>
-                    <p className="text-sm text-zinc-300">{m.bestFor}</p>
+                  {/* Best for */}
+                  <div className="mb-2">
+                    <span className="text-[10px] font-medium text-zinc-500 uppercase tracking-wide">Best for</span>
+                    <p className="text-sm text-zinc-300 mt-0.5">{m.bestFor}</p>
                   </div>
 
                   {/* Inputs */}
-                  <div className="mb-3">
-                    <p className="text-xs font-medium text-zinc-500 mb-1">Inputs</p>
-                    <ul className="text-xs text-zinc-400 space-y-0.5">
-                      {m.inputs.map((input, i) => (
-                        <li key={i} className="flex items-start gap-1.5">
-                          <span className="text-zinc-600 mt-0.5">•</span>
-                          <span>{input}</span>
-                        </li>
-                      ))}
-                    </ul>
+                  <div className="mb-2">
+                    <span className="text-[10px] font-medium text-zinc-500 uppercase tracking-wide">Inputs</span>
+                    <p className="text-xs text-zinc-400 mt-0.5">{m.inputs.join(" • ")}</p>
                   </div>
 
                   {/* Notes */}
-                  <div className="p-2.5 bg-zinc-900/50 rounded-lg">
+                  <div className="pt-2 border-t border-zinc-700/50">
                     <p className="text-xs text-zinc-500 leading-relaxed">{m.notes}</p>
                   </div>
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
 
-                  {/* Action */}
-                  {model !== m.id && (
-                    <button
-                      onClick={() => {
-                        setModel(m.id)
-                        setShowModelInfoModal(false)
-                      }}
-                      className="mt-3 px-3 py-1.5 text-xs font-medium text-orange-400 hover:text-orange-300 hover:bg-orange-500/10 rounded-lg transition-colors"
-                    >
-                      Use this model
-                    </button>
+      {/* Video Model Info Modal - Detailed View */}
+      {showVideoModelInfoModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <div
+            className="absolute inset-0 bg-black/70 backdrop-blur-sm"
+            onClick={() => setShowVideoModelInfoModal(false)}
+          />
+          <div className="relative bg-zinc-900 border border-zinc-800 rounded-2xl max-w-lg w-full max-h-[85vh] overflow-hidden">
+            <div className="p-4 border-b border-zinc-800 flex items-center justify-between">
+              <h2 className="text-base font-semibold text-zinc-100">Video Models</h2>
+              <button
+                onClick={() => setShowVideoModelInfoModal(false)}
+                className="p-1 text-zinc-400 hover:text-zinc-100 transition-colors"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+            <div className="p-3 space-y-3 overflow-y-auto max-h-[75vh]">
+              {VIDEO_MODELS
+                .filter(m => isImageToVideo || m.supportsTextToVideo)
+                .map((m) => (
+                <button
+                  key={m.value}
+                  onClick={() => {
+                    setVideoModel(m.value as "kling" | "veo-3" | "grok-video" | "minimax")
+                    setShowVideoModelInfoModal(false)
+                  }}
+                  className={cn(
+                    "w-full p-4 rounded-xl border text-left transition-all",
+                    videoModel === m.value
+                      ? "bg-red-500/10 border-red-500/50 ring-1 ring-red-500/30"
+                      : "bg-zinc-800/30 border-zinc-700/50 hover:bg-zinc-800/60 hover:border-zinc-600"
                   )}
-                  {model === m.id && (
-                    <p className="mt-3 text-xs text-orange-400 font-medium">Currently selected</p>
-                  )}
-                </div>
+                >
+                  {/* Header: Name, Company, Badges */}
+                  <div className="flex items-center justify-between gap-2 mb-2">
+                    <div className="flex items-center gap-2">
+                      <span className="font-semibold text-zinc-100">{m.label}</span>
+                      <span className="text-xs text-zinc-500">{m.company}</span>
+                      {videoModel === m.value && (
+                        <span className="px-1.5 py-0.5 text-[9px] font-medium rounded bg-red-500 text-white">
+                          Selected
+                        </span>
+                      )}
+                    </div>
+                    <div className="flex gap-1 flex-shrink-0">
+                      {m.supportsTextToVideo && (
+                        <span className="px-1.5 py-0.5 text-[9px] font-medium rounded bg-violet-500/20 text-violet-400">
+                          Text-to-Video
+                        </span>
+                      )}
+                      {!m.supportsTextToVideo && (
+                        <span className="px-1.5 py-0.5 text-[9px] font-medium rounded bg-orange-500/20 text-orange-400">
+                          Image-to-Video
+                        </span>
+                      )}
+                      {m.supportsQuality && (
+                        <span className="px-1.5 py-0.5 text-[9px] font-medium rounded bg-emerald-500/20 text-emerald-400">
+                          1080p
+                        </span>
+                      )}
+                      {m.value === "kling" && (
+                        <span className="px-1.5 py-0.5 text-[9px] font-medium rounded bg-amber-500/20 text-amber-400">
+                          Best Quality
+                        </span>
+                      )}
+                      {m.value === "minimax" && (
+                        <span className="px-1.5 py-0.5 text-[9px] font-medium rounded bg-sky-500/20 text-sky-400">
+                          Fastest
+                        </span>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Best for */}
+                  <div className="mb-2">
+                    <span className="text-[10px] font-medium text-zinc-500 uppercase tracking-wide">Best for</span>
+                    <p className="text-sm text-zinc-300 mt-0.5">{m.bestFor}</p>
+                  </div>
+
+                  {/* Inputs */}
+                  <div className="mb-2">
+                    <span className="text-[10px] font-medium text-zinc-500 uppercase tracking-wide">Inputs</span>
+                    <p className="text-xs text-zinc-400 mt-0.5">{m.inputs.join(" • ")}</p>
+                  </div>
+
+                  {/* Notes */}
+                  <div className="pt-2 border-t border-zinc-700/50">
+                    <p className="text-xs text-zinc-500 leading-relaxed">{m.notes}</p>
+                  </div>
+                </button>
               ))}
             </div>
           </div>

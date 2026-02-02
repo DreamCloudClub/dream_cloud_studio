@@ -6,7 +6,7 @@ export type ImageMode =
   | "text-to-image"
   | "image-to-image"
   | "inpaint"
-  | "selective-edit"
+  | "upscale"
 
 export interface ModeCapabilities {
   // Input requirements
@@ -71,7 +71,7 @@ export const IMAGE_MODE_CONFIGS: Record<ImageMode, ModeConfig> = {
       requires_mask: false,
       supports_strength: true,
       supports_negative_prompt: true,
-      supports_aspect_ratio: false, // Locked to base image
+      supports_aspect_ratio: true, // Allow custom output size
       supports_output_count: true,
       supports_steps: true,
       supports_guidance: true,
@@ -104,25 +104,25 @@ export const IMAGE_MODE_CONFIGS: Record<ImageMode, ModeConfig> = {
     },
   },
 
-  "selective-edit": {
-    id: "selective-edit",
-    label: "Selective Editing",
-    description: "Compose or edit images using multiple references",
+  "upscale": {
+    id: "upscale",
+    label: "AI Upscaling",
+    description: "Increase image resolution while preserving original content",
     capabilities: {
-      requires_base_image: false,
-      allows_reference_images: true,
-      max_reference_images: 4,
+      requires_base_image: true,
+      allows_reference_images: false,
+      max_reference_images: 0,
       requires_mask: false,
       supports_strength: false,
-      supports_negative_prompt: true,
-      supports_aspect_ratio: true,
-      supports_output_count: true,
-      supports_steps: true,
-      supports_guidance: true,
+      supports_negative_prompt: false,
+      supports_aspect_ratio: false,  // Preserves original aspect ratio
+      supports_output_count: false,  // Always outputs 1 image
+      supports_steps: false,
+      supports_guidance: false,
       supports_style_preset: false,
       supports_mask_blur: false,
       supports_inpaint_area: false,
-      supports_reference_strength: true,
+      supports_reference_strength: false,
     },
   },
 }
@@ -148,7 +148,7 @@ export interface ImageModelConfig {
   supportsSingleRef: boolean
   supportsInpainting: boolean
   maxImageInputs: number  // Max reference images the model accepts (0 = text-only)
-  workflows: Array<'text-to-image' | 'image-to-image' | 'inpaint' | 'selective-edit' | 'upscale'>
+  workflows: Array<'text-to-image' | 'image-to-image' | 'inpaint' | 'upscale'>
   bestFor: string
   inputs: string[]
   notes: string
@@ -160,15 +160,15 @@ export const IMAGE_MODELS: ImageModelConfig[] = [
     id: "sdxl",
     label: "SDXL",
     company: "Stability AI",
-    description: "Fast ideation",
+    description: "Inpainting",
     supportsMultipleRefs: false,
     supportsSingleRef: true,
     supportsInpainting: true,
     maxImageInputs: 1,
-    workflows: ['text-to-image', 'image-to-image', 'inpaint'],
-    bestFor: "Fast ideation, rough concepts, early visual exploration",
-    inputs: ["Text prompt", "Optional: 1 reference image", "Optional: mask image (for inpainting)"],
-    notes: "Lower cost and faster generation. Quality and realism are lower than newer models. Best used for brainstorming rather than final images.",
+    workflows: ['inpaint'],
+    bestFor: "Inpainting and masked region editing",
+    inputs: ["Text prompt", "Base image", "Mask image"],
+    notes: "Best-in-class inpainting model. Lower cost and faster than alternatives. Use for editing specific regions of existing images.",
   },
   {
     id: "grok",
@@ -216,28 +216,28 @@ export const IMAGE_MODELS: ImageModelConfig[] = [
     id: "gpt",
     label: "GPT Image",
     company: "OpenAI",
-    description: "Multi-reference",
-    supportsMultipleRefs: true,
+    description: "Stylized generation",
+    supportsMultipleRefs: false,
     supportsSingleRef: true,
     supportsInpainting: false,
-    maxImageInputs: 4,
-    workflows: ['text-to-image', 'image-to-image', 'selective-edit'],
+    maxImageInputs: 1,
+    workflows: ['text-to-image', 'image-to-image'],
     bestFor: "Illustration, stylized scenes, structured compositions",
-    inputs: ["Text prompt", "One or more reference images"],
-    notes: "Strong prompt understanding and instruction following. Outputs tend toward illustration or stylized realism rather than strict photographic realism. Reference image limits should be enforced conservatively.",
+    inputs: ["Text prompt", "Optional reference image"],
+    notes: "Strong prompt understanding and instruction following. Outputs tend toward illustration or stylized realism rather than strict photographic realism.",
   },
   {
     id: "nano-banana",
     label: "Imagen 3",
     company: "Google",
     description: "Professional",
-    supportsMultipleRefs: true,
+    supportsMultipleRefs: false,
     supportsSingleRef: true,
     supportsInpainting: false,
-    maxImageInputs: 8,
-    workflows: ['text-to-image', 'image-to-image', 'selective-edit'],
-    bestFor: "High-quality regeneration, reference blending, and image enhancement",
-    inputs: ["Text prompt", "Optional: multiple reference images"],
+    maxImageInputs: 1,
+    workflows: ['text-to-image', 'image-to-image'],
+    bestFor: "High-quality generation and image enhancement",
+    inputs: ["Text prompt", "Optional reference image"],
     notes: "Heavier model intended for professional results. Slower generation compared to SDXL and FLUX 1.1 Pro. Excellent photorealism and text rendering.",
   },
 ]
@@ -282,10 +282,3 @@ export const INPAINT_AREAS = [
   { id: "full_image", label: "Full Image", description: "Regenerate entire image with context" },
 ]
 
-// Reference image roles (for selective editing)
-export const REFERENCE_ROLES = [
-  { id: "character", label: "Character" },
-  { id: "scene", label: "Scene/Background" },
-  { id: "style", label: "Style Reference" },
-  { id: "object", label: "Object/Prop" },
-]

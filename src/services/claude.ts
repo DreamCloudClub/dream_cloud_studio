@@ -181,7 +181,6 @@ const TOOLS = [
 - "/create/image/text-to-image" - Text to Image generation
 - "/create/image/image-to-image" - Image to Image transformation
 - "/create/image/inpaint" - Inpainting (edit parts of image)
-- "/create/image/selective-edit" - Selective editing with references
 - "/create/video/text-to-video" - Text to Video generation
 - "/create/video/image-to-video" - Animate an image into video
 - "/create/audio/text-to-speech" - Text to Speech
@@ -1916,17 +1915,6 @@ PROACTIVE WORKFLOW:
 3. ASK FOR CHANGES: "What should replace the masked area?"
 4. FILL THE FORM: Use update_asset_details to set the description
 5. OFFER TO GENERATE: "Ready to see the edit?"
-
-TOOLS AVAILABLE:
-- update_asset_details: Set name, user_description, ai_prompt`,
-
-  'creator-selective-edit': `You are on the SELECTIVE EDIT page (edit with references).
-
-PROACTIVE WORKFLOW:
-1. ASK FOR SOURCE: "Upload the image you want to edit"
-2. ASK FOR REFERENCE: "Upload a reference image showing the style or element you want"
-3. ASK FOR CHANGES: "Describe how you want to combine these"
-4. FILL THE FORM: Use update_asset_details
 
 TOOLS AVAILABLE:
 - update_asset_details: Set name, user_description, ai_prompt`,

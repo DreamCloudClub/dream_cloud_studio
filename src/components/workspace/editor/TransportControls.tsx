@@ -1,3 +1,4 @@
+import { useState } from "react"
 import {
   Play,
   Pause,
@@ -9,7 +10,9 @@ import {
   ZoomOut,
   Volume2,
   VolumeX,
+  RefreshCw,
 } from "lucide-react"
+import { syncAllVideoDurations } from "@/services/assets"
 
 interface TransportControlsProps {
   isPlaying: boolean
@@ -24,6 +27,7 @@ interface TransportControlsProps {
   onToggleMute: () => void
   onToggleFullscreen: () => void
   onScaleChange: (scale: number) => void
+  onDurationsSync?: () => void
 }
 
 function formatTime(seconds: number): string {
@@ -45,7 +49,29 @@ export function TransportControls({
   onToggleMute,
   onToggleFullscreen,
   onScaleChange,
+  onDurationsSync,
 }: TransportControlsProps) {
+  const [isSyncing, setIsSyncing] = useState(false)
+  const [syncStatus, setSyncStatus] = useState<string | null>(null)
+
+  const handleSyncDurations = async () => {
+    setIsSyncing(true)
+    setSyncStatus("Syncing...")
+    try {
+      const result = await syncAllVideoDurations((current, total, name) => {
+        setSyncStatus(`${current}/${total}: ${name}`)
+      })
+      setSyncStatus(`Done! Updated ${result.updated}, failed ${result.failed}`)
+      setTimeout(() => setSyncStatus(null), 3000)
+      onDurationsSync?.()
+    } catch (err) {
+      setSyncStatus("Sync failed")
+      setTimeout(() => setSyncStatus(null), 3000)
+    } finally {
+      setIsSyncing(false)
+    }
+  }
+
   return (
     <div className="flex-shrink-0 h-10 px-3 bg-zinc-900 border-b border-zinc-800 flex items-center gap-3">
       {/* Playback controls */}
@@ -113,6 +139,17 @@ export function TransportControls({
         className="w-6 h-6 rounded bg-zinc-800 hover:bg-zinc-700 flex items-center justify-center text-zinc-400 hover:text-white transition-colors"
       >
         {isFullscreen ? <Minimize2 className="w-3.5 h-3.5" /> : <Maximize2 className="w-3.5 h-3.5" />}
+      </button>
+
+      {/* Sync Durations */}
+      <button
+        onClick={handleSyncDurations}
+        disabled={isSyncing}
+        className="h-6 px-2 rounded bg-zinc-800 hover:bg-zinc-700 flex items-center gap-1 text-zinc-400 hover:text-white transition-colors disabled:opacity-50"
+        title="Sync video durations from actual files"
+      >
+        <RefreshCw className={`w-3 h-3 ${isSyncing ? 'animate-spin' : ''}`} />
+        <span className="text-xs">{syncStatus || 'Sync'}</span>
       </button>
     </div>
   )

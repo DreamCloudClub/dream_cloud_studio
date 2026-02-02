@@ -49,6 +49,7 @@ export function ClipBlock({
   const asset = clip.asset
   const thumbnailUrl = asset ? getAssetDisplayUrl(asset) : null
   const isVideo = asset?.type === "video"
+  const isAudio = asset?.type === "audio"
 
   const handleClick = (e: React.MouseEvent) => {
     e.stopPropagation()
@@ -105,14 +106,25 @@ export function ClipBlock({
         }
       } else {
         // Trimming end: can shorten or extend back, but not beyond source length
-        const assetDuration = asset?.duration
+        // Check both asset.duration and embeddedAsset.duration for source length
+        const sourceDuration = asset?.duration || clip.embeddedAsset?.duration
         const currentInPoint = originalClipData.inPoint
+        const isVideo = asset?.type === "video"
 
-        // Max duration is whatever source content remains after the in-point
-        // For images (no duration), use current duration as max (can't extend)
-        const maxDuration = assetDuration
-          ? assetDuration - currentInPoint
-          : originalClipData.duration
+        // Max duration depends on asset type:
+        // - Videos with known duration: can extend up to (sourceDuration - inPoint)
+        // - Videos without duration: cannot extend beyond current (missing metadata)
+        // - Images: can extend up to 60 seconds
+        let maxDuration: number
+        if (sourceDuration) {
+          maxDuration = sourceDuration - currentInPoint
+        } else if (isVideo) {
+          // Video without duration metadata - don't allow extension
+          maxDuration = originalClipData.duration
+        } else {
+          // Images can be any duration up to 60s
+          maxDuration = 60
+        }
 
         const newDuration = Math.max(
           MIN_CLIP_DURATION,
@@ -145,11 +157,15 @@ export function ClipBlock({
       className={cn(
         "absolute top-1 h-12 rounded-lg flex items-center text-xs font-medium transition-all overflow-hidden group",
         isTrimming ? "cursor-ew-resize" : "cursor-grab active:cursor-grabbing",
-        thumbnailUrl
-          ? "bg-zinc-800"
-          : "bg-gradient-to-br from-orange-500 to-orange-600",
+        isAudio
+          ? "bg-gradient-to-br from-violet-500 to-purple-600"
+          : thumbnailUrl
+            ? "bg-zinc-800"
+            : "bg-gradient-to-br from-orange-500 to-orange-600",
         isSelected
-          ? "ring-2 ring-white shadow-lg shadow-orange-500/30 z-10"
+          ? isAudio
+            ? "ring-2 ring-white shadow-lg shadow-violet-500/30 z-10"
+            : "ring-2 ring-white shadow-lg shadow-orange-500/30 z-10"
           : "hover:brightness-110"
       )}
       style={{
@@ -160,8 +176,9 @@ export function ClipBlock({
       {/* Left trim handle */}
       <div
         onMouseDown={(e) => handleTrimMouseDown(e, "start")}
+        onClick={(e) => e.stopPropagation()}
         className={cn(
-          "absolute left-0 top-0 bottom-0 w-2 cursor-ew-resize z-20 group/trim",
+          "absolute left-0 top-0 bottom-0 w-3 cursor-ew-resize z-20 group/trim",
           "hover:bg-white/30 transition-colors",
           isTrimming === "start" && "bg-white/40"
         )}
@@ -172,8 +189,9 @@ export function ClipBlock({
       {/* Right trim handle */}
       <div
         onMouseDown={(e) => handleTrimMouseDown(e, "end")}
+        onClick={(e) => e.stopPropagation()}
         className={cn(
-          "absolute right-0 top-0 bottom-0 w-2 cursor-ew-resize z-20 group/trim",
+          "absolute right-0 top-0 bottom-0 w-3 cursor-ew-resize z-20 group/trim",
           "hover:bg-white/30 transition-colors",
           isTrimming === "end" && "bg-white/40"
         )}
@@ -182,7 +200,9 @@ export function ClipBlock({
       </div>
 
       {/* Thumbnail/Preview */}
-      {thumbnailUrl && (
+      {isAudio ? (
+        <div className="absolute inset-0 bg-gradient-to-br from-violet-500/80 via-violet-600/80 to-purple-700/80 pointer-events-none" />
+      ) : thumbnailUrl && (
         <>
           {isVideo ? (
             <video

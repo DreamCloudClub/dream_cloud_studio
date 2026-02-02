@@ -214,3 +214,61 @@ export async function generateVideoVeo(options: GenerateVideoVeoOptions): Promis
 
   throw new Error("No video generated")
 }
+
+// ============================================
+// UPSCALE - Image Upscaling with Imagen 3
+// ============================================
+
+export interface UpscaleImageOptions {
+  imageUrl: string           // Source image to upscale
+  scaleFactor?: 2 | 4        // 2x or 4x upscaling
+  enhancementStrength?: 'low' | 'medium' | 'high'  // Detail enhancement level
+  preserveFaces?: boolean    // Preserve facial details
+}
+
+/**
+ * Upscale an image using Google's Imagen 3 model via Replicate
+ * Preserves the original image content while increasing resolution
+ */
+export async function upscaleImage(options: UpscaleImageOptions): Promise<string> {
+  const {
+    imageUrl,
+    scaleFactor = 2,
+    enhancementStrength = 'medium',
+    preserveFaces = false,
+  } = options
+
+  console.log(`Upscaling image ${scaleFactor}x with Imagen 3...`)
+
+  // Build a prompt that instructs the model to enhance without changing content
+  const enhancementPrompts: Record<string, string> = {
+    low: "Subtle enhancement, preserve original details exactly",
+    medium: "Balanced enhancement, sharpen details while preserving original content",
+    high: "Strong enhancement, maximize clarity and sharpness",
+  }
+
+  const basePrompt = `Upscale this image to ${scaleFactor}x resolution. ${enhancementPrompts[enhancementStrength]}. Do not add, remove, or change any content - only increase resolution and clarity.`
+  const facePrompt = preserveFaces ? " Pay special attention to preserving facial features and expressions with maximum fidelity." : ""
+
+  const prompt = basePrompt + facePrompt
+
+  const input: Record<string, unknown> = {
+    prompt,
+    image_input: [imageUrl],
+    aspect_ratio: "match_input_image",
+    output_format: "png",
+  }
+
+  const prediction = await createPrediction(NANO_BANANA_VERSION, input)
+  const output = await pollPrediction(prediction.id)
+
+  if (typeof output === "string") {
+    return output
+  }
+
+  if (Array.isArray(output) && output.length > 0) {
+    return output[0]
+  }
+
+  throw new Error("Upscaling failed - no output received")
+}

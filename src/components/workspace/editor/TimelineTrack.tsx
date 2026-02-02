@@ -1,4 +1,4 @@
-import { Film, Music, Plus, Lock, Unlock } from "lucide-react"
+import { Film, Music, Plus, Lock, Unlock, Volume2, VolumeX } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { TimelineClipWithAsset } from "@/state/workspaceStore"
 import { ClipBlock, BASE_SCALE } from "./ClipBlock"
@@ -16,7 +16,11 @@ interface TimelineTrackProps {
   isDroppingAsset: boolean
   isDragTarget?: boolean
   autoSnap: boolean
+  muted: boolean
+  volume: number
   onToggleAutoSnap: () => void
+  onMuteToggle: () => void
+  onVolumeChange: (volume: number) => void
   onClipClick: (clipId: string) => void
   onClipDragStart: (e: React.DragEvent, clip: TimelineClipWithAsset) => void
   onClipDragEnd: () => void
@@ -41,7 +45,11 @@ export function TimelineTrack({
   isDroppingAsset,
   isDragTarget,
   autoSnap,
+  muted,
+  volume,
   onToggleAutoSnap,
+  onMuteToggle,
+  onVolumeChange,
   onClipClick,
   onClipDragStart,
   onClipDragEnd,
@@ -55,28 +63,63 @@ export function TimelineTrack({
   onDrop,
 }: TimelineTrackProps) {
   const Icon = type === "video" ? Film : Music
+  const VolumeIcon = muted ? VolumeX : Volume2
 
   return (
-    <div className="flex h-16 border-b border-zinc-800 last:border-b-0">
+    <div className="flex h-16 border-b border-zinc-800 last:border-b-0 group/track">
       {/* Track Label - Sticky on left */}
-      <div className="w-20 flex-shrink-0 bg-zinc-900 border-r border-zinc-700 flex items-center justify-center gap-1 sticky left-0 z-20">
-        <Icon className="w-3.5 h-3.5 text-zinc-500" />
-        <span className="text-xs text-zinc-500">{label}</span>
-        <button
-          onClick={(e) => {
-            e.stopPropagation()
-            onToggleAutoSnap()
-          }}
-          className={cn(
-            "w-5 h-5 rounded flex items-center justify-center transition-colors ml-0.5",
-            autoSnap
-              ? "bg-sky-500/20 text-sky-400 hover:bg-sky-500/30"
-              : "text-zinc-600 hover:text-zinc-400 hover:bg-zinc-800"
-          )}
-          title={autoSnap ? "Auto-snap ON" : "Auto-snap OFF"}
-        >
-          {autoSnap ? <Lock className="w-3 h-3" /> : <Unlock className="w-3 h-3" />}
-        </button>
+      <div className="w-28 flex-shrink-0 bg-zinc-900 border-r border-zinc-700 flex flex-col justify-center px-1.5 sticky left-0 z-20 overflow-hidden">
+        {/* Top row: Icon, Label, Lock */}
+        <div className="flex items-center gap-1">
+          <Icon className="w-3.5 h-3.5 text-zinc-500" />
+          <span className="text-xs text-zinc-500 flex-1">{label}</span>
+          <button
+            onClick={(e) => {
+              e.stopPropagation()
+              onToggleAutoSnap()
+            }}
+            className={cn(
+              "w-5 h-5 rounded flex items-center justify-center transition-colors",
+              autoSnap
+                ? "bg-sky-500/20 text-sky-400 hover:bg-sky-500/30"
+                : "text-zinc-600 hover:text-zinc-400 hover:bg-zinc-800"
+            )}
+            title={autoSnap ? "Auto-snap ON" : "Auto-snap OFF"}
+          >
+            {autoSnap ? <Lock className="w-3 h-3" /> : <Unlock className="w-3 h-3" />}
+          </button>
+        </div>
+        {/* Bottom row: Mute + Volume slider */}
+        <div className="flex items-center gap-1 mt-1 min-w-0">
+          <button
+            onClick={(e) => {
+              e.stopPropagation()
+              onMuteToggle()
+            }}
+            className={cn(
+              "w-5 h-5 flex-shrink-0 rounded flex items-center justify-center transition-colors",
+              muted
+                ? "bg-red-500/20 text-red-400 hover:bg-red-500/30"
+                : "text-zinc-500 hover:text-zinc-300 hover:bg-zinc-800"
+            )}
+            title={muted ? "Unmute track" : "Mute track"}
+          >
+            <VolumeIcon className="w-3 h-3" />
+          </button>
+          <input
+            type="range"
+            min="0"
+            max="100"
+            value={muted ? 0 : volume}
+            onChange={(e) => {
+              e.stopPropagation()
+              onVolumeChange(Number(e.target.value))
+            }}
+            onClick={(e) => e.stopPropagation()}
+            className="flex-1 min-w-0 h-1 bg-zinc-700 rounded-full appearance-none cursor-pointer accent-sky-500 [&::-webkit-slider-thumb]:w-2 [&::-webkit-slider-thumb]:h-2 [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:bg-sky-400 [&::-webkit-slider-thumb]:appearance-none"
+            title={`Volume: ${volume}%`}
+          />
+        </div>
       </div>
 
       {/* Track Content */}

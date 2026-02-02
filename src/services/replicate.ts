@@ -4,7 +4,7 @@
 
 import { supabase } from "../lib/supabase"
 import type { Asset, AssetCategory, Json } from "@/types/database"
-import { createGeneratedAsset, linkImageAssetToShot, linkVideoAssetToShot } from "./assets"
+import { createGeneratedAsset, linkImageAssetToShot, linkVideoAssetToShot, getVideoDuration } from "./assets"
 
 // Get the Supabase URL for edge functions
 const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL
@@ -78,6 +78,7 @@ const FLUX_11_PRO_VERSION = "609793a667ed94b210242837d3c3c9fc9a64ae93685f15d7500
 const FLUX_KONTEXT_PRO_VERSION = "897a70f5a7dbd8a0611413b3b98cf417b45f266bd595c571a22947619d9ae462"
 const GPT_IMAGE_15_VERSION = "118f53498ea7319519229b2d5bd0d4a69e3d77eb60d6292d5db38125534dc1ca"
 const SDXL_VERSION = "7762fd07cf82c948538e41f63f77d685e02b063e37e496e96eefd46c929f9bdc"
+const SDXL_INPAINTING_VERSION = "a5b13068cc81a89a4fbeefeccc774869fcb34df4dbc92c1555e0f2771d49dde7"  // lucataco/sdxl-inpainting
 
 export interface GenerateImageOptions {
   prompt: string
@@ -85,6 +86,7 @@ export interface GenerateImageOptions {
   style?: string
   referenceImageUrl?: string
   referenceImageUrls?: string[]  // Multiple reference images (uses GPT-image-1.5)
+  maskUrl?: string  // For inpainting: mask image URL (white = region to regenerate)
   width?: number
   height?: number
   numOutputs?: number
@@ -186,12 +188,24 @@ export async function generateImages(options: GenerateImageOptions): Promise<str
       // Map strength to input_fidelity: lower strength = high fidelity (preserve more)
       const inputFidelity = strength <= 0.5 ? "high" : "low"
 
+      // GPT-image-1.5 only supports "1:1", "3:2", "2:3" - map other ratios
+      const getGptAspectRatio = (ratio: string): "1:1" | "3:2" | "2:3" => {
+        if (ratio === "1:1") return "1:1"
+        // Landscape ratios map to 3:2
+        if (ratio === "16:9" || ratio === "4:3") return "3:2"
+        // Portrait ratios map to 2:3
+        if (ratio === "9:16" || ratio === "3:4") return "2:3"
+        // Default based on dimensions
+        return width > height ? "3:2" : width < height ? "2:3" : "1:1"
+      }
+      const gptAspectRatio = getGptAspectRatio(aspectRatioStr)
+
       const input: Record<string, unknown> = {
         prompt: fullPrompt,
         input_images: allReferenceUrls.length > 0 ? allReferenceUrls : undefined,
         input_fidelity: inputFidelity,
         quality: "high",
-        aspect_ratio: aspectRatioStr,
+        aspect_ratio: gptAspectRatio,
         number_of_images: numOutputs,
         output_format: "png",
       }
@@ -216,11 +230,62 @@ export async function generateImages(options: GenerateImageOptions): Promise<str
   }
 
   // ============================================
-  // SDXL - With optional img2img support
+  // SDXL - With optional img2img and inpainting support
   // ============================================
   if (model === "sdxl") {
-    console.log("Generating with SDXL...")
+    const isInpainting = options.maskUrl && allReferenceUrls.length >= 1
+    console.log(isInpainting ? "Generating with SDXL inpainting..." : "Generating with SDXL...")
 
+    // Use dedicated SDXL inpainting model if mask provided
+    if (isInpainting) {
+      console.log(`Using dedicated SDXL inpainting model`)
+      console.log(`Strength: ${strength}`)
+      console.log(`Image URL: ${allReferenceUrls[0].substring(0, 100)}...`)
+      console.log(`Mask URL length: ${options.maskUrl?.length}`)
+
+      // Generate images one at a time for inpainting (model returns single image)
+      const images: string[] = []
+
+      for (let i = 0; i < numOutputs; i++) {
+        try {
+          console.log(`Generating inpainted image ${i + 1} of ${numOutputs}...`)
+
+          const input: Record<string, unknown> = {
+            prompt: fullPrompt,
+            negative_prompt: options.negativePrompt || "blurry, low quality, distorted, ugly, bad anatomy, deformed",
+            image: allReferenceUrls[0],
+            mask: options.maskUrl,  // lucataco/sdxl-inpainting uses "mask" parameter
+            strength: strength,  // 0-1: how much to change masked region
+            steps: 25,
+            guidance_scale: 8,
+          }
+
+          const prediction = await createPrediction(SDXL_INPAINTING_VERSION, input)
+          const output = await pollPrediction(prediction.id)
+
+          if (typeof output === "string") {
+            images.push(output)
+          } else if (Array.isArray(output) && output.length > 0) {
+            images.push(output[0])
+          }
+
+          // Delay between requests
+          if (i < numOutputs - 1) {
+            await new Promise(resolve => setTimeout(resolve, 2000))
+          }
+        } catch (error) {
+          console.error(`Error generating inpainted image ${i + 1}:`, error)
+        }
+      }
+
+      if (images.length === 0) {
+        throw new Error("Inpainting failed - no images generated")
+      }
+
+      return images
+    }
+
+    // Standard text-to-image or img2img (no mask)
     const input: Record<string, unknown> = {
       prompt: fullPrompt,
       negative_prompt: options.negativePrompt || "blurry, low quality, distorted, ugly, bad anatomy, deformed",
@@ -234,7 +299,7 @@ export async function generateImages(options: GenerateImageOptions): Promise<str
       high_noise_frac: 0.8,
     }
 
-    // Add img2img parameters if reference provided
+    // Add img2img parameters if reference provided (no mask)
     if (allReferenceUrls.length === 1) {
       input.image = allReferenceUrls[0]
       input.prompt_strength = strength  // SDXL uses prompt_strength for img2img
@@ -516,6 +581,15 @@ export async function generateImageAssets(options: GenerateImageAssetOptions): P
       ? (imageUrls.length > 1 ? `${assetName} ${i + 1}` : assetName)
       : `Generated Image ${i + 1}`
 
+    // Map model option to proper model name
+    const modelNameMap: Record<string, string> = {
+      "sdxl": "sdxl",
+      "flux-pro": "flux-1.1-pro",
+      "flux-kontext": "flux-kontext-pro",
+      "gpt": "gpt-image-1.5",
+    }
+    const generationModel = modelNameMap[options.model || "flux-pro"] || options.model || "flux-1.1-pro"
+
     const asset = await createGeneratedAsset({
       userId,
       projectId,
@@ -525,7 +599,7 @@ export async function generateImageAssets(options: GenerateImageAssetOptions): P
       sourceUrl: imageUrls[i],
       userDescription: prompt,
       aiPrompt,
-      generationModel: options.model === "sdxl" ? "sdxl" : "flux-1.1-pro",
+      generationModel,
       generationSettings: {
         style,
         width: options.width || 1024,
@@ -584,10 +658,10 @@ export async function generateVideoAsset(options: GenerateVideoAssetOptions): Pr
     ...generateOptions,
   })
 
-  // Determine actual duration (Kling can do 5 or 10s, Minimax does ~6s)
-  const duration = options.model === "kling"
-    ? (options.duration || 5)
-    : 6
+  // Extract ACTUAL duration from the generated video
+  const actualDuration = await getVideoDuration(videoUrl)
+  const duration = actualDuration || (options.model === "kling" ? (options.duration || 5) : 6)
+  console.log(`Video generated: requested ${options.duration || 5}s, actual ${actualDuration}s, using ${duration}s`)
 
   const asset = await createGeneratedAsset({
     userId,
@@ -601,7 +675,7 @@ export async function generateVideoAsset(options: GenerateVideoAssetOptions): Pr
     generationModel: options.model === "minimax" ? "minimax-video-01" : "kling-v2.1",
     generationSettings: {
       sourceImageAssetId,
-      duration: options.duration || 5,
+      duration,
       quality: options.quality || "pro",
     } as Json,
     duration,

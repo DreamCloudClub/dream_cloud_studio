@@ -14,8 +14,8 @@ export function TimelineRuler({ totalDuration, scale, onTimeChange }: TimelineRu
   const handleClick = useCallback((e: React.MouseEvent<HTMLDivElement>) => {
     if (!rulerRef.current) return
     const rect = rulerRef.current.getBoundingClientRect()
-    // Subtract the 80px track label offset
-    const x = e.clientX - rect.left - 80
+    // Subtract the 112px track label offset (w-28)
+    const x = e.clientX - rect.left - 112
     const time = Math.max(0, x / (BASE_SCALE * scale))
     onTimeChange(time)
   }, [scale, onTimeChange])
@@ -27,7 +27,7 @@ export function TimelineRuler({ totalDuration, scale, onTimeChange }: TimelineRu
       onClick={handleClick}
     >
       {/* Offset for track labels */}
-      <div className="w-20 flex-shrink-0 pointer-events-none" />
+      <div className="w-28 flex-shrink-0 pointer-events-none" />
 
       {/* Time markers */}
       <div className="flex items-end h-full pointer-events-none">

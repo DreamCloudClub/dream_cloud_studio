@@ -11,7 +11,8 @@ import { useLibraryStore } from "@/state/libraryStore"
 import { ResizeHandle } from "./ResizeHandle"
 import { VideoPreviewPanel } from "./VideoPreviewPanel"
 import { TransportControls } from "./TransportControls"
-import { TimelinePanel } from "./TimelinePanel"
+import { TimelinePanel, TrackAudioSettings } from "./TimelinePanel"
+import { getAssetDisplayUrl } from "@/services/localStorage"
 
 // Hook to get merged assets from project and library - MEMOIZED
 function useMergedAssets(): ProjectAsset[] {
@@ -68,12 +69,17 @@ export function EditorLayout({ aspectRatio }: EditorLayoutProps) {
     currentTime,
     setCurrentTime,
     project,
+    loadProject,
   } = useWorkspaceStore()
 
   const mergedAssets = useMergedAssets()
   const [isMuted, setIsMuted] = useState(false)
   const [isFullscreen, setIsFullscreen] = useState(false)
   const [scale, setScale] = useState(1)
+  const [trackAudioSettings, setTrackAudioSettings] = useState<Record<string, TrackAudioSettings>>({})
+
+  // Audio elements for audio track clips
+  const audioElementsRef = useRef<Map<string, HTMLAudioElement>>(new Map())
 
   // Memoize clips array - only recompute when timeline or assets change
   const clips = useMemo(() => {
@@ -118,6 +124,79 @@ export function EditorLayout({ aspectRatio }: EditorLayoutProps) {
       return getTrackNumber(clip.trackId) > getTrackNumber(best.trackId) ? clip : best
     })
   }, [sortedClips, currentTime])
+
+  // Get audio clips currently at playhead
+  const currentAudioClips = useMemo(() => {
+    return clips.filter((clip) => {
+      if (clip.asset?.type !== "audio") return false
+      return currentTime >= clip.startTime && currentTime < clip.startTime + clip.duration
+    })
+  }, [clips, currentTime])
+
+  // Audio playback effect - manages audio elements for audio clips
+  useEffect(() => {
+    const audioElements = audioElementsRef.current
+
+    // Get IDs of clips that should be playing
+    const activeClipIds = new Set(currentAudioClips.map(c => c.id))
+
+    // Stop and remove audio elements for clips no longer active
+    for (const [clipId, audio] of audioElements) {
+      if (!activeClipIds.has(clipId)) {
+        audio.pause()
+        audioElements.delete(clipId)
+      }
+    }
+
+    // Handle each active audio clip
+    for (const clip of currentAudioClips) {
+      const url = clip.asset ? getAssetDisplayUrl(clip.asset) : null
+      if (!url) continue
+
+      let audio = audioElements.get(clip.id)
+
+      // Create audio element if it doesn't exist
+      if (!audio) {
+        audio = new Audio(url)
+        audio.preload = "auto"
+        audioElements.set(clip.id, audio)
+      }
+
+      // Get track settings
+      const trackId = clip.trackId || "audio-1"
+      const settings = trackAudioSettings[trackId]
+      const trackMuted = settings?.muted ?? false
+      const trackVolume = settings?.volume ?? 100
+
+      // Apply volume (global mute, track mute, track volume)
+      audio.muted = isMuted || trackMuted
+      audio.volume = trackVolume / 100
+
+      // Calculate where in the audio we should be
+      const timeInClip = currentTime - clip.startTime
+      const audioTime = (clip.inPoint || 0) + timeInClip
+
+      if (isPlaying) {
+        // Sync audio time if needed (allow small drift)
+        if (Math.abs(audio.currentTime - audioTime) > 0.3) {
+          audio.currentTime = audioTime
+        }
+        if (audio.paused) {
+          audio.play().catch(() => {})
+        }
+      } else {
+        audio.pause()
+        audio.currentTime = audioTime
+      }
+    }
+
+    // Cleanup on unmount
+    return () => {
+      for (const audio of audioElements.values()) {
+        audio.pause()
+      }
+    }
+  }, [currentAudioClips, currentTime, isPlaying, isMuted, trackAudioSettings])
 
   if (!project) return null
 
@@ -249,6 +328,7 @@ export function EditorLayout({ aspectRatio }: EditorLayoutProps) {
             onToggleMute={handleToggleMute}
             onToggleFullscreen={toggleFullscreen}
             onScaleChange={setScale}
+            onDurationsSync={() => project && loadProject(project.id)}
           />
 
           {/* Scrollable Timeline */}
@@ -257,6 +337,7 @@ export function EditorLayout({ aspectRatio }: EditorLayoutProps) {
             scale={scale}
             onTimeChange={setCurrentTime}
             onScrubStart={handleScrubStart}
+            onTrackAudioChange={setTrackAudioSettings}
           />
         </Panel>
       </Group>

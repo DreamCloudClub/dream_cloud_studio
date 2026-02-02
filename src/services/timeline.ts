@@ -103,8 +103,26 @@ export async function addClip(
 
   const assetData = asset as Asset
 
-  // Default duration: asset duration for video/audio, 5s for images
-  const duration = options?.duration ?? assetData.duration ?? 5
+  // For video/audio: ALWAYS get real duration from the file
+  let duration = options?.duration ?? assetData.duration
+
+  if (!duration && assetData.url && (assetData.type === 'video' || assetData.type === 'audio')) {
+    const { getVideoDuration } = await import('./assets')
+    duration = await getVideoDuration(assetData.url)
+    if (duration) {
+      // Save it so we don't have to extract again
+      await supabase.from('assets').update({ duration }).eq('id', assetId)
+    }
+  }
+
+  // Images default to 5s display time (they have no inherent duration)
+  if (!duration && assetData.type === 'image') {
+    duration = 5
+  }
+
+  if (!duration) {
+    throw new Error(`Could not determine duration for asset: ${assetData.name}`)
+  }
 
   const clip = await createClip({
     project_id: projectId,

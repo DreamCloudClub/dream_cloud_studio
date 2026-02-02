@@ -229,6 +229,9 @@ export interface ExportSettings {
   format: ExportFormat
   frame_rate: number
   quality: ExportQuality
+  is_muted: boolean
+  editor_volume: number
+  track_audio_settings: Record<string, { muted: boolean; volume: number }> | null
   created_at: string
   updated_at: string
 }
@@ -488,6 +491,9 @@ export interface ExportSettingsInsert {
   format?: ExportFormat
   frame_rate?: number
   quality?: ExportQuality
+  is_muted?: boolean
+  editor_volume?: number
+  track_audio_settings?: Record<string, { muted: boolean; volume: number }> | null
 }
 
 export interface ProjectNoteInsert {

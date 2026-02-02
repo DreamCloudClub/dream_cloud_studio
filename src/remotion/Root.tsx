@@ -1,7 +1,9 @@
 import { Composition } from "remotion"
 import { VideoComposition } from "./VideoComposition"
 import { AnimationComposition } from "./AnimationComposition"
+import { TimelineComposition } from "./TimelineComposition"
 import type { AnimationCompositionProps } from "./AnimationComposition"
+import type { TimelineCompositionProps } from "./TimelineComposition"
 import type { PanDirection } from "./components"
 
 // Default composition settings
@@ -88,6 +90,17 @@ export function RemotionRoot() {
           segments: [],
           backgroundColor: "#000000",
         } as AnimationCompositionProps}
+      />
+      <Composition
+        id="TimelineComposition"
+        component={TimelineComposition}
+        durationInFrames={300} // Will be calculated from clips
+        fps={VIDEO_FPS}
+        width={VIDEO_WIDTH}
+        height={VIDEO_HEIGHT}
+        defaultProps={{
+          clips: [],
+        } as TimelineCompositionProps}
       />
     </>
   )

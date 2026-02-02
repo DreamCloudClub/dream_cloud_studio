@@ -55,7 +55,6 @@ const PROMPT_TYPE_ICONS: Record<string, React.ElementType> = {
   "text-to-image": Type,
   "image-to-image": ImagePlus,
   "inpaint": Paintbrush,
-  "selective-edit": Expand,
   "upscale": Maximize,
   "text-to-video": Type,
   "image-to-video": ImagePlus,

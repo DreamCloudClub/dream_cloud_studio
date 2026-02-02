@@ -483,20 +483,60 @@ export async function uploadAndCreateAsset(
     }
   } else {
     // Browser mode: upload to Supabase Storage for permanent URLs
-    console.log('Browser mode: uploading to Supabase Storage...')
+    console.log('Browser mode: uploading to Supabase Storage...', {
+      fileName: file.name,
+      fileType: file.type,
+      fileSize: file.size,
+      detectedType: type,
+      extension,
+    })
     const storagePath = `${userId}/${assetId}.${extension}`
+
+    // Determine content type - use file.type if available, otherwise derive from extension
+    let contentType = file.type
+    if (!contentType || contentType === 'application/octet-stream') {
+      // Fallback content type based on detected asset type and extension
+      const mimeTypes: Record<string, string> = {
+        mp3: 'audio/mpeg',
+        wav: 'audio/wav',
+        ogg: 'audio/ogg',
+        m4a: 'audio/mp4',
+        aac: 'audio/aac',
+        flac: 'audio/flac',
+        mp4: 'video/mp4',
+        webm: type === 'audio' ? 'audio/webm' : 'video/webm',
+        mov: 'video/quicktime',
+        png: 'image/png',
+        jpg: 'image/jpeg',
+        jpeg: 'image/jpeg',
+        gif: 'image/gif',
+        webp: 'image/webp',
+      }
+      contentType = mimeTypes[extension] || `${type}/${extension}`
+      console.log('Using fallback contentType:', contentType)
+    }
 
     const { error: uploadError } = await getStorageBucket('generated-media').upload(storagePath, file, {
       cacheControl: '31536000', // 1 year cache
-      contentType: file.type,
+      contentType,
       upsert: false,
     })
 
-    if (uploadError) throw uploadError
+    if (uploadError) {
+      console.error('Supabase upload error:', uploadError)
+      throw uploadError
+    }
 
     // Get public URL (permanent, no expiry)
     finalUrl = getPublicUrl('generated-media', storagePath)
     console.log('Uploaded to Supabase Storage:', finalUrl)
+  }
+
+  // Extract video duration if it's a video
+  let duration: number | null = null
+  if (type === 'video') {
+    duration = await getVideoDuration(file)
+    console.log('Extracted video duration:', duration)
   }
 
   // Create asset record
@@ -508,6 +548,7 @@ export async function uploadAndCreateAsset(
     type,
     category: options.category || null,
     url: finalUrl,
+    duration,
     file_size: file.size,
     storage_type: storageType,
     local_path: localPath,
@@ -518,6 +559,120 @@ export async function uploadAndCreateAsset(
   })
 
   return asset
+}
+
+// ============================================
+// VIDEO DURATION EXTRACTION
+// ============================================
+
+/**
+ * Extract duration from a video file or URL
+ */
+export async function getVideoDuration(source: File | string): Promise<number | null> {
+  return new Promise((resolve) => {
+    const video = document.createElement('video')
+    video.preload = 'metadata'
+
+    const cleanup = () => {
+      video.removeEventListener('loadedmetadata', onLoaded)
+      video.removeEventListener('error', onError)
+      if (video.src.startsWith('blob:')) {
+        URL.revokeObjectURL(video.src)
+      }
+    }
+
+    const onLoaded = () => {
+      const duration = video.duration
+      cleanup()
+      resolve(isFinite(duration) ? duration : null)
+    }
+
+    const onError = () => {
+      cleanup()
+      resolve(null)
+    }
+
+    video.addEventListener('loadedmetadata', onLoaded)
+    video.addEventListener('error', onError)
+
+    if (typeof source === 'string') {
+      video.src = source
+    } else {
+      video.src = URL.createObjectURL(source)
+    }
+  })
+}
+
+/**
+ * Sync all video durations - extracts real duration from videos and updates database
+ * Also fixes clips that defaulted to 5 seconds
+ */
+export async function syncAllVideoDurations(
+  onProgress?: (current: number, total: number, assetName: string) => void
+): Promise<{ updated: number; failed: number }> {
+  // Get all video assets with null duration
+  const { data: assets, error } = await supabase
+    .from('assets')
+    .select('id, name, url, local_path, storage_type')
+    .eq('type', 'video')
+    .is('duration', null)
+
+  if (error) throw error
+  if (!assets || assets.length === 0) {
+    return { updated: 0, failed: 0 }
+  }
+
+  let updated = 0
+  let failed = 0
+
+  for (let i = 0; i < assets.length; i++) {
+    const asset = assets[i]
+    onProgress?.(i + 1, assets.length, asset.name)
+
+    try {
+      // Get the URL to extract duration from
+      const url = asset.storage_type === 'local' && asset.local_path
+        ? `asset://${asset.local_path}`
+        : asset.url
+
+      if (!url) {
+        console.warn(`[syncDurations] No URL for asset: ${asset.name}`)
+        failed++
+        continue
+      }
+
+      // Extract duration
+      const duration = await getVideoDuration(url)
+
+      if (!duration) {
+        console.warn(`[syncDurations] Could not extract duration for: ${asset.name}`)
+        failed++
+        continue
+      }
+
+      console.log(`[syncDurations] ${asset.name}: ${duration}s`)
+
+      // Update asset duration
+      await supabase
+        .from('assets')
+        .update({ duration })
+        .eq('id', asset.id)
+
+      // Update any clips using this asset that have the default 5s duration
+      await supabase
+        .from('timeline_clips')
+        .update({ duration })
+        .eq('asset_id', asset.id)
+        .eq('duration', 5) // Only update clips that still have the default
+
+      updated++
+    } catch (err) {
+      console.error(`[syncDurations] Error processing ${asset.name}:`, err)
+      failed++
+    }
+  }
+
+  return { updated, failed }
 }
 
 // ============================================

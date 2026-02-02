@@ -13,4 +13,6 @@ export type { Shot, TitleConfig, TextOverlayConfig, CompositionProps } from "./R
 export { VideoComposition } from "./VideoComposition"
 export { AnimationComposition } from "./AnimationComposition"
 export type { AnimationCompositionProps, AnimationSegment, AnimationConfig, AnimationLayer, EffectElement } from "./AnimationComposition"
+export { TimelineComposition, FPS } from "./TimelineComposition"
+export type { TimelineCompositionProps } from "./TimelineComposition"
 export * from "./components"

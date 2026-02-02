@@ -150,16 +150,18 @@ const IMAGE_MODELS = [
 ]
 
 const VIDEO_MODELS = [
-  { id: "kling" as const, label: "Kling v2.1", description: "Best quality, 5-10s" },
-  { id: "veo-3" as const, label: "Veo 3", description: "Google AI" },
-  { id: "grok-video" as const, label: "Grok Video", description: "xAI" },
-  { id: "minimax" as const, label: "Minimax", description: "Fast, ~6s" },
+  { id: "kling" as const, label: "Kling v2.1", description: "Best quality, 5-10s", durations: [5, 10] },
+  { id: "veo-3" as const, label: "Veo 3", description: "Google AI, 4-8s", durations: [4, 6, 8] },
+  { id: "grok-video" as const, label: "Grok Video", description: "xAI", durations: [5, 10] },
+  { id: "minimax" as const, label: "Minimax", description: "Fast, ~6s", durations: [5, 10] },
 ]
 
-const VIDEO_DURATIONS = [
-  { id: 5 as const, label: "5 seconds" },
-  { id: 10 as const, label: "10 seconds" },
-]
+// Helper to get duration options for a model
+const getVideoDurationsForModel = (modelId: string) => {
+  const model = VIDEO_MODELS.find(m => m.id === modelId)
+  const durations = model?.durations || [5, 10]
+  return durations.map(d => ({ id: d, label: `${d} seconds` }))
+}
 
 const ASPECT_RATIOS = [
   { id: "16:9" as const, label: "Landscape (16:9)", width: 1344, height: 768 },
@@ -390,8 +392,17 @@ export function PromptAndGenerateStep() {
   const [error, setError] = useState<string | null>(null)
   const [imageModel, setImageModel] = useState<"flux-pro" | "gpt" | "nano-banana" | "grok" | "sdxl">("sdxl")
   const [videoModel, setVideoModel] = useState<"kling" | "veo-3" | "grok-video" | "minimax">("kling")
-  const [videoDuration, setVideoDuration] = useState<5 | 10>(5)
+  const [videoDuration, setVideoDuration] = useState<number>(5)
   const [aspectRatio, setAspectRatio] = useState<"16:9" | "9:16" | "1:1" | "4:3">("16:9")
+
+  // Reset duration when video model changes if current duration isn't valid
+  useEffect(() => {
+    const modelConfig = VIDEO_MODELS.find(m => m.id === videoModel)
+    const validDurations = modelConfig?.durations || [5, 10]
+    if (!validDurations.includes(videoDuration)) {
+      setVideoDuration(validDurations[0])
+    }
+  }, [videoModel, videoDuration])
 
   // Initialize batches from cache
   const [batches, setBatchesLocal] = useState<GeneratedBatch[]>(() => {
@@ -531,8 +542,10 @@ export function PromptAndGenerateStep() {
   useEffect(() => {
     const handleBubbleVideoDuration = (event: CustomEvent<{ videoDuration: number }>) => {
       const { videoDuration: newDuration } = event.detail
-      if ([5, 10].includes(newDuration)) {
-        setVideoDuration(newDuration as 5 | 10)
+      const modelConfig = VIDEO_MODELS.find(m => m.id === videoModel)
+      const validDurations = modelConfig?.durations || [5, 10]
+      if (validDurations.includes(newDuration)) {
+        setVideoDuration(newDuration)
       }
     }
 
@@ -540,7 +553,7 @@ export function PromptAndGenerateStep() {
     return () => {
       window.removeEventListener('bubble-update-video-duration', handleBubbleVideoDuration as EventListener)
     }
-  }, [])
+  }, [videoModel])
 
   const handleEnhance = async () => {
     if (!userDescription.trim() || !assetType || !category) return
@@ -1094,11 +1107,11 @@ export function PromptAndGenerateStep() {
                   <label className="block text-xs font-medium text-zinc-400 mb-1.5">Duration</label>
                   <CustomDropdown
                     value={String(videoDuration)}
-                    onChange={(val) => setVideoDuration(Number(val) as 5 | 10)}
-                    options={[
-                      { value: "5", label: "5 seconds" },
-                      { value: "10", label: "10 seconds" },
-                    ]}
+                    onChange={(val) => setVideoDuration(Number(val))}
+                    options={getVideoDurationsForModel(videoModel).map(d => ({
+                      value: String(d.id),
+                      label: d.label,
+                    }))}
                   />
                 </div>
               </>
@@ -1120,19 +1133,17 @@ export function PromptAndGenerateStep() {
                   }))}
                 />
               </div>
-              {videoModel === "kling" && (
-                <div className="flex-1">
-                  <label className="block text-xs font-medium text-zinc-400 mb-1.5">Duration</label>
-                  <CustomDropdown
-                    value={String(videoDuration)}
-                    onChange={(val) => setVideoDuration(Number(val) as 5 | 10)}
-                    options={VIDEO_DURATIONS.map(d => ({
-                      value: String(d.id),
-                      label: d.label,
-                    }))}
-                  />
-                </div>
-              )}
+              <div className="flex-1">
+                <label className="block text-xs font-medium text-zinc-400 mb-1.5">Duration</label>
+                <CustomDropdown
+                  value={String(videoDuration)}
+                  onChange={(val) => setVideoDuration(Number(val))}
+                  options={getVideoDurationsForModel(videoModel).map(d => ({
+                    value: String(d.id),
+                    label: d.label,
+                  }))}
+                />
+              </div>
             </div>
           )}
 

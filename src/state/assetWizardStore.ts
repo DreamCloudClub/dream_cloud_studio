@@ -5,7 +5,7 @@ import type { AnimationConfig } from "@/remotion/AnimationComposition"
 export type AssetType = "image" | "video" | "audio" | "animation"
 
 // Prompt types for each asset type
-export type ImagePromptType = "text-to-image" | "image-to-image" | "inpaint" | "selective-edit" | "upscale"
+export type ImagePromptType = "text-to-image" | "image-to-image" | "inpaint" | "upscale"
 export type VideoPromptType = "text-to-video" | "image-to-video" | "video-to-video" | "extend"
 export type AudioPromptType = "text-to-speech" | "voice-to-voice" | "music-sfx"
 export type AnimationPromptType = "text-to-animation"
@@ -28,7 +28,6 @@ export const IMAGE_PROMPT_TYPES = [
   { id: "text-to-image" as const, label: "Text to Image", description: "Generate images from text descriptions" },
   { id: "image-to-image" as const, label: "Image to Image", description: "Transform existing images with text guidance" },
   { id: "inpaint" as const, label: "Inpaint", description: "Selectively edit regions of an image" },
-  { id: "selective-edit" as const, label: "Multi-Reference", description: "Compose images from multiple references" },
   { id: "upscale" as const, label: "Upscale", description: "Increase resolution with AI enhancement" },
 ]
 
@@ -82,6 +81,7 @@ interface AssetWizardState {
   aiPrompt: string         // Enhanced technical prompt for generation engine
   negativePrompt: string
   stylePreset: string | null
+  generationModel: string | null  // Model used for generation (e.g., "flux-1.1-pro", "imagen-3")
 
   // Reference assets (for image-to-image, image-to-video)
   referenceAssets: Asset[]
@@ -126,6 +126,7 @@ interface AssetWizardState {
   setAiPrompt: (prompt: string) => void
   setNegativePrompt: (prompt: string) => void
   setStylePreset: (preset: string | null) => void
+  setGenerationModel: (model: string | null) => void
   addReferenceAsset: (asset: Asset) => void
   removeReferenceAsset: (assetId: string) => void
   setGeneratedAssets: (assets: AssetWizardState["generatedAssets"]) => void
@@ -150,6 +151,7 @@ const initialState = {
   aiPrompt: "",
   negativePrompt: "",
   stylePreset: null as string | null,
+  generationModel: null as string | null,
   referenceAssets: [] as Asset[],
   generatedAssets: [] as AssetWizardState["generatedAssets"],
   cachedBatches: [] as AssetWizardState["cachedBatches"],
@@ -186,6 +188,7 @@ export const useAssetWizardStore = create<AssetWizardState>((set, get) => ({
   setAiPrompt: (prompt) => set({ aiPrompt: prompt }),
   setNegativePrompt: (prompt) => set({ negativePrompt: prompt }),
   setStylePreset: (preset) => set({ stylePreset: preset }),
+  setGenerationModel: (model) => set({ generationModel: model }),
 
   addReferenceAsset: (asset) => {
     const { referenceAssets } = get()

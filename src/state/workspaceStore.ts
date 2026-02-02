@@ -184,6 +184,17 @@ export interface ExportSettings {
   quality: "draft" | "standard" | "high"
 }
 
+export interface TrackAudioSettings {
+  muted: boolean
+  volume: number
+}
+
+export interface EditorSettings {
+  isMuted: boolean
+  volume: number
+  trackAudioSettings: Record<string, TrackAudioSettings>
+}
+
 export interface MoodBoardData {
   images: { id: string; url: string; name: string }[]
   colors: string[]
@@ -232,6 +243,7 @@ export interface Project {
   timeline: Timeline
   storyboardCards: StoryboardCard[]
   exportSettings: ExportSettings
+  editorSettings: EditorSettings
   composition: CompositionData
   createdAt: string
   updatedAt: string
@@ -278,9 +290,11 @@ interface WorkspaceState {
   // Editor - Timeline selection
   selectedClipId: string | null
   isPlaying: boolean
+  isMuted: boolean
   currentTime: number
   setSelectedClip: (id: string | null) => void
   setIsPlaying: (playing: boolean) => void
+  setIsMuted: (muted: boolean) => void
   setCurrentTime: (time: number) => void
 
   // Editor - Notes and Scripts (persisted to database)
@@ -321,6 +335,7 @@ interface WorkspaceState {
 
   // Settings actions
   updateExportSettings: (settings: Partial<ExportSettings>) => Promise<void>
+  updateEditorSettings: (settings: Partial<EditorSettings>) => Promise<void>
   updateComposition: (data: Partial<CompositionData>) => Promise<void>
   saveAll: () => Promise<void>
 }
@@ -338,6 +353,7 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
   selectedStoryboardCardId: null,
   selectedClipId: null,
   isPlaying: false,
+  isMuted: typeof window !== 'undefined' && localStorage.getItem('editor-muted') === 'true',
   currentTime: 0,
   editorNotes: [],
   allScripts: [],
@@ -379,6 +395,10 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
   // Editor
   setSelectedClip: (id) => set({ selectedClipId: id }),
   setIsPlaying: (playing) => set({ isPlaying: playing }),
+  setIsMuted: (muted) => {
+    localStorage.setItem('editor-muted', String(muted))
+    set({ isMuted: muted })
+  },
   setCurrentTime: (time) => set({ currentTime: time }),
 
   // Editor Notes and Scripts (persisted to database)
@@ -577,6 +597,10 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
           format: (dbProject.export_settings?.format || "mp4") as "mp4" | "webm" | "mov",
           frameRate: (dbProject.export_settings?.frame_rate || 30) as 24 | 30 | 60,
           quality: (dbProject.export_settings?.quality || "high") as "draft" | "standard" | "high",
+        },
+        editorSettings: {
+          isMuted: dbProject.export_settings?.is_muted ?? false,
+          volume: dbProject.export_settings?.editor_volume ?? 100,
         },
         composition: dbProject.composition
           ? {
@@ -1187,6 +1211,45 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
         })
       } catch {
         // Already exists
+      }
+    }
+  },
+
+  updateEditorSettings: async (settings) => {
+    const { project } = get()
+    if (!project) return
+
+    const updatedSettings = { ...project.editorSettings, ...settings }
+
+    // Update local state immediately
+    set({
+      project: {
+        ...project,
+        editorSettings: updatedSettings,
+        updatedAt: new Date().toISOString(),
+      },
+    })
+
+    // Save to database - use the full merged settings
+    const dbData: Record<string, unknown> = {
+      is_muted: updatedSettings.isMuted,
+      editor_volume: updatedSettings.volume,
+    }
+
+    try {
+      await updateExportSettingsDb(project.id, dbData)
+    } catch (error) {
+      // Row might not exist for old projects - create it
+      console.log("Creating export_settings row for project:", project.id)
+      try {
+        await createExportSettings({
+          project_id: project.id,
+          is_muted: updatedSettings.isMuted,
+          editor_volume: updatedSettings.volume,
+        })
+        console.log("Created export_settings row successfully")
+      } catch (createError) {
+        console.error("Failed to create editor settings:", createError)
       }
     }
   },

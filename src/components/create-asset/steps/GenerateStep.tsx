@@ -7,6 +7,7 @@ import {
   generateVideo,
   generateMusic,
 } from "@/services/replicate"
+import { getVideoDuration } from "@/services/assets"
 import {
   generateVoice as generateVoiceElevenLabs,
   generateSoundEffect,
@@ -79,11 +80,15 @@ export function GenerateStep() {
           imageUrl: referenceUrl,
         })
 
+        // Extract actual duration from the generated video
+        const duration = await getVideoDuration(videoUrl)
+
         setGeneratedAssets([
           {
             id: `generated-${Date.now()}`,
             url: videoUrl,
             selected: true,
+            duration: duration || 5,
           },
         ])
       } else if (assetType === "audio") {

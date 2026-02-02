@@ -63,6 +63,7 @@ export function SaveStep({ onComplete }: SaveStepProps) {
     userDescription,
     aiPrompt,
     stylePreset,
+    generationModel,
     generatedAssets,
     animationConfig,
     assetName,
@@ -153,6 +154,12 @@ export function SaveStep({ onComplete }: SaveStepProps) {
 
           const data = assetData[asset.id]
 
+          // Use model from store, with fallbacks for each asset type
+          const effectiveModel = generationModel
+            || (assetType === "audio"
+              ? (category === "music" ? "musicgen" : "elevenlabs")
+              : assetType === "video" ? "kling-v2.1" : "flux-1.1-pro")
+
           await createGeneratedAsset({
             userId: user.id,
             name: data?.name || `${category} asset`,
@@ -161,9 +168,7 @@ export function SaveStep({ onComplete }: SaveStepProps) {
             sourceUrl: asset.url,
             userDescription: data?.description || userDescription,
             aiPrompt: aiPrompt || userDescription,
-            generationModel: assetType === "audio"
-              ? (category === "music" ? "replicate_musicgen" : "elevenlabs")
-              : assetType === "video" ? "kling-v2.1" : "replicate_flux",
+            generationModel: effectiveModel,
             generationSettings: {
               style: stylePreset,
               promptType: promptType,

@@ -152,7 +152,7 @@ serve(async (req) => {
         const body: Record<string, unknown> = {
           prompt,
           music_length_ms: duration_ms,
-          instrumental: force_instrumental,
+          force_instrumental,
         }
 
         const response = await fetch(`${ELEVENLABS_API_URL}/music`, {
