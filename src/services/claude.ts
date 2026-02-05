@@ -684,7 +684,7 @@ const TOOLS = [
         image_model: {
           type: 'string',
           enum: ['flux-pro', 'gpt', 'nano-banana', 'grok', 'sdxl'],
-          description: 'Image generation model: "flux-pro" (best quality), "gpt" (best for references), "nano-banana" (Google AI), "grok" (xAI), "sdxl" (faster)'
+          description: 'Image generation model: "flux-pro" (best quality), "gpt" (best for references), "nano-banana" (Imagen 3), "grok" (xAI), "sdxl" (faster)'
         },
         video_model: {
           type: 'string',
@@ -1888,7 +1888,7 @@ AFTER IMAGES ARE GENERATED (when context shows hasGeneratedImages: true):
 
 TOOLS AVAILABLE:
 - update_asset_details: Set name, user_description, ai_prompt, image_model, aspect_ratio, refinement
-  - image_model options: "flux-pro" (best), "gpt" (references), "nano-banana" (Google), "grok" (xAI), "sdxl" (fast)
+  - image_model options: "flux-pro" (best), "gpt" (references), "nano-banana" (Imagen 3), "grok" (xAI), "sdxl" (fast)
   - aspect_ratio options: "16:9", "9:16", "1:1", "4:3"
   - refinement: Use ONLY after images are generated to specify changes for the next batch
 - trigger_generation: Click the Generate button (use after user confirms they want to generate)

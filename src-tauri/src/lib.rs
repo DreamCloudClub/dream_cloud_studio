@@ -8,6 +8,9 @@ use uuid::Uuid;
 mod video_decoder;
 use video_decoder::*;
 
+mod melt_runner;
+use melt_runner::*;
+
 /// Result of a file operation
 #[derive(Serialize, Deserialize)]
 pub struct FileResult {
@@ -257,6 +260,7 @@ pub fn run() {
         .plugin(tauri_plugin_fs::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_shell::init())
+        .manage(melt_runner::MeltState::new())
         .invoke_handler(tauri::generate_handler![
             // Asset management commands
             download_asset,
@@ -279,6 +283,14 @@ pub fn run() {
             cmd_generate_thumbnails_with_options,
             cmd_get_first_frame,
             cmd_get_thumbnail_at_percent,
+            // MLT/melt render commands
+            melt_runner::check_melt,
+            melt_runner::run_melt_render,
+            melt_runner::cancel_melt_render,
+            melt_runner::get_mlt_temp_dir,
+            melt_runner::cleanup_mlt_temp_files,
+            melt_runner::run_melt_raw,
+            melt_runner::validate_mlt_xml,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
